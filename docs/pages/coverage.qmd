@@ -1,0 +1,31 @@
+---
+title: "Coverage"
+resources:
+  - coverage/
+---
+
+```{julia}
+#| echo: false
+#| output: false
+using LocalCoverage
+coverage = generate_coverage("MatrixFreeOperators"; run_test=true)
+html_coverage(coverage; dir=joinpath(@__DIR__, "coverage"), open=false)
+cov_dir = joinpath(dirname(dirname(@__DIR__)), "coverage")
+mv(joinpath(cov_dir, "lcov.info"), joinpath(@__DIR__, "lcov.info"); force=true)
+rm(cov_dir; recursive=true, force=true)
+```
+
+<iframe id="coverage-iframe" src="coverage/index.html" width="100%" style="border:none; overflow:hidden;" scrolling="no"></iframe>
+
+<script>
+(function() {
+    var iframe = document.getElementById('coverage-iframe');
+    function resize() {
+        try {
+            iframe.style.height = iframe.contentDocument.documentElement.scrollHeight + 'px';
+        } catch(e) {}
+    }
+    iframe.addEventListener('load', resize);
+    window.addEventListener('resize', resize);
+})();
+</script>

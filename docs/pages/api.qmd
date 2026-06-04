@@ -1,0 +1,39 @@
+---
+title: "API"
+toc: true
+toc-depth: 4
+---
+
+```{julia}
+#| echo: false
+#| output: false
+using MatrixFreeOperators
+```
+
+```{julia}
+#| echo: false
+#| output: asis
+export_names = filter(!=(:MatrixFreeOperators), names(MatrixFreeOperators))
+
+classify(b) = b isa Type ? :type : b isa Function ? :function : :constant
+
+for (kind, label) in [(:type, "Types"), (:function, "Functions"), (:constant, "Constants")]
+    items = filter(n -> classify(getfield(MatrixFreeOperators, n)) == kind, export_names)
+    isempty(items) && continue
+    println("## $label\n")
+    for name in items
+        binding = getfield(MatrixFreeOperators, name)
+        doc = string(Docs.doc(binding))
+        println("""
+        ::: {.card .mb-3}
+        ::: {.card-header .api-item-header}
+        #### `$name` {#$(lowercase(string(name)))}
+        :::
+        ::: {.card-body}
+        $doc
+        :::
+        :::
+        """)
+    end
+end
+```

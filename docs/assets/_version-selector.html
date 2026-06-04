@@ -1,0 +1,89 @@
+<script>
+(function() {
+    // Injected per-version by .github/workflows/Docs.yml at deploy time.
+    // Local preview: placeholders aren't substituted; fall back to sensible defaults.
+    var CURRENT_VERSION = "__CURRENT_VERSION__";
+    var BASE_PATH = "__BASE_PATH__";
+    if (CURRENT_VERSION.indexOf("__") === 0) {
+        CURRENT_VERSION = "dev";
+        BASE_PATH = "/";
+    }
+
+    function buildDropdown(versions) {
+        var navbar = document.querySelector('.navbar-nav.navbar-nav-scroll.ms-auto');
+        if (!navbar) return;
+
+        var li = document.createElement('li');
+        li.className = 'nav-item dropdown';
+        li.innerHTML =
+            '<a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">' +
+                CURRENT_VERSION +
+            '</a>' +
+            '<ul class="dropdown-menu dropdown-menu-end"></ul>';
+
+        var menu = li.querySelector('.dropdown-menu');
+
+        ['stable', 'dev'].forEach(function(v) {
+            var a = document.createElement('a');
+            a.className = 'dropdown-item' + (v === CURRENT_VERSION ? ' active' : '');
+            a.href = BASE_PATH + v + '/';
+            a.textContent = v;
+            var item = document.createElement('li');
+            item.appendChild(a);
+            menu.appendChild(item);
+        });
+
+        if (versions && versions.length > 0) {
+            var divider = document.createElement('li');
+            divider.innerHTML = '<hr class="dropdown-divider">';
+            menu.appendChild(divider);
+
+            versions.forEach(function(v) {
+                var a = document.createElement('a');
+                a.className = 'dropdown-item' + (v === CURRENT_VERSION ? ' active' : '');
+                a.href = BASE_PATH + v + '/';
+                a.textContent = v;
+                var item = document.createElement('li');
+                item.appendChild(a);
+                menu.appendChild(item);
+            });
+        }
+
+        navbar.prepend(li);
+
+        if (versions && versions.length > 0 && CURRENT_VERSION !== 'stable' && CURRENT_VERSION !== 'dev') {
+            var latest = versions[0];
+            if (CURRENT_VERSION !== latest) {
+                var banner = document.createElement('div');
+                banner.className = 'alert alert-warning text-center mb-0 rounded-0';
+                banner.setAttribute('role', 'alert');
+                banner.innerHTML = 'You are viewing docs for <strong>' + CURRENT_VERSION + '</strong>. ' +
+                    'The latest stable release is <a href="' + BASE_PATH + 'stable/" class="alert-link">' + latest + '</a>.';
+                document.body.prepend(banner);
+            }
+        }
+    }
+
+    fetch(BASE_PATH + 'versions.json')
+        .then(function(res) { return res.ok ? res.json() : []; })
+        .catch(function() { return []; })
+        .then(buildDropdown);
+
+    var titleLink = document.querySelector('a.navbar-brand:not(.navbar-brand-logo)');
+    if (titleLink) {
+        titleLink.href = BASE_PATH + CURRENT_VERSION + '/';
+    }
+
+    var starLink = document.querySelector('a.nav-link[href*="/stargazers"]');
+    if (starLink) {
+        var match = starLink.href.match(/github\.com\/([^/]+\/[^/]+)\/stargazers/);
+        if (match) {
+            var img = document.createElement('img');
+            img.src = 'https://img.shields.io/github/stars/' + match[1] + '?style=social';
+            img.alt = 'GitHub stars';
+            img.style.verticalAlign = 'middle';
+            starLink.replaceChildren(img);
+        }
+    }
+})();
+</script>

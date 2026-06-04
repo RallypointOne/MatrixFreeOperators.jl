@@ -1,0 +1,7 @@
+name = "MatrixFreeOperators"
+uuid = "bf251007-91fc-422b-8727-f8d5215c1c76"
+version = "0.1.0"
+authors = ["Kyle Beggs <beggskw@gmail.com>"]
+
+[compat]
+julia = "1"
