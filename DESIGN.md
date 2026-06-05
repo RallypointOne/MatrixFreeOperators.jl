@@ -134,6 +134,35 @@ v1 uses **collocated (cell-centered)** fields. Staggered finite-volume layouts
 (Oceananigans-style, velocities on faces) are the location trait `L` — flagged in
 §10 as a near-term extension, not v1.
 
+**Vector & multi-component fields.** A field's *element type* carries its tensor
+rank — there is no rank type parameter and no new struct field. A scalar field is
+a `Field` over `Array{T}`; a vector field is a `Field` over `Array{SVector{N,T}}`;
+a tensor field over `Array{SMatrix{…}}`. The backing array's `eltype` is the only
+thing that changes.
+
+This works because **operators are written generically over the element type — the
+core design principle here.** Stencil bodies use plain componentwise / broadcast
+arithmetic and never hard-code `SVector`. So the vector→vector case the question
+above asks about is the *easy* one: the same `apply!` body for `Laplacian` /
+`Derivative` runs unchanged on an `SVector`-valued field, because `SVector`
+arithmetic is componentwise. `SVector` (StaticArrays — already a core dep) is the
+batteries-included default, but **any user-supplied isbits vector/tensor element
+type that is closed under the stencil arithmetic Just Works with no operator
+changes.**
+
+The only leaves that touch components explicitly are the **rank-changers** already
+in the algebra: `Gradient` builds an `SVector{N,T}`-valued output from a scalar
+input, and `Divergence` contracts it back. These define the small contract a custom
+element type implements to opt into rank changes (build-from-N-components /
+extract-component); `SVector` satisfies it for free.
+
+**Krylov interop** stays flat: `mul!` / `size` / `eltype` see a vector, obtained by
+`reinterpret`-ing `Array{SVector{N,T}}` ↔ `Array{T}` (length `N·ncells`, `eltype T`).
+This holds for any isbits fixed-size element type; an exotic custom type can supply
+a flatten/unflatten adapter. Collocated v1 represents a vector field as one
+`SVector`-valued `Field`; the deferred staggered layout (§10.2) instead uses one
+face-located scalar `Field` per component.
+
 ---
 
 ## Core abstraction 2 — the composable operator algebra
@@ -211,9 +240,11 @@ isdiagonal(::AbstractOperator)     = false    # enables cheap Jacobi smoother (m
 pattern.
 
 > **Tensor rank (flagged, §10):** RBF parameterizes operators by added tensor
-> rank `AbstractOperator{N}` (gradient adds a dim, divergence removes one). v1
-> can avoid this by representing vector/multi-component fields explicitly; adopt
-> a rank parameter only if it proves necessary.
+> rank `AbstractOperator{N}` (gradient adds a dim, divergence removes one). We
+> avoid a rank parameter on the *operator* entirely: rank lives in the *field's
+> element type* and operators stay generic over it (see "Vector & multi-component
+> fields" in §Core abstraction 1; the `Gradient`/`Divergence` rank-changers are the
+> only leaves that touch components).
 
 ---
 
@@ -514,6 +545,19 @@ Presented one at a time with a recommendation; none block writing v1's spine.
      matrix-free Jacobian falls straight out of the autodiff layer. (A
      finite-difference JVP `(F(u₀+εv)−F(u₀))/ε` is the classic fallback.) That
      linear `J` is what feeds Krylov and the `jac_prototype` hook in §7.
+
+9. **Vector-field memory layout.** Given the §Core-abstraction-1 decision that a
+   field's element type carries its rank, what is the *concrete default layout* for
+   a vector field: array-of-`SVector` (`Array{SVector{N,T}}`, matching the
+   StaticArrays core dep) or planar (`Array{T}` with a trailing component
+   dimension)? The driver is **Reactant/XLA**: it is not certain XLA traces
+   `SVector`-element arrays cleanly (req 1 / Decision A lean hard on
+   Reactant-traceability), and it may prefer the explicit component dimension.
+   *Recommendation:* AoS `SVector` as the default — the operator-level genericity
+   makes the *algebra* layout-agnostic, so this is purely a representation /
+   Reactant concern, not an algebra one. **Verify `SVector`-array Reactant tracing
+   at implementation;** if it doesn't trace cleanly, a planar layout (or a
+   Reactant-only field adapter) is the fallback, with operators unchanged.
 
 ---
 
