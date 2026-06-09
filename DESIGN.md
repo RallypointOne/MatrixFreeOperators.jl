@@ -41,7 +41,7 @@ meet requirements 2–5. We sit one layer above it.
 
 ---
 
-## Decisions locked (with the user)
+## 1 — Decisions locked (with the user)
 
 | # | Decision | Consequence |
 |---|----------|-------------|
@@ -54,7 +54,7 @@ These three reshape everything below; the rest of the open choices are flagged i
 
 ---
 
-## Architecture overview
+## 2 — Architecture overview
 
 Five layers, each independently understandable and testable:
 
@@ -84,7 +84,7 @@ Grid object *is* and what `halo_update!` *does* — not in operator code.
 
 ---
 
-## Core abstraction 1 — Grid and Field (the foundation)
+## 3 — Core abstraction 1: Grid and Field (the foundation)
 
 Everything keys off the grid. It must expose enough that distributed and AMR are
 reachable without rewriting operators.
@@ -93,16 +93,20 @@ reachable without rewriting operators.
 abstract type AbstractGrid{N} end          # N = spatial dimension
 
 # v1 concrete type
-struct CartesianGrid{N,T,BC,Dev} <: AbstractGrid{N}
+struct CartesianGrid{N,T,BC,Dev,Topo} <: AbstractGrid{N}
     extent      :: NTuple{N,Tuple{T,T}}     # physical (min,max) per dim
-    spacing     :: NTuple{N,T}              # Δx, Δy, … (uniform in v1)
+    spacing     :: NTuple{N,T}              # Δx, Δy, … (uniform in v1) — DERIVED by the
+                                            # constructor from extent+size (stored for hot
+                                            # loops, never user-set: 3 fields, 2 DOFs)
     size        :: NTuple{N,Int}            # interior cell counts (LOCAL count)
     halo        :: NTuple{N,Int}            # ghost-layer width per dim
     bc          :: BC                       # boundary conditions per face
     device      :: Dev                      # KernelAbstractions backend
     # --- seams that stay no-op in v1, carry real data later ---
     local_range :: NTuple{N,UnitRange{Int}} # interior index range (== global in v1)
-    topology    :: Any                      # neighbor ranks / hierarchy — Nothing in v1
+    topology    :: Topo                     # Nothing in v1 (keeps the struct isbits-
+                                            # compatible for @kernel args / Adapt /
+                                            # Reactant); neighbor ranks / hierarchy later
 end
 ```
 
@@ -142,8 +146,8 @@ thing that changes.
 
 This works because **operators are written generically over the element type — the
 core design principle here.** Stencil bodies use plain componentwise / broadcast
-arithmetic and never hard-code `SVector`. So the vector→vector case the question
-above asks about is the *easy* one: the same `apply!` body for `Laplacian` /
+arithmetic and never hard-code `SVector`. So the vector→vector case (an operator
+mapping a vector field to a vector field) is the *easy* one: the same `apply!` body for `Laplacian` /
 `Derivative` runs unchanged on an `SVector`-valued field, because `SVector`
 arithmetic is componentwise. `SVector` (StaticArrays — already a core dep) is the
 batteries-included default, but **any user-supplied isbits vector/tensor element
@@ -159,13 +163,16 @@ extract-component); `SVector` satisfies it for free.
 **Krylov interop** stays flat: `mul!` / `size` / `eltype` see a vector, obtained by
 `reinterpret`-ing `Array{SVector{N,T}}` ↔ `Array{T}` (length `N·ncells`, `eltype T`).
 This holds for any isbits fixed-size element type; an exotic custom type can supply
-a flatten/unflatten adapter. Collocated v1 represents a vector field as one
+a flatten/unflatten adapter. The flat vector spans **interior DOFs only** — ghost
+cells are determined by BCs / `halo_update!`, never solver unknowns — so
+`size(L) = (N·n_int, N·n_int)`; the padded↔flat boundary lives in the prepared
+path (§10.7). Collocated v1 represents a vector field as one
 `SVector`-valued `Field`; the deferred staggered layout (§10.2) instead uses one
 face-located scalar `Field` per component.
 
 ---
 
-## Core abstraction 2 — the composable operator algebra
+## 4 — Core abstraction 2: the composable operator algebra
 
 This is the heart, and it mirrors RadialBasisFunctions.jl's *style* (lazy
 operator symbols + an algebra) **without depending on or subtyping RBF** (RBF is
@@ -180,8 +187,13 @@ struct Laplacian{G}   <: AbstractOperator; grid::G; end
 struct Derivative{G}  <: AbstractOperator; grid::G; dim::Int; order::Int; end
 struct Gradient{G}    <: AbstractOperator; grid::G; end
 struct Divergence{G}  <: AbstractOperator; grid::G; end
-struct Advection{G,V} <: AbstractOperator; grid::G; velocity::V; end   # nonlinear-capable
-struct IdentityOp     <: AbstractOperator; end
+struct Advection{G,V} <: AbstractOperator; grid::G; velocity::V; end
+    # islinear dispatches on V: prescribed velocity (constant / Field) ⇒ LINEAR in the
+    # advected input (passive transport); state-coupled (self-advection u·∇u) ⇒ nonlinear
+struct ScalingOp{F}   <: AbstractOperator; coeff::F; end   # pointwise ×κ(x) — diagonal,
+                                                           # the parameter-field leaf (Decision B)
+struct IdentityOp     <: AbstractOperator; end   # grid-free: size/eltype resolved from a
+                                                 # composition sibling or the applied-to field
 
 # ---- Lazy combinators (closed under the algebra) ----
 struct Scaled{O,T}   <: AbstractOperator; op::O; α::T; end
@@ -192,6 +204,8 @@ struct AdjointOp{O}  <: AbstractOperator; op::O; end
 Base.:+(a::AbstractOperator, b::AbstractOperator) = Added(a, b)
 Base.:*(a::AbstractOperator, b::AbstractOperator) = Composed(a, b)
 Base.:*(α::Number, a::AbstractOperator)           = Scaled(a, α)
+# …plus the rest of the closure set, all one-liners:
+#   a*α = α*a · -a = Scaled(a, -1) · a-b = Added(a, Scaled(b, -1)) · a/α = Scaled(a, inv(α))
 ```
 
 Each operator must provide:
@@ -226,10 +240,19 @@ adjoint(L::AdjointOp)= L.op
 **3. Traits** (Holy traits — orthogonal capabilities, per the interface skill):
 
 ```julia
-islinear(::AbstractOperator)       = true     # leaves opt out (e.g. Advection w/ field velocity)
-isconstant(::AbstractOperator)     = true     # false if parameters/coeffs change in time
+# Defaults make the WEAKER claim — leaves opt IN to strong properties
+# (a forgotten declaration degrades to an error, never a wrong result):
+islinear(::AbstractOperator)       = false    # linear leaves opt in (one line each)
+isconstant(::AbstractOperator)     = false    # opt in when parameters/coeffs are time-invariant
 isselfadjoint(::AbstractOperator)  = false    # opt-in ONLY when BCs make it true
 isdiagonal(::AbstractOperator)     = false    # enables cheap Jacobi smoother (multigrid)
+
+# Propagation through combinators — explicit, so no combinator falls back to the default:
+islinear(L::Added)         = islinear(L.a) && islinear(L.b)     # same for Composed; isconstant likewise
+islinear(L::Scaled)        = islinear(L.op)
+isdiagonal(L::Composed)    = isdiagonal(L.a) && isdiagonal(L.b) # same for Added/Scaled
+isselfadjoint(L::Composed) = false   # NOT compositional: A,B self-adjoint ⇏ AB self-adjoint
+                                     # (needs A,B to commute); Scaled additionally needs real α
 ```
 
 **4. LinearAlgebra interop** — `mul!(y,L,x)`, `mul!(y,L,x,α,β)`, `size(L)`,
@@ -248,7 +271,7 @@ pattern.
 
 ---
 
-## Execution / device layer
+## 5 — Execution / device layer
 
 - **Default (array-level):** leaf bodies are `@.`/broadcast/slicing over the
   field array. These run on `Array`, `CuArray`, `ROCArray`, `MtlArray`, … through
@@ -304,7 +327,7 @@ the global-state tension the per-grid `device::Dev` deliberately avoids.
 
 ---
 
-## Autodiff design
+## 6 — Autodiff design
 
 The default path needs **no AD-specific code**: array-level leaves are ordinary
 Julia array ops, which Enzyme.jl (reverse + forward, mutation-friendly, GPU) and
@@ -322,9 +345,11 @@ adjoint Lᵀ, and the forward pushforward is L itself. We exploit this as an
   through the already-declared `apply_adjoint!`, avoiding taping through the
   kernel. This is also **mandatory** for `@kernel`-authored leaves.
 - **It does NOT cover:** (a) gradients w.r.t. operator *parameters* — those flow
-  through ordinary AD; (b) *nonlinear* operators (e.g. advection with a field
-  velocity, nonlinear residuals) — those need JVP/VJP via AD. Both work
-  automatically on array-level leaves.
+  through ordinary AD; (b) *nonlinear* operators (e.g. self-advection `u·∇u`
+  where the velocity is the advected state itself, nonlinear residuals) — those
+  need JVP/VJP via AD. Both work automatically on array-level leaves. (Advection
+  with a *prescribed* velocity field is linear in its input — a field-valued
+  coefficient does not make an operator nonlinear.)
 
 **Backends:** Enzyme is primary (GPU support; best mutation handling). Mooncake
 is the CPU-friendly alternative (pure Julia; **no GPU support as of 2026-06**).
@@ -346,7 +371,7 @@ finite-difference / complex-step on small grids.
 
 ---
 
-## Solver interop
+## 7 — Solver interop
 
 **Krylov.jl + MultiDeviceLinearAlgebra:** Krylov needs only `mul!`, `size`,
 `eltype` — which the algebra provides. To run distributed, implement
@@ -372,15 +397,23 @@ source — see §11.)
 
 ---
 
-## v1 scope (build this first — keep it tight)
+## 8 — v1 scope (build this first — keep it tight)
 
 1. `CartesianGrid{N}` — uniform, single device, collocated, with periodic +
    Dirichlet + Neumann BCs; `halo_update!` present as a no-op.
 2. `Field{Center}` over device arrays.
 3. Operator algebra: leaves `Laplacian`, `Derivative`, `Gradient`, `Divergence`,
-   `IdentityOp`, `Advection`; combinators `Added`, `Composed`, `Scaled`,
-   `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` + `apply_adjoint!`;
-   `mul!`/`size`/`eltype`; `Adapt` support.
+   `ScalingOp`, `IdentityOp`, `Advection`; combinators `Added`, `Composed`,
+   `Scaled`, `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` +
+   `apply_adjoint!`; `mul!`/`size`/`eltype`; `Adapt` support. `ScalingOp`
+   (pointwise ×κ(x)) is the leaf that makes Decision B concrete: it carries a
+   differentiable coefficient *field*, it is the genuine `isdiagonal` /
+   `isselfadjoint` instance (Jacobi smoother target), and variable-coefficient
+   diffusion falls out of the algebra as
+   `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test.
+   (Caveat: the composed form has a wider effective stencil and collocated
+   odd-even quirks; a fused `∇·(κ∇u)` leaf is a later performance/accuracy
+   upgrade, not a v1 need.)
 4. Array-level authoring; device-agnostic via `get_backend`/`Adapt`; CI on CPU,
    and CUDA where available.
 5. AD: works automatically (Enzyme + Mooncake) on array-level leaves for field +
@@ -403,6 +436,7 @@ src/
     derivative.jl     # leaf …
     gradient.jl       # leaf …
     divergence.jl     # leaf …
+    scaling.jl        # leaf: pointwise ×κ(x); diagonal; the parameter-field leaf
     advection.jl      # nonlinear-capable leaf
   linalg.jl           # mul!/size/eltype, Krylov compatibility
   boundaries.jl       # BC representation + apply_bc! (see §10)
@@ -420,7 +454,7 @@ extension**, keeping the core light and dependency-honest.
 
 ---
 
-## Forward-looking seams (design now, implement later)
+## 9 — Forward-looking seams (design now, implement later)
 
 Each is one paragraph because the value of v1 is that these are *cheap*, not
 pre-built.
@@ -458,7 +492,7 @@ pre-built.
 
 ---
 
-## Open decisions to flag (your call)
+## 10 — Open decisions to flag (your call)
 
 Presented one at a time with a recommendation; none block writing v1's spine.
 
@@ -499,6 +533,17 @@ Presented one at a time with a recommendation; none block writing v1's spine.
    boundary mechanism is a reference. This is the subtlest correctness area —
    worth a focused design pass before coding the leaves.
 
+   **Hard requirement, independent of the representation chosen — the
+   linear/affine split.** Inhomogeneous Dirichlet/Neumann data baked into the
+   operator action makes it *affine*: `L(x) = A·x + b` with `b ≠ 0`, so
+   `L(0) ≠ 0`. That breaks Krylov (which assumes a linear map — the correct
+   formulation is `A·u = f − b` with `A` the homogeneous-BC part), falsifies the
+   adjoint identity ⟨Lx,y⟩=⟨x,Lᵀy⟩ (verification item 2 silently depends on this
+   split), and turns `islinear(L) = true` into false advertising. So:
+   `apply!`/`apply_bc!` enforce **homogeneous** constraints only; inhomogeneous
+   boundary data is exported separately as a lift vector, e.g.
+   `boundary_rhs(L, g)`, assembled once per solve and folded into the RHS.
+
 7. **Buffer / scratch model (the real cost of dropping `cache_operator`).**
    Matrix-free composition is not allocation-free: `Composed(A,B)` needs a
    temporary `tmp = B*x` before `A*tmp`, and Krylov's 5-arg
@@ -522,7 +567,16 @@ Presented one at a time with a recommendation; none block writing v1's spine.
      implicit-function-theorem adjoints on the *solution*, not the iteration).
      For concurrent solves or MDLA partitions, `prepare` per thread/partition
      (just buffer allocation). Leaf 5-arg `mul!` fuses `α·stencil(x)+β·y` into a
-     single broadcast (one kernel launch, no temp). *Caveat to note in the doc:*
+     single broadcast (one kernel launch, no temp).
+   - **Interior-only vector space (the Krylov boundary).** `apply!` operates on
+     halo-padded `Field`s; `mul!` is the flat boundary, and the flat vector spans
+     **interior DOFs only** (ghosts are never solver unknowns), so
+     `size(L) = (n_int·ncomp, n_int·ncomp)`. `prepare` therefore also owns one
+     halo-padded scratch field per operator tree: `mul!` copies the flat vector
+     in, runs `halo_update!` + the stencil on the scratch, and copies the
+     interior back out. The copies are cheap (fusable with the α/β axpby) and
+     keep `mul!`'s contract intact — `halo_update!` mutates the *scratch*, never
+     Krylov's `x` (which Enzyme would otherwise observe as an input mutation). *Caveat to note in the doc:*
      composed matrix-free operators incur one kernel launch per leaf; whole-tree
      fusion is exactly what Reactant buys you — a point in its favor for
      composition-heavy operators.
@@ -561,7 +615,7 @@ Presented one at a time with a recommendation; none block writing v1's spine.
 
 ---
 
-## Files to reuse / reference
+## 11 — Files to reuse / reference
 
 **User's packages (mirror style / compose with — do NOT subtype):**
 
@@ -589,7 +643,7 @@ Trixi.jl / P4est.jl / T8code.jl (AMR); SciMLOperators.jl (adapter target only).
 
 ---
 
-## Verification plan
+## 12 — Verification plan
 
 End-to-end checks to run as v1 lands (do not run until implementation is
 underway, per testing convention):
@@ -614,7 +668,7 @@ underway, per testing convention):
 
 ---
 
-## Next steps
+## 13 — Next steps
 
 1. You decide the §10 open items (or defer any to implementation).
 2. Generate the package skeleton (per your `JuliaPackageTemplate.generate()` +
