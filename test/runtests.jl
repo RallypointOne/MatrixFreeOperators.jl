@@ -17,5 +17,6 @@ include("test_utils.jl")
     include("derivative.jl")
     include("gradient_divergence.jl")
     include("scaling_identity_advection.jl")
+    include("algebra.jl")
     include("prepare_linalg.jl")
 end

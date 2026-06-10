@@ -18,12 +18,14 @@ export Derivative, derivative, derivative_stencil
 export Gradient, gradient, Divergence, divergence
 export ScalingOp, scaling, IdentityOp, identity_op
 export Advection, advection, SelfAdvection
+export Scaled, Added, Composed
 export PreparedOperator, prepare
 
 include("Grids.jl")
 include("boundaries.jl")
 include("Fields.jl")
 include("operators/abstract.jl")
+include("operators/algebra.jl")
 include("operators/laplacian.jl")
 include("operators/derivative.jl")
 include("operators/gradient.jl")
