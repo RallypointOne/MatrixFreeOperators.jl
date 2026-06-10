@@ -8,4 +8,5 @@ import KernelAbstractions
 @testset "MatrixFreeOperators.jl" begin
     include("grids.jl")
     include("boundaries.jl")
+    include("fields.jl")
 end
