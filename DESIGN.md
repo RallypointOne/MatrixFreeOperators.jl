@@ -269,6 +269,87 @@ pattern.
 > fields" in §Core abstraction 1; the `Gradient`/`Divergence` rank-changers are the
 > only leaves that touch components).
 
+### 4a — Custom (fused) operators
+
+The lazy algebra above composes leaves for clarity, AD, and Reactant fusion — at the
+cost of **one kernel launch per leaf** plus an intermediate buffer per `Composed` node
+(§10.7). For a hot residual or Jacobian–vector product evaluated inside a Newton–Krylov
+inner loop, that overhead is real. The sanctioned escape hatch is a **custom (fused)
+operator**: a user-authored concrete `AbstractOperator` subtype whose `apply!`/`mul!`
+fuses a differential stencil with its pointwise companions — a reaction term, a source, a
+variable coefficient, a sparse coupling — into a **single pass** (array-level or a
+`@kernel`, §5). It is not outside the algebra: it satisfies the same operator interface, so
+it still composes with `+`/`*`, feeds Krylov via `mul!`, and plugs into the OrdinaryDiffEq
+adapters (§7) like any built-in leaf.
+
+Reach for a custom operator when the terms genuinely share a grid sweep — fusing them saves
+a full read of the field and a launch — and the fused result is linear (or nonlinear) as a
+unit. When the terms are independent and reusable, prefer composing built-in leaves and let
+Reactant (§5 / §10.7) fuse the tree.
+
+**The contract** a custom operator implements (the `AbstractOperator` interface, restated as
+a checklist):
+
+```
+Required:
+- apply!(y, L, x, grid) -> y          action; a fused leaf does stencil + pointwise in one pass
+- eltype(L) -> T
+- size(L) -> (n, n)                   interior DOF count (for linear ops used as Krylov maps)
+- mul!(y, L, x) -> y                  linear ops only; the matrix-free action for Krylov
+                                      (5-arg mul!(y,L,x,α,β) recommended — fuse the axpby)
+Optional:
+- adjoint(L) / apply_adjoint!(x,L,y,grid)   linear ops only; unlocks Lᵀ-needing Krylov + AD
+- Adapt.adapt_structure(to, L)              device (GPU) transfer
+- linearize!(L, u) -> L                     in-place refresh of a Jacobian op at state u
+Traits (default false — opt in):
+- islinear, isconstant, isselfadjoint, isdiagonal
+Invariants:
+- islinear(L) ⇒ L(0)=0: homogeneous BCs only (§10.6 linear/affine split)
+- size(L) spans interior DOFs only (ghosts are never solver unknowns)
+- a fused leaf reusing an exported stencil primitive must be numerically identical to the
+  equivalent built-in-leaf composition (parity invariant — gate it with a test)
+```
+
+**Reusable stencil primitives (required, so fusion does not fork the stencil).** A custom
+fused kernel must not re-derive a stencil that a built-in leaf already owns — that splits one
+numerical definition into two that drift apart. The core therefore **exports its leaf stencil
+bodies as `@inline` primitives callable inside a user `@kernel`**, and implements its own
+built-in leaves *via the same primitives*. The first such primitive (driven by the motivating
+example below) is a no-flux 7-point Laplacian that returns **both the center value and the
+Laplacian** — a fused caller needs the center value for its pointwise term:
+
+```julia
+# exported; the built-in Laplacian{CartesianGrid,Neumann} leaf's apply! calls this too.
+@inline laplacian_7pt_noflux(u, c, i, j, k, nx, ny, nz, sy, sz, ihx, ihy, ihz) -> (uc, lap)
+```
+
+Two hard guarantees on that primitive:
+
+- It is the *same body* the built-in `Laplacian{_,Neumann}` leaf uses, so a fused custom leaf
+  and the leaf composition agree bit-for-bit (the parity invariant above).
+- No-flux Neumann means **skip the missing face flux at boundary cells** (no ghost
+  reflection) — the homogeneous form §10.6 requires.
+
+**In-place linearization refresh.** A custom Jacobian operator (below) freezes a
+linearization state `u`; a Newton–Krylov solve refreshes it every iteration. Reallocating the
+operator tree per iteration is wasteful, so the core sanctions an **in-place**
+`linearize!(L, u)` that overwrites the frozen state on a reusable operator. This is safe
+precisely because Krylov solves are never differentiated *through* (§10.7) — the operator's
+statefulness is invisible to AD, whose sensitivities come from implicit-function-theorem
+adjoints on the *solution*, not the iteration. (Out-of-place `linearize(F, u₀)` of §10.8 is
+the AD-facing spelling; `linearize!` is its hot-loop sibling.)
+
+**Motivating example — `TissueJacobianOperator` (MicrovascularOxygenTransport).** The tissue
+O₂ Jacobian–vector product fuses three terms over one grid sweep: the no-flux Laplacian
+`D∇²v` (via the exported primitive above), a Michaelis–Menten reaction-derivative diagonal
+`M'(u)/α · v`, and a perivascular self-coupling `−ΠᵀgΠ v / (Vcell·α)` (two sparse matvecs run
+just before the kernel). It is a **linear** custom operator frozen at `u`, refreshed by
+`linearize!`, with `mul!` as its action — exactly the `linearize(F, u₀)` Jacobian of §10.8
+and the matrix-free `jac_prototype` of §7. It is the first external consumer of this package,
+and the reason the custom-operator pattern and the exported stencil primitive exist. (If that
+consumer later wants the §7 `jac_prototype` route, the optional `…SciMLExt.jl` adapter must
+wrap any `AbstractOperator` exposing `mul!`/`size`/`eltype`.)
+
 ---
 
 ## 5 — Execution / device layer
@@ -413,7 +494,8 @@ source — see §11.)
    `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test.
    (Caveat: the composed form has a wider effective stencil and collocated
    odd-even quirks; a fused `∇·(κ∇u)` leaf is a later performance/accuracy
-   upgrade, not a v1 need.)
+   upgrade, not a v1 need — see §4a for the custom-fused-leaf pattern such an
+   upgrade would follow.)
 4. Array-level authoring; device-agnostic via `get_backend`/`Adapt`; CI on CPU,
    and CUDA where available.
 5. AD: works automatically (Enzyme + Mooncake) on array-level leaves for field +
@@ -579,7 +661,9 @@ Presented one at a time with a recommendation; none block writing v1's spine.
      Krylov's `x` (which Enzyme would otherwise observe as an input mutation). *Caveat to note in the doc:*
      composed matrix-free operators incur one kernel launch per leaf; whole-tree
      fusion is exactly what Reactant buys you — a point in its favor for
-     composition-heavy operators.
+     composition-heavy operators. The other escape from per-leaf launches is to
+     hand-author a **custom fused leaf** (§4a) for the hot operator — the manual
+     counterpart to Reactant's automatic tree fusion.
 
 8. **Linear vs. nonlinear operators, and where the Krylov Jacobian comes from.**
    `adjoint(L)` and "use `L` as a linear map in Krylov" are meaningful **only for
