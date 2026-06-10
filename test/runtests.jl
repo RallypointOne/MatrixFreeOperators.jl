@@ -25,4 +25,5 @@ include("test_utils.jl")
     include("linearize.jl")
     include("device.jl")
     include("autodiff.jl")
+    include("ode_rhs.jl")
 end
