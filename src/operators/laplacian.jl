@@ -67,6 +67,10 @@ adjoint_operator(L::Laplacian) = L
 function apply!(y::Field, L::Laplacian, x::Field, g::AbstractGrid, α, β)
     halo_update!(x, g)
     apply_bc!(x)
+    return _apply_raw!(y, L, x, g, α, β)
+end
+
+function _apply_raw!(y::Field, ::Laplacian, x::Field, g::AbstractGrid, α, β)
     inv_h2 = _inv_spacing2(g)
     yi = interior(y)
     if iszero(β)

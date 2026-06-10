@@ -61,9 +61,123 @@ function prepare(L::AbstractOperator, x::Field)
 end
 prepare(L::AbstractOperator) = prepare(L, scalar_field(_require_grid(L)))
 
-# Tree-walking buffer allocation: leaves pass through unchanged. Combinators that
-# need intermediate storage override this to return buffer-carrying twins.
+# Tree-walking buffer allocation: leaves pass through unchanged; Composed and
+# AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
+# allocates.
 _prepare_tree(L::AbstractOperator, ::Field) = L
+_prepare_tree(L::Added, x::Field) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))
+_prepare_tree(L::Scaled, x::Field) = Scaled(_prepare_tree(L.op, x), L.α)
+
+function _prepare_tree(L::Composed, x::Field)
+    pb = _prepare_tree(L.b, x)
+    tmp = allocate_output(L.b, x)
+    pa = _prepare_tree(L.a, tmp)
+    return PreparedComposed(pa, pb, tmp)
+end
+
+function _prepare_tree(L::AdjointOp, x::Field)
+    return PreparedAdjoint(L.op, allocate_output(L, x))
+end
+
+# Composed twin holding its concretely-typed intermediate field.
+struct PreparedComposed{A<:AbstractOperator,B<:AbstractOperator,F<:Field} <: AbstractOperator
+    a::A
+    b::B
+    tmp::F
+end
+
+function apply!(y::Field, L::PreparedComposed, x::Field, g::AbstractGrid, α, β)
+    apply!(L.tmp, L.b, x, g)
+    apply!(y, L.a, L.tmp, g, α, β)
+    return y
+end
+
+# AdjointOp twin: the leaf adjoint gather is allocation-free only for β = 0, so
+# accumulating applications gather into the held scratch first.
+struct PreparedAdjoint{O<:AbstractOperator,F<:Field} <: AbstractOperator
+    op::O
+    scratch::F
+end
+
+function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)
+    iszero(β) && return apply_adjoint!(y, L.op, x, g, α, β)
+    apply_adjoint!(L.scratch, L.op, x, g)
+    interior(y) .= α .* interior(L.scratch) .+ β .* interior(y)
+    return y
+end
+
+#--------------------------------------------------------------------------------# Boundary lift (linear/affine split)
+
+"""
+    boundary_rhs(L::AbstractOperator, g::AbstractGrid) -> Field
+    boundary_rhs(L::AbstractOperator, x_proto::Field) -> Field
+
+Boundary lift of the affine split `L_full(x) = L(x) + b`: the contribution of
+*inhomogeneous* boundary data (Dirichlet values, Neumann fluxes) that
+[`apply!`](@ref) deliberately omits so that `L` stays linear (`L(0) = 0`).
+Assemble once per solve and fold into the right-hand side: the discrete problem
+`L_full(u) = f` becomes `L·u = f - b`. The grid form assumes a scalar input
+field; pass a prototype field for vector inputs.
+
+### Examples
+
+```julia
+g = CartesianGrid(((0.0, 1.0),), (64,); bc=((Dirichlet(1.0), Dirichlet(2.0)),))
+L = laplacian(g)
+b = boundary_rhs(L, g)
+rhs = flatten(f) .- flatten(b)        # solve  prepare(L) \\ rhs  with Krylov
+```
+"""
+function boundary_rhs(L::AbstractOperator, g::AbstractGrid)
+    return boundary_rhs(L, scalar_field(g))
+end
+
+function boundary_rhs(L::AbstractOperator, x_proto::Field)
+    if !islinear(L)
+        throw(
+            ArgumentError(
+                "boundary_rhs is the affine lift of a linear operator; $(nameof(typeof(L))) is nonlinear",
+            ),
+        )
+    end
+    g = x_proto.grid
+    z = similar(x_proto)
+    fill!(z.data, zero(eltype(z.data)))
+    fill_bc_inhomogeneous!(z.data, g)
+    b = allocate_output(L, x_proto)
+    _apply_raw!(b, L, z, g, true, false)
+    return b
+end
+
+function boundary_rhs(L::Added, x_proto::Field)
+    ba = boundary_rhs(L.a, x_proto)
+    bb = boundary_rhs(L.b, x_proto)
+    ba.data .+= bb.data
+    return ba
+end
+
+function boundary_rhs(L::Scaled, x_proto::Field)
+    b = boundary_rhs(L.op, x_proto)
+    b.data .*= L.α
+    return b
+end
+
+# Affine composition: a(b(x) + c_b) + c_a = (a∘b)(x) + a(c_b) + c_a.
+function boundary_rhs(L::Composed, x_proto::Field)
+    bb = boundary_rhs(L.b, x_proto)
+    lift = apply(L.a, bb)
+    ba = boundary_rhs(L.a, bb)
+    lift.data .+= ba.data
+    return lift
+end
+
+# The adjoint action is built homogeneous (gather + fold, no ghost offsets), so
+# its lift is identically zero.
+function boundary_rhs(L::AdjointOp, x_proto::Field)
+    b = allocate_output(L, x_proto)
+    fill!(b.data, zero(eltype(b.data)))
+    return b
+end
 
 function Base.size(P::PreparedOperator)
     n = prod(local_size(P.grid))

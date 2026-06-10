@@ -75,6 +75,11 @@ function apply_adjoint!(x̄::Field, S::ScalingOp, ȳ::Field, g::AbstractGrid, α
     return apply!(x̄, adjoint_operator(S), ȳ, g, α, β)
 end
 
+# Pointwise: reads no ghosts, so the raw sweep is the ordinary action.
+function _apply_raw!(y::Field, S::ScalingOp, x::Field, g::AbstractGrid, α, β)
+    return apply!(y, S, x, g, α, β)
+end
+
 Adapt.adapt_structure(to, S::ScalingOp) = ScalingOp(Adapt.adapt(to, S.coeff))
 
 #--------------------------------------------------------------------------------# Identity
@@ -120,4 +125,9 @@ end
 
 function apply_adjoint!(x̄::Field, L::IdentityOp, ȳ::Field, g::AbstractGrid, α, β)
     return apply!(x̄, L, ȳ, g, α, β)
+end
+
+# Pointwise: reads no ghosts, so the raw sweep is the ordinary action.
+function _apply_raw!(y::Field, L::IdentityOp, x::Field, g::AbstractGrid, α, β)
+    return apply!(y, L, x, g, α, β)
 end

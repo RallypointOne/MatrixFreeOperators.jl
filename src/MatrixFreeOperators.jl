@@ -19,7 +19,7 @@ export Gradient, gradient, Divergence, divergence
 export ScalingOp, scaling, IdentityOp, identity_op
 export Advection, advection, SelfAdvection
 export Scaled, Added, Composed
-export PreparedOperator, prepare
+export PreparedOperator, prepare, boundary_rhs
 
 include("Grids.jl")
 include("boundaries.jl")

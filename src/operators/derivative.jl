@@ -83,6 +83,10 @@ adjoint_operator(L::Derivative) = L.order == 2 ? L : AdjointOp(L)
 function apply!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)
     halo_update!(x, g)
     apply_bc!(x)
+    return _apply_raw!(y, L, x, g, α, β)
+end
+
+function _apply_raw!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)
     inv_h = _inv_spacing(g)[L.dim]
     yi = interior(y)
     if iszero(β)

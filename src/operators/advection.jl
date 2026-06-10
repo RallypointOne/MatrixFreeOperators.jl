@@ -88,6 +88,12 @@ function apply!(
 )
     halo_update!(x, g)
     apply_bc!(x)
+    return _apply_raw!(y, L, x, g, α, β)
+end
+
+function _apply_raw!(
+    y::Field, L::Advection{<:AbstractGrid,<:Field}, x::Field, g::AbstractGrid, α, β
+)
     inv_h = _inv_spacing(g)
     yi = interior(y)
     if iszero(β)
