@@ -1,7 +1,7 @@
 module MatrixFreeOperators
 
 using Adapt: Adapt
-using LinearAlgebra: LinearAlgebra, dot, mul!
+using LinearAlgebra: LinearAlgebra, dot, mul!, norm
 using StaticArrays: SVector
 import KernelAbstractions
 
@@ -19,6 +19,7 @@ export Gradient, gradient, Divergence, divergence
 export ScalingOp, scaling, IdentityOp, identity_op
 export Advection, advection, SelfAdvection
 export Scaled, Added, Composed
+export LinearizedOp, linearize, linearize!
 export PreparedOperator, prepare, boundary_rhs
 
 include("Grids.jl")
@@ -32,6 +33,7 @@ include("operators/gradient.jl")
 include("operators/divergence.jl")
 include("operators/scaling.jl")
 include("operators/advection.jl")
+include("operators/linearize.jl")
 include("linalg.jl")
 
 end # module
