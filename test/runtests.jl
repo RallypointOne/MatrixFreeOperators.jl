@@ -14,5 +14,8 @@ include("test_utils.jl")
     include("fields.jl")
     include("operators_abstract.jl")
     include("laplacian.jl")
+    include("derivative.jl")
+    include("gradient_divergence.jl")
+    include("scaling_identity_advection.jl")
     include("prepare_linalg.jl")
 end

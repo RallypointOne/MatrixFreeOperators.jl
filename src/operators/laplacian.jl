@@ -20,7 +20,7 @@ uc, lap = laplacian_stencil(u.data, CartesianIndex(2, 2), inv.(spacing(g) .^ 2))
 ) where {N}
     uc = @inbounds u[I]
     terms = ntuple(Val(N)) do d
-        δ = CartesianIndex(ntuple(i -> i == d ? 1 : 0, Val(N)))
+        δ = _unitindex(Val(N), d)
         @inbounds (u[I - δ] - 2 * uc + u[I + δ]) * inv_h2[d]
     end
     return (uc, sum(terms))

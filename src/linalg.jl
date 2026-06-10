@@ -65,9 +65,6 @@ prepare(L::AbstractOperator) = prepare(L, scalar_field(_require_grid(L)))
 # need intermediate storage override this to return buffer-carrying twins.
 _prepare_tree(L::AbstractOperator, ::Field) = L
 
-_scalar_eltype(::Type{T}) where {T<:Number} = T
-_scalar_eltype(::Type{SVector{M,T}}) where {M,T} = T
-
 function Base.size(P::PreparedOperator)
     n = prod(local_size(P.grid))
     return (n * ncomponents(P.ypad), n * ncomponents(P.xpad))

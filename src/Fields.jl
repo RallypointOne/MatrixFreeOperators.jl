@@ -120,6 +120,9 @@ ncomponents(f::Field) = _ncomponents(eltype(f.data))
 _ncomponents(::Type{<:Number}) = 1
 _ncomponents(::Type{SVector{M,T}}) where {M,T} = M
 
+_scalar_eltype(::Type{T}) where {T<:Number} = T
+_scalar_eltype(::Type{SVector{M,T}}) where {M,T} = T
+
 """
     component(f::Field, d::Integer) -> Field
 

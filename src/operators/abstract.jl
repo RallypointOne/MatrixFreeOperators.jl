@@ -190,6 +190,11 @@ Adapt.adapt_structure(to, L::AdjointOp) = AdjointOp(Adapt.adapt(to, L.op))
     return checkbounds(Bool, u, J) ? @inbounds(u[J]) : zero(T)
 end
 
+# Unit CartesianIndex along dimension d.
+@inline function _unitindex(::Val{N}, d::Int) where {N}
+    return CartesianIndex(ntuple(i -> i == d ? 1 : 0, Val(N)))
+end
+
 # Mechanical exact transpose of a stencil leaf: with forward action
 # y_int = S·(P·x) (P = homogeneous BC fill, S = stencil into the interior), the
 # adjoint is x̄ = Pᵀ·Sᵀ·ȳ_int. `gather(ȳdata, J)` must compute the flipped-stencil
