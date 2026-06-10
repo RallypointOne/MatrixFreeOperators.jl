@@ -3,6 +3,7 @@ using Test
 using LinearAlgebra
 using Random
 using StaticArrays
+import Adapt
 import KernelAbstractions
 import Krylov
 
@@ -20,4 +21,5 @@ include("test_utils.jl")
     include("algebra.jl")
     include("prepare_linalg.jl")
     include("linearize.jl")
+    include("device.jl")
 end
