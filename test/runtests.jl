@@ -9,4 +9,5 @@ import KernelAbstractions
     include("grids.jl")
     include("boundaries.jl")
     include("fields.jl")
+    include("operators_abstract.jl")
 end

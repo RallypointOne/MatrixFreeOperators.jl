@@ -11,9 +11,12 @@ export interior, padded_size, cell_center, halo_update!
 export AbstractBC, Periodic, Dirichlet, Neumann, apply_bc!, fold_bc!
 export Field, Center, scalar_field, vector_field, set!, ncomponents, component
 export flatten, flat_to_interior!, interior_to_flat!
+export AbstractOperator, apply, apply!, apply_adjoint!, AdjointOp
+export islinear, isconstant, isselfadjoint, isdiagonal
 
 include("Grids.jl")
 include("boundaries.jl")
 include("Fields.jl")
+include("operators/abstract.jl")
 
 end # module
