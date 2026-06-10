@@ -3,5 +3,15 @@ uuid = "bf251007-91fc-422b-8727-f8d5215c1c76"
 version = "0.1.0"
 authors = ["Kyle Beggs <beggskw@gmail.com>"]
 
+[deps]
+Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
 [compat]
-julia = "1"
+Adapt = "4"
+KernelAbstractions = "0.9"
+LinearAlgebra = "1"
+StaticArrays = "1"
+julia = "1.10"
