@@ -4,8 +4,10 @@ using LinearAlgebra
 using Random
 using StaticArrays
 import Adapt
+import Enzyme
 import KernelAbstractions
 import Krylov
+import Mooncake
 
 include("test_utils.jl")
 
@@ -22,4 +24,5 @@ include("test_utils.jl")
     include("prepare_linalg.jl")
     include("linearize.jl")
     include("device.jl")
+    include("autodiff.jl")
 end
