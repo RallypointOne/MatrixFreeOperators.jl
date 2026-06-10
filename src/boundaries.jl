@@ -53,6 +53,12 @@ _source_low(::AbstractBC, h::Int, n::Int, k::Int) = h + k
 _source_high(::Periodic, h::Int, n::Int, k::Int) = h + k
 _source_high(::AbstractBC, h::Int, n::Int, k::Int) = h + n + 1 - k
 
+# Type-stable slab view along compile-time dimension D (selectdim with a runtime
+# dimension boxes the view type, which would allocate inside hot mul! loops).
+@inline function _dimslice(data::AbstractArray{<:Any,N}, ::Val{D}, r) where {N,D}
+    return view(data, ntuple(d -> d == D ? r : Colon(), Val(N))...)
+end
+
 #--------------------------------------------------------------------------------# Homogeneous ghost fill and its adjoint
 
 """
@@ -66,25 +72,25 @@ are consistent ghost-of-ghost values.
 See also: [`fold_bc!`](@ref).
 """
 function apply_bc!(data::AbstractArray{<:Any,N}, g::AbstractGrid{N}) where {N}
-    _apply_bc_dims!(data, g, 1, boundary_conditions(g))
+    _apply_bc_dims!(data, g, Val(1), boundary_conditions(g))
     return data
 end
 
-function _apply_bc_dims!(data, g, d::Int, bcs::Tuple)
+function _apply_bc_dims!(data, g, ::Val{D}, bcs::Tuple) where {D}
     lo, hi = first(bcs)
-    h = halo_width(g)[d]
-    n = local_size(g)[d]
+    h = halo_width(g)[D]
+    n = local_size(g)[D]
     for k in 1:h
-        _fill_ghost!(data, d, h + 1 - k, _source_low(lo, h, n, k), _bc_sign(lo))
-        _fill_ghost!(data, d, h + n + k, _source_high(hi, h, n, k), _bc_sign(hi))
+        _fill_ghost!(data, Val(D), h + 1 - k, _source_low(lo, h, n, k), _bc_sign(lo))
+        _fill_ghost!(data, Val(D), h + n + k, _source_high(hi, h, n, k), _bc_sign(hi))
     end
-    return _apply_bc_dims!(data, g, d + 1, Base.tail(bcs))
+    return _apply_bc_dims!(data, g, Val(D + 1), Base.tail(bcs))
 end
-_apply_bc_dims!(data, g, d::Int, ::Tuple{}) = nothing
+_apply_bc_dims!(data, g, ::Val, ::Tuple{}) = nothing
 
-function _fill_ghost!(data, d::Int, ghost::Int, source::Int, sign::Int)
-    dst = selectdim(data, d, ghost)
-    src = selectdim(data, d, source)
+function _fill_ghost!(data, dim::Val, ghost::Int, source::Int, sign::Int)
+    dst = _dimslice(data, dim, ghost:ghost)
+    src = _dimslice(data, dim, source:source)
     dst .= sign .* src
     return nothing
 end
@@ -97,26 +103,26 @@ mirror/wrap source cell with the same sign, then zero all ghost layers. Dimensio
 are folded in reverse order `N:1`, transposing the fill order exactly.
 """
 function fold_bc!(data::AbstractArray{<:Any,N}, g::AbstractGrid{N}) where {N}
-    _fold_bc_dims!(data, g, 1, boundary_conditions(g))
+    _fold_bc_dims!(data, g, Val(1), boundary_conditions(g))
     return data
 end
 
-function _fold_bc_dims!(data, g, d::Int, bcs::Tuple)
-    _fold_bc_dims!(data, g, d + 1, Base.tail(bcs))
+function _fold_bc_dims!(data, g, ::Val{D}, bcs::Tuple) where {D}
+    _fold_bc_dims!(data, g, Val(D + 1), Base.tail(bcs))
     lo, hi = first(bcs)
-    h = halo_width(g)[d]
-    n = local_size(g)[d]
+    h = halo_width(g)[D]
+    n = local_size(g)[D]
     for k in 1:h
-        _fold_ghost!(data, d, h + 1 - k, _source_low(lo, h, n, k), _bc_sign(lo))
-        _fold_ghost!(data, d, h + n + k, _source_high(hi, h, n, k), _bc_sign(hi))
+        _fold_ghost!(data, Val(D), h + 1 - k, _source_low(lo, h, n, k), _bc_sign(lo))
+        _fold_ghost!(data, Val(D), h + n + k, _source_high(hi, h, n, k), _bc_sign(hi))
     end
     return nothing
 end
-_fold_bc_dims!(data, g, d::Int, ::Tuple{}) = nothing
+_fold_bc_dims!(data, g, ::Val, ::Tuple{}) = nothing
 
-function _fold_ghost!(data, d::Int, ghost::Int, source::Int, sign::Int)
-    dst = selectdim(data, d, ghost)
-    src = selectdim(data, d, source)
+function _fold_ghost!(data, dim::Val, ghost::Int, source::Int, sign::Int)
+    dst = _dimslice(data, dim, ghost:ghost)
+    src = _dimslice(data, dim, source:source)
     src .+= sign .* dst
     fill!(dst, zero(eltype(data)))
     return nothing
@@ -128,13 +134,17 @@ end
 Set every ghost cell of the halo-padded array `data` to zero.
 """
 function zero_ghosts!(data::AbstractArray{<:Any,N}, g::AbstractGrid{N}) where {N}
-    for d in 1:N
-        h = halo_width(g)[d]
-        n = local_size(g)[d]
-        fill!(selectdim(data, d, 1:h), zero(eltype(data)))
-        fill!(selectdim(data, d, (h + n + 1):(n + 2 * h)), zero(eltype(data)))
-    end
+    _zero_ghosts_dims!(data, g, Val(1))
     return data
+end
+
+function _zero_ghosts_dims!(data::AbstractArray{<:Any,N}, g, ::Val{D}) where {N,D}
+    D > N && return nothing
+    h = halo_width(g)[D]
+    n = local_size(g)[D]
+    fill!(_dimslice(data, Val(D), 1:h), zero(eltype(data)))
+    fill!(_dimslice(data, Val(D), (h + n + 1):(n + 2 * h)), zero(eltype(data)))
+    return _zero_ghosts_dims!(data, g, Val(D + 1))
 end
 
 #--------------------------------------------------------------------------------# Inhomogeneous ghost offsets
@@ -145,29 +155,32 @@ end
 # the result yields the boundary lift `b` of the affine split L(x) = A·x + b; see
 # `boundary_rhs`.
 function fill_bc_inhomogeneous!(data::AbstractArray{<:Any,N}, g::AbstractGrid{N}) where {N}
-    bcs = boundary_conditions(g)
-    for d in 1:N
-        lo, hi = bcs[d]
-        h = halo_width(g)[d]
-        n = local_size(g)[d]
-        for k in 1:h
-            _offset_ghost!(data, d, h + 1 - k, lo, spacing(g)[d], k)
-            _offset_ghost!(data, d, h + n + k, hi, spacing(g)[d], k)
-        end
-    end
+    _fill_inhomogeneous_dims!(data, g, Val(1), boundary_conditions(g))
     return data
 end
 
-_offset_ghost!(data, d::Int, ghost::Int, ::Periodic, Δ, k::Int) = nothing
-function _offset_ghost!(data, d::Int, ghost::Int, bc::Dirichlet, Δ, k::Int)
+function _fill_inhomogeneous_dims!(data, g, ::Val{D}, bcs::Tuple) where {D}
+    lo, hi = first(bcs)
+    h = halo_width(g)[D]
+    n = local_size(g)[D]
+    for k in 1:h
+        _offset_ghost!(data, Val(D), h + 1 - k, lo, spacing(g)[D], k)
+        _offset_ghost!(data, Val(D), h + n + k, hi, spacing(g)[D], k)
+    end
+    return _fill_inhomogeneous_dims!(data, g, Val(D + 1), Base.tail(bcs))
+end
+_fill_inhomogeneous_dims!(data, g, ::Val, ::Tuple{}) = nothing
+
+_offset_ghost!(data, ::Val, ghost::Int, ::Periodic, Δ, k::Int) = nothing
+function _offset_ghost!(data, dim::Val, ghost::Int, bc::Dirichlet, Δ, k::Int)
     iszero(bc.value) && return nothing
-    dst = selectdim(data, d, ghost)
+    dst = _dimslice(data, dim, ghost:ghost)
     dst .= 2 .* bc.value
     return nothing
 end
-function _offset_ghost!(data, d::Int, ghost::Int, bc::Neumann, Δ, k::Int)
+function _offset_ghost!(data, dim::Val, ghost::Int, bc::Neumann, Δ, k::Int)
     iszero(bc.flux) && return nothing
-    dst = selectdim(data, d, ghost)
+    dst = _dimslice(data, dim, ghost:ghost)
     dst .= (2 * k - 1) .* Δ .* bc.flux
     return nothing
 end

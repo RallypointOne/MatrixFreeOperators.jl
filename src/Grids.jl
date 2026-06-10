@@ -155,6 +155,9 @@ end
 
 KernelAbstractions.get_backend(g::CartesianGrid) = g.device
 
+_inv_spacing(g::AbstractGrid{N}) where {N} = ntuple(d -> inv(spacing(g)[d]), Val(N))
+_inv_spacing2(g::AbstractGrid{N}) where {N} = ntuple(d -> inv(spacing(g)[d]^2), Val(N))
+
 """
     halo_update!(x, g::AbstractGrid) -> x
 

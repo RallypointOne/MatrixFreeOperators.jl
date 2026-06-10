@@ -13,10 +13,14 @@ export Field, Center, scalar_field, vector_field, set!, ncomponents, component
 export flatten, flat_to_interior!, interior_to_flat!
 export AbstractOperator, apply, apply!, apply_adjoint!, AdjointOp
 export islinear, isconstant, isselfadjoint, isdiagonal
+export Laplacian, laplacian, laplacian_stencil
+export PreparedOperator, prepare
 
 include("Grids.jl")
 include("boundaries.jl")
 include("Fields.jl")
 include("operators/abstract.jl")
+include("operators/laplacian.jl")
+include("linalg.jl")
 
 end # module
