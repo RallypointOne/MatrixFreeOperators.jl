@@ -1,0 +1,1 @@
+genhtml -t 'on branch main' -o /home/runner/work/MatrixFreeOperators.jl/MatrixFreeOperators.jl/docs/pages/coverage coverage/lcov.info
