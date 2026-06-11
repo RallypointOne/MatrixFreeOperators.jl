@@ -29,6 +29,40 @@ end
 @inline _lap_at(u, I, inv_h2) = laplacian_stencil(u, I, inv_h2)[2]
 
 """
+    laplacian_7pt_noflux(u, c, i, j, k, nx, ny, nz, sy, sz, ihx, ihy, ihz) -> (uc, lap)
+
+Flat, ghost-free 3D 7-point no-flux (homogeneous Neumann) Laplacian on a column-major
+vector `u` at linear index `c` with subscripts `(i, j, k)`; boundary cells drop the missing
+face flux. `sy`/`sz` are the `y`/`z` strides (`nx`, `nx*ny`) and `ihx`/`ihy`/`ihz` the inverse
+squared spacings. Returns the center value `uc` alongside `lap`, since fused callers need both.
+
+The sanctioned escape-hatch stencil for *fused* custom operators (§4a): unlike
+[`laplacian_stencil`](@ref) it needs no halo, so it composes a differential stencil with
+pointwise terms in a single `@kernel` over the flat solver state. Numerically identical to the
+ghost-based `Laplacian` leaf under homogeneous Neumann — `(u[c+1] - uc)·ih` equals the leaf's
+`(u[I+δ] - 2uc + ghost)·ih` with the mirror ghost `= uc` — a parity locked by tests.
+
+### Examples
+
+```julia
+uc, lap = laplacian_7pt_noflux(u, c, i, j, k, nx, ny, nz, nx, nx * ny, ihx, ihy, ihz)
+```
+"""
+@inline function laplacian_7pt_noflux(u, c, i, j, k, nx, ny, nz, sy, sz, ihx, ihy, ihz)
+    @inbounds begin
+        uc = u[c]
+        lap = zero(eltype(u))
+        i > 1  && (lap += (u[c - 1]  - uc) * ihx)
+        i < nx && (lap += (u[c + 1]  - uc) * ihx)
+        j > 1  && (lap += (u[c - sy] - uc) * ihy)
+        j < ny && (lap += (u[c + sy] - uc) * ihy)
+        k > 1  && (lap += (u[c - sz] - uc) * ihz)
+        k < nz && (lap += (u[c + sz] - uc) * ihz)
+    end
+    return uc, lap
+end
+
+"""
     Laplacian(grid)
 
 Matrix-free Laplacian (∇²) leaf bound to `grid`. Construct with

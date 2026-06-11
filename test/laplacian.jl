@@ -80,4 +80,28 @@ end
         @test uc == u.data[3]
         @test lap ≈ (u.data[2] - 2 * u.data[3] + u.data[4]) * inv_h2[1]
     end
+
+    @testset "flat no-flux primitive agrees with ghost Laplacian leaf" begin
+        nx, ny, nz = 5, 4, 3
+        g = CartesianGrid(
+            ((0.0, 1.0), (0.0, 0.8), (0.0, 0.6)), (nx, ny, nz);
+            bc=ntuple(_ -> (Neumann(), Neumann()), 3),
+        )
+        rng = Random.MersenneTwister(11)
+        u = scalar_field(g)
+        interior(u) .= rand(rng, nx, ny, nz)
+        leaf = collect(interior(laplacian(g) * u))     # ghost-based, mirror fill
+
+        uflat = vec(collect(interior(u)))              # column-major flat interior, no halo
+        sy, sz = nx, nx * ny
+        ihx, ihy, ihz = inv.(spacing(g) .^ 2)
+        flat = similar(uflat)
+        for k in 1:nz, j in 1:ny, i in 1:nx
+            c = i + sy * (j - 1) + sz * (k - 1)
+            uc, lap = laplacian_7pt_noflux(uflat, c, i, j, k, nx, ny, nz, sy, sz, ihx, ihy, ihz)
+            @test uc == uflat[c]
+            flat[c] = lap
+        end
+        @test reshape(flat, nx, ny, nz) ≈ leaf
+    end
 end

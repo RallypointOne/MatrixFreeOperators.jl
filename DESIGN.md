@@ -319,16 +319,21 @@ example below) is a no-flux 7-point Laplacian that returns **both the center val
 Laplacian** — a fused caller needs the center value for its pointwise term:
 
 ```julia
-# exported; the built-in Laplacian{CartesianGrid,Neumann} leaf's apply! calls this too.
+# exported; a flat, halo-free escape-hatch stencil for fused custom @kernels.
 @inline laplacian_7pt_noflux(u, c, i, j, k, nx, ny, nz, sy, sz, ihx, ihy, ihz) -> (uc, lap)
 ```
 
 Two hard guarantees on that primitive:
 
-- It is the *same body* the built-in `Laplacian{_,Neumann}` leaf uses, so a fused custom leaf
-  and the leaf composition agree bit-for-bit (the parity invariant above).
-- No-flux Neumann means **skip the missing face flux at boundary cells** (no ghost
-  reflection) — the homogeneous form §10.6 requires.
+- It is **numerically identical** to the built-in `Laplacian{_,Neumann}` leaf under
+  homogeneous no-flux — the leaf fills symmetric mirror ghosts and sweeps the halo-based
+  `laplacian_stencil`, the primitive skips the missing face flux on a flat halo-free state, and
+  the two encodings agree to floating-point tolerance (the parity invariant above, locked by
+  test). They are deliberately *separate* bodies: the halo model stays the general default (it
+  generalizes to Dirichlet, inhomogeneous, periodic + distributed, and free adjoints), while
+  the flat primitive is the fused hot-loop specialization that avoids a halo round-trip.
+- No-flux Neumann means **skip the missing face flux at boundary cells** — equivalent to the
+  leaf's symmetric mirror ghost, the homogeneous form §10.6 requires.
 
 **In-place linearization refresh.** A custom Jacobian operator (below) freezes a
 linearization state `u`; a Newton–Krylov solve refreshes it every iteration. Reallocating the
