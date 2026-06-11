@@ -6,10 +6,28 @@ Welcome to the documentation for **MatrixFreeOperators.jl**.
 
 ## Overview
 
-MatrixFreeOperators.jl is a Julia package that ...
+MatrixFreeOperators.jl provides matrix-free linear (and some nonlinear) operators
+for solving PDEs on structured grids. Operators are lazy, composable symbols
+(`laplacian`, `gradient`, `divergence`, `scaling`, `advection`, …) combined with
+`+`, `-`, `*`, and scalar scaling. Leaves are written as array-level broadcasts,
+so the same operator runs on CPU and GPU arrays, differentiates automatically
+with Enzyme or Mooncake (including gradients w.r.t. operator parameters such as
+material-coefficient fields), and feeds Krylov.jl directly through `prepare` +
+`mul!` with zero steady-state allocations.
 
 ## Quickstart
 
 ```{julia}
-println("Hello, World!")
+using MatrixFreeOperators, Krylov, LinearAlgebra
+
+# -Δu + σu = f on (0,1)², homogeneous Dirichlet, manufactured solution
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (32, 32))
+σ = set!(scalar_field(g), x -> 1 + x[1] * x[2])
+K = scaling(σ) - laplacian(g)
+
+f = set!(scalar_field(g), x -> (2π^2 + 1 + x[1] * x[2]) * sinpi(x[1]) * sinpi(x[2]))
+P = prepare(K, scalar_field(g))
+u, stats = cg(P, flatten(f))
+
+maximum(abs, u .- flatten(set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2]))))
 ```
