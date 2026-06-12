@@ -18,3 +18,4 @@ docs/*_files/
 *.html
 !docs/assets/_version-selector.html
 *.jpg
+examples/heat_equation.gif
