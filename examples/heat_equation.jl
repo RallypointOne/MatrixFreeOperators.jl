@@ -5,11 +5,16 @@
 using Pkg; Pkg.activate(@__DIR__)
 using MatrixFreeOperators, BenchmarkTools, CairoMakie, LinearAlgebra, Printf, Random
 
-n, α, nsteps = 64, 0.2, 500
+n, α = 64, 0.0005
+tspan = (0.0, 5.0)
 g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (n, n))
 P = prepare(laplacian(g), scalar_field(g))
-dt = minimum(spacing(g))^2 / (8α)
-Random.seed!(0)
+# explicit-Euler stability bound, then shrink dt so the steps tile tspan exactly
+dtmax = minimum(spacing(g))^2 / (8α)
+nframes = 100
+steps_per_frame = cld(ceil(Int, (tspan[2] - tspan[1]) / dtmax), nframes)
+nsteps = nframes * steps_per_frame
+dt = (tspan[2] - tspan[1]) / nsteps
 # 20 Gaussian blobs at random centers; diameter ≈ 4σ drawn uniform in [0.1, 0.3]
 blobs = [(rand(), rand(), 0.2 * (0.5 + rand())) for _ in 1:20]
 u0 = flatten(set!(scalar_field(g), x ->
@@ -26,22 +31,20 @@ end
 xs = range(0.5Δ[1], 1 - 0.5Δ[1]; length = n)
 ys = range(0.5Δ[2], 1 - 0.5Δ[2]; length = n)
 U = Observable(reshape(copy(u0), n, n))
-tlabel = Observable("t = 0.00")
-fig = Figure(size = (500, 400))
+tlabel = Observable(@sprintf "t = %.2f" tspan[1])
+fig = Figure(size = (500, 400));
 ax = Axis(fig[1, 1]; xlabel = "x", ylabel = "y", title = tlabel, aspect = DataAspect())
 hm = heatmap!(ax, xs, ys, U; colorrange = (0, 1))
 Colorbar(fig[1, 2], hm)
 
 u = copy(u0)
 du = zero(u0)
-nframes = 100
-steps_per_frame = nsteps ÷ nframes
 figpath = joinpath(@__DIR__, "heat_equation.gif")
 record(fig, figpath, 0:nframes; framerate = 30) do frame
     frame == 0 && return
     foreach(_ -> step!(u, du, P, α * dt), 1:steps_per_frame)
     U[] = reshape(copy(u), n, n)
-    tlabel[] = @sprintf "t = %.2f" frame * steps_per_frame * dt
+    tlabel[] = @sprintf "t = %.2f" tspan[1] + frame * steps_per_frame * dt
 end
 @printf "animation:         %s\n" figpath
 
