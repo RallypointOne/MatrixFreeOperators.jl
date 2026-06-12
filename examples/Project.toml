@@ -3,7 +3,6 @@ BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MatrixFreeOperators = "bf251007-91fc-422b-8727-f8d5215c1c76"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
-Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [sources]
 MatrixFreeOperators = {path = ".."}
