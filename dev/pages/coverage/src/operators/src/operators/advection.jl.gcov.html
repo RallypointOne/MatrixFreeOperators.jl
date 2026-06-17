@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryMed">85.4&nbsp;%</td>
+            <td class="headerCovTableEntryMed">87.8&nbsp;%</td>
             <td class="headerCovTableEntry">41</td>
-            <td class="headerCovTableEntry">35</td>
+            <td class="headerCovTableEntry">36</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-06-11 18:26:18</td>
+            <td class="headerValue">2026-06-17 15:40:03</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -73,11 +73,11 @@
 <span id="L11"><span class="lineNum">      11</span>              : @inline function _adv_at(</span>
 <span id="L12"><span class="lineNum">      12</span>              :     u::AbstractArray{&lt;:Any,N}, v::AbstractArray{&lt;:Any,N}, I::CartesianIndex{N}, inv_h::NTuple{N}</span>
 <span id="L13"><span class="lineNum">      13</span>              : ) where {N}</span>
-<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC">       11258 :     terms = ntuple(Val(N)) do d</span></span>
-<span id="L15"><span class="lineNum">      15</span> <span class="tlaGNC">       21732 :         δ = _unitindex(Val(N), d)</span></span>
-<span id="L16"><span class="lineNum">      16</span> <span class="tlaGNC">       21732 :         @inbounds v[I][d] * ((u[I + δ] - u[I - δ]) * (inv_h[d] / 2))</span></span>
+<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC">       11260 :     terms = ntuple(Val(N)) do d</span></span>
+<span id="L15"><span class="lineNum">      15</span> <span class="tlaGNC">       21734 :         δ = _unitindex(Val(N), d)</span></span>
+<span id="L16"><span class="lineNum">      16</span> <span class="tlaGNC">       21734 :         @inbounds v[I][d] * ((u[I + δ] - u[I - δ]) * (inv_h[d] / 2))</span></span>
 <span id="L17"><span class="lineNum">      17</span>              :     end</span>
-<span id="L18"><span class="lineNum">      18</span> <span class="tlaGNC">       11258 :     return sum(terms)</span></span>
+<span id="L18"><span class="lineNum">      18</span> <span class="tlaGNC">       11260 :     return sum(terms)</span></span>
 <span id="L19"><span class="lineNum">      19</span>              : end</span>
 <span id="L20"><span class="lineNum">      20</span>              : </span>
 <span id="L21"><span class="lineNum">      21</span>              : &quot;&quot;&quot;</span>
@@ -169,18 +169,18 @@
 <span id="L107"><span class="lineNum">     107</span> <span class="tlaGNC">          34 : function apply!(</span></span>
 <span id="L108"><span class="lineNum">     108</span>              :     y::Field, L::Advection{&lt;:AbstractGrid,SelfAdvection}, x::Field, g::AbstractGrid, α, β</span>
 <span id="L109"><span class="lineNum">     109</span>              : )</span>
-<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">          34 :     eltype(x.data) &lt;: SVector ||</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">          35 :     eltype(x.data) &lt;: SVector ||</span></span>
 <span id="L111"><span class="lineNum">     111</span>              :         throw(ArgumentError(&quot;self-advection u·∇u requires an SVector-valued field&quot;))</span>
-<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">          33 :     halo_update!(x, g)</span></span>
-<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC">          33 :     apply_bc!(x)</span></span>
-<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">          33 :     inv_h = _inv_spacing(g)</span></span>
-<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          33 :     yi = interior(y)</span></span>
-<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          33 :     if iszero(β)</span></span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          33 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h))</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">          34 :     halo_update!(x, g)</span></span>
+<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC">          34 :     apply_bc!(x)</span></span>
+<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">          34 :     inv_h = _inv_spacing(g)</span></span>
+<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          34 :     yi = interior(y)</span></span>
+<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          34 :     if iszero(β)</span></span>
+<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          34 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h))</span></span>
 <span id="L118"><span class="lineNum">     118</span>              :     else</span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaUNC tlaBgUNC">           0 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h)) .+ β .* yi</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">           1 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h)) .+ β .* yi</span></span>
 <span id="L120"><span class="lineNum">     120</span>              :     end</span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC tlaBgGNC">          33 :     return y</span></span>
+<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">          34 :     return y</span></span>
 <span id="L122"><span class="lineNum">     122</span>              : end</span>
 <span id="L123"><span class="lineNum">     123</span>              : </span>
 <span id="L124"><span class="lineNum">     124</span>              : function Adapt.adapt_structure(to, L::Advection)</span>

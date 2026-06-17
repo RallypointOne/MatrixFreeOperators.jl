@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-06-11 18:26:18</td>
+            <td class="headerValue">2026-06-17 15:40:03</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -88,14 +88,14 @@
 <span id="L26"><span class="lineNum">      26</span>              : Lazy operator composition `(a ∘ b)(x) = a(b(x))`. Produced by `a * b`.</span>
 <span id="L27"><span class="lineNum">      27</span>              : &quot;&quot;&quot;</span>
 <span id="L28"><span class="lineNum">      28</span>              : struct Composed{A&lt;:AbstractOperator,B&lt;:AbstractOperator} &lt;: AbstractOperator</span>
-<span id="L29"><span class="lineNum">      29</span> <span class="tlaGNC">         218 :     a::A</span></span>
+<span id="L29"><span class="lineNum">      29</span> <span class="tlaGNC">         220 :     a::A</span></span>
 <span id="L30"><span class="lineNum">      30</span>              :     b::B</span>
 <span id="L31"><span class="lineNum">      31</span>              : end</span>
 <span id="L32"><span class="lineNum">      32</span>              : </span>
 <span id="L33"><span class="lineNum">      33</span> <span class="tlaGNC">          11 : Base.:+(a::AbstractOperator, b::AbstractOperator) = Added(a, b)</span></span>
 <span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">           5 : Base.:-(a::AbstractOperator, b::AbstractOperator) = Added(a, -1 * b)</span></span>
 <span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">           1 : Base.:-(a::AbstractOperator) = -1 * a</span></span>
-<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">         196 : Base.:*(a::AbstractOperator, b::AbstractOperator) = Composed(a, b)</span></span>
+<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">         198 : Base.:*(a::AbstractOperator, b::AbstractOperator) = Composed(a, b)</span></span>
 <span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">          17 : Base.:*(α::Number, a::AbstractOperator) = Scaled(a, α)</span></span>
 <span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">           1 : Base.:*(a::AbstractOperator, α::Number) = α * a</span></span>
 <span id="L39"><span class="lineNum">      39</span> <span class="tlaGNC">           2 : Base.:*(α::Number, a::Scaled) = Scaled(a.op, α * a.α)</span></span>
@@ -112,16 +112,16 @@
 <span id="L50"><span class="lineNum">      50</span>              : # Pure path: the intermediate is allocated per call (autodiff-friendly). The</span>
 <span id="L51"><span class="lineNum">      51</span>              : # prepared path replaces Composed nodes with buffer-carrying twins — see linalg.jl.</span>
 <span id="L52"><span class="lineNum">      52</span> <span class="tlaGNC">         356 : function apply!(y::Field, L::Composed, x::Field, g::AbstractGrid, α, β)</span></span>
-<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">         737 :     tmp = allocate_output(L.b, x)</span></span>
-<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         365 :     apply!(tmp, L.b, x, g)</span></span>
-<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">         367 :     apply!(y, L.a, tmp, g, α, β)</span></span>
-<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">         357 :     return y</span></span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">         741 :     tmp = allocate_output(L.b, x)</span></span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         369 :     apply!(tmp, L.b, x, g)</span></span>
+<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">         371 :     apply!(y, L.a, tmp, g, α, β)</span></span>
+<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">         361 :     return y</span></span>
 <span id="L57"><span class="lineNum">      57</span>              : end</span>
 <span id="L58"><span class="lineNum">      58</span>              : </span>
 <span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">         107 : apply!(y::Field, L::Scaled, x::Field, g::AbstractGrid, α, β) = apply!(y, L.op, x, g, α * L.α, β)</span></span>
 <span id="L60"><span class="lineNum">      60</span>              : </span>
 <span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">          20 : allocate_output(L::Added, x::Field) = allocate_output(L.a, x)</span></span>
-<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">         379 : allocate_output(L::Composed, x::Field) = allocate_output(L.a, allocate_output(L.b, x))</span></span>
+<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">         383 : allocate_output(L::Composed, x::Field) = allocate_output(L.a, allocate_output(L.b, x))</span></span>
 <span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">          12 : allocate_output(L::Scaled, x::Field) = allocate_output(L.op, x)</span></span>
 <span id="L64"><span class="lineNum">      64</span> <span class="tlaUNC tlaBgUNC">           0 : allocate_input(L::Added, y::Field) = allocate_input(L.a, y)</span></span>
 <span id="L65"><span class="lineNum">      65</span> <span class="tlaUNC">           0 : allocate_input(L::Composed, y::Field) = allocate_input(L.b, allocate_input(L.a, y))</span></span>
