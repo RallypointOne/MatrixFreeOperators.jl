@@ -96,15 +96,15 @@ Base.:*(L::AbstractOperator, x::Field) = apply(L, x)
 
 # Output field for L(x): same shape/eltype as x by default; ghost layers zeroed so
 # every package-produced field has deterministic ghosts. Rank-changing leaves
-# override to switch the element type.
-function allocate_output(::AbstractOperator, x::Field)
+# override to switch the element type. Generic over Field / BlockField.
+function allocate_output(::AbstractOperator, x::AbstractField)
     y = similar(x)
     zero_ghosts!(y)
     return y
 end
 
 # Input-shaped field for L (the output shape of its adjoint). Rank-changers override.
-function allocate_input(::AbstractOperator, y::Field)
+function allocate_input(::AbstractOperator, y::AbstractField)
     x = similar(y)
     zero_ghosts!(x)
     return x

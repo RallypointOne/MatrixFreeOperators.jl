@@ -29,6 +29,27 @@ CUDA.allowscalar(false)
         @test Array(∇u_gpu.data) ≈ ∇u_cpu.data
     end
 
+    @testset "BlockForest action parity" begin
+        MFO = MatrixFreeOperators
+        base = CartesianGrid(
+            ((0.0, 2π), (0.0, 1.0)), (16, 16);
+            bc=((Periodic(), Periodic()), (Dirichlet(), Dirichlet())),
+        )
+        bf = BlockForest(base; blocksize=(8, 8), maxlevel=2)
+        uf = set!(scalar_field(bf), x -> sin(x[1]) * x[2])
+        for L in (laplacian(bf), derivative(bf, 1; order=1))
+            y_cpu = [
+                collect(interior(MFO.block(apply(L, copy(uf)), i))) for i in 1:MFO.nleaves(bf)
+            ]
+            Lg = Adapt.adapt(CuArray, L)
+            ug = Adapt.adapt(CuArray, uf)
+            yg = apply(Lg, ug)
+            for i in 1:MFO.nleaves(bf)
+                @test Array(collect(interior(MFO.block(yg, i)))) ≈ y_cpu[i]
+            end
+        end
+    end
+
     @testset "Krylov cg parity" begin
         σ = set!(scalar_field(g), x -> 1 + x[2])
         K = scaling(σ) - laplacian(g)

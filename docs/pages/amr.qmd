@@ -1,0 +1,104 @@
+---
+title: "Adaptive Mesh Refinement"
+---
+
+`BlockForest` adds adaptive resolution while keeping every existing operator
+working **unchanged**. This page explains the design — why it looks the way it
+does — and shows the current capabilities.
+
+## The concept: a forest of fixed-size leaf-blocks
+
+The domain is covered by a collection (a *forest*) of equal-sized small **blocks**
+— e.g. each block is an `8×8` (2-D) or `8×8×8` (3-D) patch of cells. Each block is
+an ordinary [`CartesianGrid`](../index.qmd) with its own halo.
+
+- A *forest* is a set of quadtrees (2-D) / octrees (3-D): start from a coarse root
+  tiling of blocks; to refine a region, replace one block with `2ᴺ` child blocks at
+  half the spacing (same physical area, double resolution). Recurse. The roots and
+  their refined descendants form a forest of trees.
+- *Fixed-size leaf-blocks*: every block has the **same cell count**; only the
+  physical spacing changes with level (level `ℓ` → `h₀ / 2^ℓ`). A *leaf* is a block
+  that is not further refined — the leaves tile the domain with no overlap and are
+  where the solution actually lives.
+
+### Why this design
+
+Because each leaf is a dense rectangular array, **every existing leaf operator runs
+unchanged per block** — the same stencil sweep, broadcasts, and KernelAbstractions
+kernels. All of the adaptivity complexity is confined to the *block faces* (the
+coarse–fine interfaces).
+
+The alternative — a cell-based octree (p4est / Trixi style) — puts a hanging node
+at nearly every cell, which would break the dense-array stencil sweeps the whole
+package is built on. The block-structured choice (FLASH / PARAMESH / AMReX style)
+trades a little memory at block boundaries for keeping the interior of every block
+a plain array.
+
+### 2:1 balance
+
+The load-bearing invariant is **2:1 balance**: neighboring leaves stay within one
+refinement level of each other. This reduces every coarse–fine interface to just
+three cases (same level / one-coarser / one-finer), which is what makes interface
+interpolation tractable. `refine!` and `coarsen!` re-establish balance
+automatically (you can also call `balance!` directly).
+
+### Where the intelligence lives
+
+Operators barely change. The forest action is:
+
+1. `halo_update!(forest)` — fill each block's *interface* ghosts from its neighbors,
+   **once** over the whole forest, before any stencil runs.
+2. per leaf: `apply_bc!` fills only the *physical* domain-boundary faces (internal
+   faces carry the `Interface` boundary and are skipped — `halo_update!` already
+   filled them).
+3. per leaf: the ordinary stencil sweep.
+
+So the only genuinely new operator code is the inter-block `halo_update!` (and its
+declared transpose `halo_update_adjoint!`, which keeps the adjoint identity
+`⟨Lx,y⟩ = ⟨x,Lᵀy⟩` exact on a forest).
+
+## Usage
+
+A `BlockForest` wraps a base `CartesianGrid` (the root tiling). Operators and
+fields are built on it exactly as on a single grid:
+
+```{julia}
+using MatrixFreeOperators, LinearAlgebra
+
+base   = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+forest = BlockForest(base; blocksize = (4, 4), maxlevel = 4)   # 2×2 root tiling
+
+length(collect(leaves(forest)))      # 4 leaf blocks at level 0
+```
+
+Refine a region with a predicate on each block's center; balance is restored
+automatically:
+
+```{julia}
+refine!(forest, x -> x[1] < 0.3 && x[2] < 0.3)   # refine near the origin corner
+length(collect(leaves(forest)))                  # grew, still 2:1 balanced
+```
+
+### Parity with a single grid
+
+On a uniformly-refined forest, the operators reproduce a single `CartesianGrid` of
+the same resolution exactly. The interior values are identical (just stored in a
+different, block-by-block order), so any order-independent reduction matches:
+
+```{julia}
+g  = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+bf = BlockForest(g; blocksize = (4, 4), maxlevel = 3)   # level 0 ⇒ same 8×8
+
+u  = set!(scalar_field(g),  x -> sinpi(x[1]) * sinpi(x[2]))
+uf = set!(scalar_field(bf), x -> sinpi(x[1]) * sinpi(x[2]))
+
+norm(flatten(laplacian(g) * u)) ≈ norm(flatten(laplacian(bf) * uf))
+```
+
+## Status
+
+Built today: the forest grid, field, and operator path, verified by bit-parity
+against a single grid and by the adjoint identity on a forest. Still to come:
+coarse–fine interface interpolation (so operators work on *non-uniform* forests),
+geometric-multigrid transfer operators and a V-cycle solver, and an
+indicator-driven regrid/solution-transfer driver.

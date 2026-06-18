@@ -13,7 +13,7 @@ the flat vector into a halo-padded scratch field, applies the operator, and
 copies the interior back out fused with the `α`/`β` axpby, so the solver's
 vectors are never mutated by halo or BC fills.
 """
-struct PreparedOperator{O<:AbstractOperator,G<:AbstractGrid,FX<:Field,FY<:Field}
+struct PreparedOperator{O<:AbstractOperator,G<:AbstractGrid,FX<:AbstractField,FY<:AbstractField}
     op::O
     grid::G
     xpad::FX
@@ -45,7 +45,7 @@ u, stats = Krylov.minres(A, b)
 f!(du, u, p, t) = mul!(du, A, u)
 ```
 """
-function prepare(L::AbstractOperator, x::Field)
+function prepare(L::AbstractOperator, x::AbstractField)
     if !islinear(L)
         throw(
             ArgumentError(
@@ -64,23 +64,23 @@ prepare(L::AbstractOperator) = prepare(L, scalar_field(_require_grid(L)))
 # Tree-walking buffer allocation: leaves pass through unchanged; Composed and
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
 # allocates.
-_prepare_tree(L::AbstractOperator, ::Field) = L
-_prepare_tree(L::Added, x::Field) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))
-_prepare_tree(L::Scaled, x::Field) = Scaled(_prepare_tree(L.op, x), L.α)
+_prepare_tree(L::AbstractOperator, ::AbstractField) = L
+_prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))
+_prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)
 
-function _prepare_tree(L::Composed, x::Field)
+function _prepare_tree(L::Composed, x::AbstractField)
     pb = _prepare_tree(L.b, x)
     tmp = allocate_output(L.b, x)
     pa = _prepare_tree(L.a, tmp)
     return PreparedComposed(pa, pb, tmp)
 end
 
-function _prepare_tree(L::AdjointOp, x::Field)
+function _prepare_tree(L::AdjointOp, x::AbstractField)
     return PreparedAdjoint(L.op, allocate_output(L, x))
 end
 
 # Composed twin holding its concretely-typed intermediate field.
-struct PreparedComposed{A<:AbstractOperator,B<:AbstractOperator,F<:Field} <: AbstractOperator
+struct PreparedComposed{A<:AbstractOperator,B<:AbstractOperator,F<:AbstractField} <: AbstractOperator
     a::A
     b::B
     tmp::F
@@ -94,7 +94,7 @@ end
 
 # AdjointOp twin: the leaf adjoint gather is allocation-free only for β = 0, so
 # accumulating applications gather into the held scratch first.
-struct PreparedAdjoint{O<:AbstractOperator,F<:Field} <: AbstractOperator
+struct PreparedAdjoint{O<:AbstractOperator,F<:AbstractField} <: AbstractOperator
     op::O
     scratch::F
 end
@@ -180,8 +180,7 @@ function boundary_rhs(L::AdjointOp, x_proto::Field)
 end
 
 function Base.size(P::PreparedOperator)
-    n = prod(local_size(P.grid))
-    return (n * ncomponents(P.ypad), n * ncomponents(P.xpad))
+    return (flat_length(P.ypad), flat_length(P.xpad))
 end
 Base.size(P::PreparedOperator, d::Integer) = size(P)[d]
 Base.eltype(P::PreparedOperator) = _scalar_eltype(eltype(P.xpad))
