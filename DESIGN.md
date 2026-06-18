@@ -588,6 +588,15 @@ pre-built.
   - **Remaining:** coarse–fine interface interpolation/restriction in `halo_update!`
     (the hard part — quadratic interp to preserve 2nd-order accuracy near
     interfaces), and a field-indicator-driven regrid/solution-transfer driver.
+  - **Extending to other tree structures (deliberately not abstracted yet).** There is
+    no pluggable "swap the tree structure" interface, and that is the design, not an
+    omission. A *fundamentally different* AMR (cell-octree, patch-based) would enter as a
+    new `AbstractGrid{N}` subtype sibling to `BlockForest` — operators are insulated by
+    the grid interface + `halo_update!` seam, so they would not change. `Forest`/`LeafKey`
+    are intentionally left as concrete types: an `AbstractForest`/`AbstractTopology`
+    abstraction is **deferred until a second topology backend (`P4estTopology`/distributed)
+    actually exists** — abstracting from one implementation guesses the interface wrong
+    (rule of three). Do not introduce it speculatively.
 
 - **Geometric multigrid — falls out of the AMR hierarchy (not yet built).**
   Restriction R and prolongation P are **themselves operators** in the same algebra
