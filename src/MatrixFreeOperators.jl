@@ -22,6 +22,7 @@ export Advection, advection, SelfAdvection
 export Scaled, Added, Composed
 export LinearizedOp, linearize, linearize!
 export PreparedOperator, prepare, boundary_rhs
+export FastDiagSolver, fast_diag_solver, fast_poisson
 
 include("Grids.jl")
 include("boundaries.jl")
@@ -41,5 +42,6 @@ include("operators/advection.jl")
 include("operators/forest.jl")
 include("operators/linearize.jl")
 include("linalg.jl")
+include("fastdiag.jl")
 
 end # module
