@@ -8,17 +8,31 @@ Field over a [`BlockForest`](@ref): one halo-padded array per leaf block, indexe
 in the forest's Morton (storage) order, with location trait `L` (default
 [`Center`](@ref)). The vector-of-blocks layout is the simplest correct storage; a
 packed contiguous buffer can replace it later without touching operators. Block
-storage is tied to the leaf set at allocation time — re-allocate after a regrid.
+storage is tied to the leaf set at allocation time — the forest's regrid
+generation is stamped into the field, and any use after a `refine!`/`coarsen!`
+that changed the leaf set throws; allocate a fresh field after a regrid.
 
 See also: [`scalar_field`](@ref), [`vector_field`](@ref), [`block`](@ref).
 """
 struct BlockField{L,A<:AbstractArray,G<:BlockForest} <: AbstractField
     blocks::Vector{A}
     grid::G
+    generation::Int
 end
 BlockField{L}(blocks::Vector{<:AbstractArray}, grid::BlockForest) where {L} =
-    BlockField{L,eltype(blocks),typeof(grid)}(blocks, grid)
+    BlockField{L,eltype(blocks),typeof(grid)}(blocks, grid, grid.forest.generation[])
 BlockField(blocks::Vector{<:AbstractArray}, grid::BlockForest) = BlockField{Center}(blocks, grid)
+
+# Regrid guard: block storage is tied to the leaf set the field was allocated on.
+function _require_current(f::BlockField)
+    f.generation == f.grid.forest.generation[] || throw(
+        ArgumentError(
+            "this BlockField was allocated before the forest was regridded " *
+            "(refine!/coarsen!/balance!); allocate a fresh field on the current forest",
+        ),
+    )
+    return nothing
+end
 
 function scalar_field(bf::BlockForest, ::Type{T}=eltype(bf.spacing0)) where {T<:Number}
     backend = KernelAbstractions.get_backend(bf)
@@ -42,14 +56,25 @@ The `i`-th leaf as an ordinary [`Field`](@ref) sharing storage with `f` (no copy
 on its leaf [`CartesianGrid`](@ref). This is what per-block operators consume; pass
 a precomputed `leaf_grid` to avoid rebuilding it.
 """
-block(f::BlockField{L}, i::Integer, leaf_grid) where {L} = Field{L}(f.blocks[i], leaf_grid)
+function block(f::BlockField{L}, i::Integer, leaf_grid) where {L}
+    _require_current(f)
+    return Field{L}(f.blocks[i], leaf_grid)
+end
 block(f::BlockField, i::Integer) = block(f, i, leaf_grid(f.grid, i))
 
 Base.eltype(::BlockField{L,A}) where {L,A} = eltype(A)
 ncomponents(f::BlockField) = _ncomponents(eltype(f))
 
-Base.similar(f::BlockField{L}) where {L} = BlockField{L}([similar(b) for b in f.blocks], f.grid)
-Base.copy(f::BlockField{L}) where {L} = BlockField{L}([copy(b) for b in f.blocks], f.grid)
+# Derived fields inherit the source's generation: a copy of a stale field is
+# equally stale — stamping the current generation would bless wrong-size storage.
+Base.similar(f::BlockField{L,A,G}) where {L,A,G} =
+    BlockField{L,A,G}([similar(b) for b in f.blocks], f.grid, f.generation)
+function Base.similar(f::BlockField{L}, ::Type{E}) where {L,E}
+    blocks = [similar(b, E) for b in f.blocks]
+    return BlockField{L,eltype(blocks),typeof(f.grid)}(blocks, f.grid, f.generation)
+end
+Base.copy(f::BlockField{L,A,G}) where {L,A,G} =
+    BlockField{L,A,G}([copy(b) for b in f.blocks], f.grid, f.generation)
 
 function set!(f::BlockField, fun::F) where {F}
     for i in 1:nleaves(f.grid)
@@ -67,7 +92,8 @@ end
 
 function Adapt.adapt_structure(to, f::BlockField{L}) where {L}
     blocks = [Adapt.adapt(to, b) for b in f.blocks]
-    return BlockField{L}(blocks, Adapt.adapt(to, f.grid))
+    grid = Adapt.adapt(to, f.grid)
+    return BlockField{L,eltype(blocks),typeof(grid)}(blocks, grid, f.generation)
 end
 
 #--------------------------------------------------------------------------------# Flat-vector boundary (per-block, Morton order)
@@ -79,7 +105,9 @@ _block_dofs(f::BlockField) = prod(f.grid.blocksize) * ncomponents(f)
 _block_range(f::BlockField, i::Integer) = ((i - 1) * _block_dofs(f) + 1):(i * _block_dofs(f))
 
 function flatten(f::BlockField)
-    v = Vector{_scalar_eltype(eltype(f))}(undef, flat_length(f))
+    # Allocate on the field's device (matching the single-grid flatten) so the
+    # flat/Krylov path stays device-generic.
+    v = similar(first(f.blocks), _scalar_eltype(eltype(f)), flat_length(f))
     for i in 1:nleaves(f.grid)
         interior_to_flat!(view(v, _block_range(f, i)), block(f, i))
     end

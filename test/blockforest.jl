@@ -81,4 +81,40 @@
         @test bf2 isa BlockForest
         @test MFO.nleaves(bf2) == MFO.nleaves(bf)
     end
+
+    @testset "non-uniform forest is rejected until the coarse–fine phase" begin
+        base = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+        refine!(bf, x -> x[1] < 0.5 && x[2] < 0.5)     # one corner root → mixed levels
+        @test !bf.forest.uniform[]
+        uf = scalar_field(bf)                           # allocated on the current forest
+        @test_throws ArgumentError laplacian(bf) * uf
+        @test_throws ArgumentError halo_update!(uf, bf)
+        # refining the remaining coarse blocks restores a single level → applies again
+        refine!(bf, x -> !(x[1] < 0.5 && x[2] < 0.5))
+        @test bf.forest.uniform[]
+        uf2 = set!(scalar_field(bf), x -> x[1] * x[2])
+        @test laplacian(bf) * uf2 isa BlockField
+    end
+
+    @testset "fields allocated before a regrid are rejected" begin
+        base = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+        uf = scalar_field(bf)
+        refine!(bf, _ -> false)                         # no-op regrid keeps fields valid
+        @test set!(uf, x -> x[1]) isa BlockField
+        refine!(bf, _ -> true)                          # uniform level 1: new leaf set
+        @test_throws ArgumentError laplacian(bf) * uf
+        @test_throws ArgumentError flatten(uf)
+        @test_throws ArgumentError set!(uf, x -> x[1])
+        # copies and similars of a stale field are equally stale
+        @test_throws ArgumentError set!(copy(uf), x -> x[1])
+        uf2 = scalar_field(bf)                          # fresh allocation works
+        @test flatten(set!(uf2, x -> x[1])) isa Vector
+        # coarsening back to the original leaf count is still a different generation
+        coarsen!(bf, _ -> true)
+        @test MFO.nleaves(bf) == 4
+        @test_throws ArgumentError set!(uf, x -> x[1])
+        @test_throws ArgumentError set!(uf2, x -> x[1])
+    end
 end

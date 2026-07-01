@@ -112,4 +112,103 @@
         mul!(out, A, v)
         @test out == flatten(laplacian(bf) * uf)
     end
+
+    @testset "lazy adjoint (AdjointOp) folds across blocks" begin
+        for bc in bcs
+            g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8); bc=bc)
+            bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+            u = set!(scalar_field(g), fun)
+            uf = set!(scalar_field(bf), fun)
+            D = derivative(g, 1; order=1)            # order 1 ⇒ adjoint is an AdjointOp
+            Df = derivative(bf, 1; order=1)
+            @test Df' isa AdjointOp
+            # algebra path (L' * x) must match the single grid — accumulation order
+            # differs at block faces, so ≈ rather than ==
+            @test reconstruct(Df' * copy(uf), (8, 8)) ≈ collect(interior(D' * copy(u)))
+            # double adjoint routes back to the forward action
+            Dtt = apply_adjoint!(scalar_field(bf), Df', copy(uf), bf)
+            @test reconstruct(Dtt, (8, 8)) ≈ collect(interior(D * copy(u)))
+            # prepared path (PreparedAdjoint twin), β = 0 and β ≠ 0
+            A = prepare(Df')
+            v = flatten(uf)
+            out = similar(v)
+            mul!(out, A, v)
+            @test out ≈ flatten(Df' * copy(uf))
+            ref = 2.0 .* flatten(Df' * copy(uf)) .+ 3.0 .* v
+            out2 = copy(v)
+            mul!(out2, A, v, 2.0, 3.0)
+            @test out2 ≈ ref
+            # nested inside a combinator: (Δ + Dᵀ) must fold across blocks too
+            S = laplacian(g) + D'
+            Sf = laplacian(bf) + Df'
+            @test reconstruct(Sf * copy(uf), (8, 8)) ≈ collect(interior(S * copy(u)))
+            As = prepare(Sf)
+            outs = similar(v)
+            mul!(outs, As, v)
+            @test outs ≈ flatten(Sf * copy(uf))
+        end
+    end
+
+    @testset "Composed is rejected on a forest (deferred to coarse–fine phase)" begin
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+        bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+        uf = set!(scalar_field(bf), fun)
+        L2 = laplacian(bf) * laplacian(bf)
+        @test_throws ArgumentError L2 * uf
+        @test_throws ArgumentError prepare(L2, uf)
+        # nested inside Added/Scaled must be caught too
+        @test_throws ArgumentError (laplacian(bf) + 2.0 * L2) * uf
+        @test_throws ArgumentError prepare(laplacian(bf) + 2.0 * L2, uf)
+    end
+
+    @testset "rank-changers: gradient/divergence parity + adjoint identity" begin
+        vfun = x -> SVector(sinpi(x[1]) + 0.2 * x[2], cospi(x[2]) - x[1])
+        for bc in bcs
+            g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8); bc=bc)
+            bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+            u = set!(scalar_field(g), fun)
+            uf = set!(scalar_field(bf), fun)
+            @test reconstruct(MFO.gradient(bf) * uf, (8, 8)) ==
+                collect(interior(MFO.gradient(g) * u))
+            w = set!(vector_field(g), vfun)
+            wf = set!(vector_field(bf), vfun)
+            @test reconstruct(divergence(bf) * wf, (8, 8)) ==
+                collect(interior(divergence(g) * w))
+        end
+        # ⟨∇u, w⟩ = ⟨u, ∇ᵀw⟩ with a vector cotangent, across blocks
+        rng = Random.MersenneTwister(7)
+        bf = BlockForest(CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8)); blocksize=(4, 4), maxlevel=2)
+        G = MFO.gradient(bf)
+        u = scalar_field(bf)
+        w = vector_field(bf)
+        for i in 1:MFO.nleaves(bf)
+            interior(MFO.block(u, i)) .= rand(rng, bf.blocksize...)
+            interior(MFO.block(w, i)) .= SVector.(rand(rng, bf.blocksize...), rand(rng, bf.blocksize...))
+        end
+        Gu = apply(G, copy(u))
+        Gtw = apply_adjoint!(scalar_field(bf), G, copy(w), bf)
+        ip1 = sum(
+            i -> dot(collect(interior(MFO.block(Gu, i))), collect(interior(MFO.block(w, i)))),
+            1:MFO.nleaves(bf),
+        )
+        ip2 = sum(
+            i -> dot(collect(interior(MFO.block(u, i))), collect(interior(MFO.block(Gtw, i)))),
+            1:MFO.nleaves(bf),
+        )
+        @test ip1 ≈ ip2
+    end
+
+    @testset "boundary_rhs parity vs single grid" begin
+        bc = ((Dirichlet(2.0), Dirichlet(-1.0)), (Neumann(0.5), Dirichlet()))
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8); bc=bc)
+        bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+        b = boundary_rhs(laplacian(g), g)
+        bfor = boundary_rhs(laplacian(bf), bf)
+        @test bfor isa BlockField
+        @test reconstruct(bfor, (8, 8)) == collect(interior(b))
+        # combinators lift per leaf too
+        Ls = 2.0 * laplacian(g) + derivative(g, 1; order=1)
+        Lf = 2.0 * laplacian(bf) + derivative(bf, 1; order=1)
+        @test reconstruct(boundary_rhs(Lf, bf), (8, 8)) == collect(interior(boundary_rhs(Ls, g)))
+    end
 end

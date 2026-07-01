@@ -50,7 +50,8 @@ Inter-block interface "boundary" used on the internal faces of a
 physical domain boundary. The homogeneous fill (`apply_bc!`/`fold_bc!`) and the
 inhomogeneous lift skip `Interface` faces: their ghosts are filled by
 [`halo_update!`](@ref) from the neighbor block, so the two never touch the same
-ghost slab. Not used on a plain `CartesianGrid`.
+ghost slab. Internal (not exported): `leaf_bc` places it on leaf grids — on a
+plain user-constructed `CartesianGrid` it would leave ghosts silently unfilled.
 """
 struct Interface <: AbstractBC end
 

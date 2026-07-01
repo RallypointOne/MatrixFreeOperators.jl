@@ -43,13 +43,13 @@ function BlockForest(
     base::CartesianGrid{N,T}; blocksize::NTuple{N,Int}, maxlevel::Int
 ) where {N,T}
     for d in 1:N
+        blocksize[d] >= 1 || throw(ArgumentError("blocksize must be ≥ 1, got $blocksize"))
         base.size[d] % blocksize[d] == 0 || throw(
             ArgumentError(
                 "base ncells $(base.size) must be divisible by blocksize $blocksize " *
                 "(dimension $d)",
             ),
         )
-        blocksize[d] >= 1 || throw(ArgumentError("blocksize must be ≥ 1, got $blocksize"))
     end
     maxlevel >= 0 || throw(ArgumentError("maxlevel must be ≥ 0, got $maxlevel"))
     nroot = ntuple(d -> base.size[d] ÷ blocksize[d], Val(N))
@@ -62,6 +62,21 @@ end
 
 KernelAbstractions.get_backend(bf::BlockForest) = bf.device
 nleaves(bf::BlockForest) = nleaves(bf.forest)
+
+# Phase gate: coarse–fine interface interpolation is not implemented yet, so halo
+# exchange (and hence operator application) requires a single-level forest.
+# Erroring here upholds the design invariant that a missing capability degrades to
+# an error, never a silently wrong result.
+function _require_uniform(bf::BlockForest)
+    bf.forest.uniform[] || throw(
+        ArgumentError(
+            "operators on a non-uniform BlockForest require coarse–fine interface " *
+            "interpolation, which is not implemented yet; all leaves must be at one " *
+            "refinement level",
+        ),
+    )
+    return nothing
+end
 
 function Base.show(io::IO, bf::BlockForest{N}) where {N}
     print(io, "BlockForest{$N}(blocksize=$(bf.blocksize), ", bf.forest, ")")
@@ -117,10 +132,10 @@ end
     leaf_grid(bf::BlockForest, i::Integer) -> CartesianGrid
 
 The ordinary `CartesianGrid` for one leaf block — what per-block operators run on.
-Built via the unchecked inner constructor (the forest guarantees validity), so it
-is allocation-free and cheap to recompute inside the apply loop. The grid type
-varies with the leaf's interface/physical boundary mix; consumers must dispatch
-on it through a function barrier.
+Built via the unchecked inner constructor (the forest guarantees validity) and
+cheap to recompute inside the apply loop, but type-unstable: the grid type varies
+with the leaf's interface/physical boundary mix, so each call boxes its result and
+consumers dispatch on it through a function barrier.
 """
 function leaf_grid(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}
     ext = _leaf_extent(bf, key)

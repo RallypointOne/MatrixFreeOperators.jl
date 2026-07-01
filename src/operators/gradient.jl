@@ -66,17 +66,16 @@ function Base.size(L::Gradient)
     return (dimension(L.grid) * n, n)
 end
 
-function allocate_output(::Gradient, x::Field{Loc}) where {Loc}
-    T = eltype(x.data)
+function allocate_output(::Gradient, x::AbstractField)
+    T = eltype(x)
     T <: Number || throw(ArgumentError("gradient expects a scalar field, got eltype $T"))
-    N = dimension(x.grid)
-    y = Field{Loc}(similar(x.data, SVector{N,T}), x.grid)
+    y = similar(x, SVector{dimension(x.grid),T})
     zero_ghosts!(y)
     return y
 end
 
-function allocate_input(::Gradient, y::Field{Loc}) where {Loc}
-    x = Field{Loc}(similar(y.data, _scalar_eltype(eltype(y.data))), y.grid)
+function allocate_input(::Gradient, y::AbstractField)
+    x = similar(y, _scalar_eltype(eltype(y)))
     zero_ghosts!(x)
     return x
 end

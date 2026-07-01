@@ -149,6 +149,7 @@ component(f::Field{L,<:AbstractArray{<:Number}}, d::Integer) where {L} =
 
 Base.eltype(f::Field) = eltype(f.data)
 Base.similar(f::Field{L}) where {L} = Field{L}(similar(f.data), f.grid)
+Base.similar(f::Field{L}, ::Type{E}) where {L,E} = Field{L}(similar(f.data, E), f.grid)
 Base.copy(f::Field{L}) where {L} = Field{L}(copy(f.data), f.grid)
 
 apply_bc!(f::Field) = (apply_bc!(f.data, f.grid); f)

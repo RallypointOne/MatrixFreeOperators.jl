@@ -13,9 +13,6 @@ struct LeafKey{N}
     coords::NTuple{N,Int}
 end
 
-Base.:(==)(a::LeafKey, b::LeafKey) = a.level == b.level && a.coords == b.coords
-Base.hash(k::LeafKey, h::UInt) = hash(k.coords, hash(k.level, hash(:LeafKey, h)))
-
 """
     parent_key(key::LeafKey) -> LeafKey
 
@@ -46,7 +43,10 @@ the keys (no parent/child pointers). Backs [`BlockForest`](@ref); the geometry a
 field storage live there.
 
 Fields: `nroot` (root tiling = base ncells ÷ blocksize), `periodic` (per-dimension,
-controls neighbor wrap), `maxlevel`, `leaves` (Morton-sorted), `index`.
+controls neighbor wrap), `maxlevel`, `leaves` (Morton-sorted), `index`, `uniform`
+(all leaves on one level — no coarse–fine faces), `generation` (bumped by every
+regrid that changes the leaf set; fields are tied to the generation they were
+allocated on).
 """
 struct Forest{N}
     nroot::NTuple{N,Int}
@@ -54,10 +54,20 @@ struct Forest{N}
     maxlevel::Int
     leaves::Vector{LeafKey{N}}
     index::Dict{LeafKey{N},Int}
+    uniform::Base.RefValue{Bool}
+    generation::Base.RefValue{Int}
 end
 
 function Forest(nroot::NTuple{N,Int}, periodic::NTuple{N,Bool}, maxlevel::Int) where {N}
-    forest = Forest{N}(nroot, periodic, maxlevel, LeafKey{N}[], Dict{LeafKey{N},Int}())
+    N * _morton_bits(nroot, maxlevel) <= 8 * sizeof(UInt) || throw(
+        ArgumentError(
+            "nroot $nroot with maxlevel $maxlevel exceeds the $(8 * sizeof(UInt))-bit " *
+            "Morton key capacity",
+        ),
+    )
+    forest = Forest{N}(
+        nroot, periodic, maxlevel, LeafKey{N}[], Dict{LeafKey{N},Int}(), Ref(true), Ref(0)
+    )
     roots = [LeafKey(0, ntuple(d -> I[d] - 1, Val(N))) for I in CartesianIndices(nroot)]
     return _set_leaves!(forest, roots)
 end
@@ -80,10 +90,11 @@ function Base.show(io::IO, forest::Forest{N}) where {N}
 end
 
 # Number of bits per coordinate needed to Morton-encode the finest resolution.
-function _morton_bits(forest::Forest)
-    maxfine = maximum(forest.nroot) << forest.maxlevel
+function _morton_bits(nroot::NTuple{N,Int}, maxlevel::Int) where {N}
+    maxfine = maximum(nroot) << maxlevel
     return maxfine <= 1 ? 1 : (8 * sizeof(Int) - leading_zeros(maxfine - 1))
 end
+_morton_bits(forest::Forest) = _morton_bits(forest.nroot, forest.maxlevel)
 
 # Lower-corner block index at the finest level — the position a leaf maps to for
 # Morton ordering (a leaf and its descendant are never both present, so unique).
@@ -100,17 +111,22 @@ function morton(coords::NTuple{N,Int}, nbits::Int) where {N}
     return code
 end
 
-# Commit a new leaf set: sort into Morton order and rebuild the key→index map.
+# Commit a new leaf set: sort into Morton order, rebuild the key→index map, and
+# refresh the uniformity flag. A set identical to the current one is a no-op so
+# predicate-miss regrids do not invalidate existing fields.
 function _set_leaves!(forest::Forest{N}, keys) where {N}
     nbits = _morton_bits(forest)
     maxlevel = forest.maxlevel
-    sorted = sort!(LeafKey{N}[keys...]; by=k -> morton(_fine_coords(k, maxlevel), nbits))
+    sorted = sort!(vec(collect(LeafKey{N}, keys)); by=k -> morton(_fine_coords(k, maxlevel), nbits))
+    sorted == forest.leaves && return forest
     empty!(forest.leaves)
     append!(forest.leaves, sorted)
     empty!(forest.index)
     for (i, k) in enumerate(sorted)
         forest.index[k] = i
     end
+    forest.uniform[] = isempty(sorted) || all(k -> k.level == sorted[1].level, sorted)
+    forest.generation[] += 1
     return forest
 end
 
@@ -212,7 +228,8 @@ function balance!(forest::Forest{N}) where {N}
             nbr = face_neighbor(forest, F, dim, side)
             nbr === nothing && continue
             cover = leaf_covering(forest, nbr)
-            if cover !== nothing && F.level - cover.level >= 2 && cover.level < forest.maxlevel
+            # cover.level ≤ F.level − 2 < maxlevel, so refining it never exceeds maxlevel.
+            if cover !== nothing && F.level - cover.level >= 2
                 push!(to_refine, cover)
             end
         end

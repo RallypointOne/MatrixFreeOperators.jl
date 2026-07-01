@@ -63,18 +63,16 @@ function Base.size(L::Divergence)
     return (n, dimension(L.grid) * n)
 end
 
-function allocate_output(::Divergence, x::Field{Loc}) where {Loc}
-    T = eltype(x.data)
+function allocate_output(::Divergence, x::AbstractField)
+    T = eltype(x)
     T <: SVector || throw(ArgumentError("divergence expects a vector field, got eltype $T"))
-    y = Field{Loc}(similar(x.data, _scalar_eltype(T)), x.grid)
+    y = similar(x, _scalar_eltype(T))
     zero_ghosts!(y)
     return y
 end
 
-function allocate_input(::Divergence, y::Field{Loc}) where {Loc}
-    T = eltype(y.data)
-    N = dimension(y.grid)
-    x = Field{Loc}(similar(y.data, SVector{N,T}), y.grid)
+function allocate_input(::Divergence, y::AbstractField)
+    x = similar(y, SVector{dimension(y.grid),eltype(y)})
     zero_ghosts!(x)
     return x
 end

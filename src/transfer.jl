@@ -21,10 +21,11 @@ Fill each leaf block's interface ghosts from its neighbors. For every leaf face
 with a same-level neighbor (including periodic wrap), copy the neighbor's
 boundary-interior slab into this block's ghost slab. Domain-boundary faces are left
 to the per-leaf `apply_bc!`. Must run once over the whole forest before any stencil
-sweep. Coarse–fine interfaces (non-uniform forests) are filled in a later phase;
-they are skipped here.
+sweep. Coarse–fine interfaces are a later phase — a non-uniform forest throws.
 """
 function halo_update!(x::BlockField, g::BlockForest{N}) where {N}
+    _require_uniform(g)
+    _require_current(x)
     forest = g.forest
     h = g.halo
     n = g.blocksize
@@ -33,7 +34,7 @@ function halo_update!(x::BlockField, g::BlockForest{N}) where {N}
         for d in 1:N, side in (-1, 1)
             nbr = face_neighbor(forest, K, d, side)
             nbr === nothing && continue                # domain boundary → apply_bc!
-            is_leaf(forest, nbr) || continue           # coarse–fine interface → later phase
+            is_leaf(forest, nbr) || continue           # unreachable while uniform is enforced
             nbr_block = x.blocks[leaf_index(forest, nbr)]
             ghost, source = _face_slabs(Val(d), side, h[d], n[d])
             _dimslice(this_block, Val(d), ghost) .= _dimslice(nbr_block, Val(d), source)
@@ -49,8 +50,16 @@ Exact discrete adjoint of [`halo_update!`](@ref): scatter-add each interface-gho
 contribution into the neighbor block's interior source cell, then zero the ghost.
 Mirrors [`fold_bc!`](@ref) across block faces — the transpose half needed for the
 adjoint identity on a forest.
+
+Exactness relies on per-leaf adjoints leaving corner ghosts exactly zero (true for
+axis-aligned stencils, whose transposes never scatter there): face slabs span the
+full transverse extent, so a nonzero corner ghost would propagate through two
+sequential face scatters into a diagonal neighbor's interior. A future
+cross-derivative leaf needs a corner-aware exchange.
 """
 function halo_update_adjoint!(x::BlockField, g::BlockForest{N}) where {N}
+    _require_uniform(g)
+    _require_current(x)
     forest = g.forest
     h = g.halo
     n = g.blocksize

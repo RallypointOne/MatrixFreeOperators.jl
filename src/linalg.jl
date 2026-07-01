@@ -5,7 +5,10 @@
 
 A linear operator bound to pre-allocated scratch fields, exposing the flat
 `mul!`/`size`/`eltype` interface Krylov solvers need. Built with
-[`prepare`](@ref); after warm-up, `mul!` runs without steady-state allocations.
+[`prepare`](@ref); after warm-up, `mul!` runs without steady-state allocations on
+single-grid [`Field`](@ref)s. (The [`BlockField`](@ref) path currently recomputes
+each leaf grid per application — a small per-leaf allocation and dynamic
+dispatch; prepare-time leaf caching is a planned follow-up.)
 
 The flat vectors span interior DOFs only — ghost cells are determined by
 boundary conditions and `halo_update!`, never solver unknowns. Each `mul!` copies
@@ -26,7 +29,8 @@ end
 
 Walk the operator tree once, allocating the scratch buffers every node needs, and
 return a [`PreparedOperator`](@ref) whose `mul!` is allocation-free in steady
-state. `x` is a prototype of the input field (contents are ignored); the
+state on single-grid fields (see [`PreparedOperator`](@ref) for the block-forest
+caveat). `x` is a prototype of the input field (contents are ignored); the
 one-argument form assumes a scalar field on the operator's grid.
 
 The prepared operator is stateful and single-threaded — prepare once per
@@ -74,6 +78,9 @@ function _prepare_tree(L::Composed, x::AbstractField)
     pa = _prepare_tree(L.a, tmp)
     return PreparedComposed(pa, pb, tmp)
 end
+# The intermediate would need an inter-block exchange — same deferral as the
+# unprepared forest path.
+_prepare_tree(L::Composed, ::BlockField) = _check_forest_supported(L)
 
 function _prepare_tree(L::AdjointOp, x::AbstractField)
     return PreparedAdjoint(L.op, allocate_output(L, x))
@@ -106,18 +113,33 @@ function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)
     return y
 end
 
+# Forest twin: route to the forest adjoint action (which folds interface-ghost
+# contributions across blocks); blend per-leaf interiors for the accumulating form.
+function apply!(y::BlockField, L::PreparedAdjoint, x::BlockField, g::BlockForest, α, β)
+    iszero(β) && return apply_adjoint!(y, L.op, x, g, α, β)
+    apply_adjoint!(L.scratch, L.op, x, g)
+    for i in 1:nleaves(g)
+        lg = leaf_grid(g, i)
+        yi = interior(block(y, i, lg))
+        yi .= α .* interior(block(L.scratch, i, lg)) .+ β .* yi
+    end
+    return y
+end
+
 #--------------------------------------------------------------------------------# Boundary lift (linear/affine split)
 
 """
-    boundary_rhs(L::AbstractOperator, g::AbstractGrid) -> Field
-    boundary_rhs(L::AbstractOperator, x_proto::Field) -> Field
+    boundary_rhs(L::AbstractOperator, g::AbstractGrid) -> AbstractField
+    boundary_rhs(L::AbstractOperator, x_proto::AbstractField) -> AbstractField
 
 Boundary lift of the affine split `L_full(x) = L(x) + b`: the contribution of
 *inhomogeneous* boundary data (Dirichlet values, Neumann fluxes) that
 [`apply!`](@ref) deliberately omits so that `L` stays linear (`L(0) = 0`).
 Assemble once per solve and fold into the right-hand side: the discrete problem
 `L_full(u) = f` becomes `L·u = f - b`. The grid form assumes a scalar input
-field; pass a prototype field for vector inputs.
+field; pass a prototype field for vector inputs. On a [`BlockForest`](@ref) the
+lift assembles per leaf block — only physical domain faces contribute
+([`Interface`](@ref) faces are homogeneous by construction).
 
 ### Examples
 
@@ -176,6 +198,20 @@ end
 function boundary_rhs(L::AdjointOp, x_proto::Field)
     b = allocate_output(L, x_proto)
     fill!(b.data, zero(eltype(b.data)))
+    return b
+end
+
+# Forest lift: the inhomogeneous fill and the stencil are local to each block
+# (Interface ghosts stay zero), so the single-grid lift runs per leaf unchanged.
+function boundary_rhs(L::AbstractOperator, x_proto::BlockField)
+    _check_forest_supported(L)
+    b = allocate_output(L, x_proto)
+    g = x_proto.grid
+    for i in 1:nleaves(g)
+        lg = leaf_grid(g, i)
+        bi = boundary_rhs(L, block(x_proto, i, lg))
+        block(b, i, lg).data .= bi.data
+    end
     return b
 end
 
