@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-06-17 15:40:03</td>
+            <td class="headerValue">2026-07-02 17:24:38</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -112,9 +112,9 @@
 <span id="L50"><span class="lineNum">      50</span>              : # Pure path: the intermediate is allocated per call (autodiff-friendly). The</span>
 <span id="L51"><span class="lineNum">      51</span>              : # prepared path replaces Composed nodes with buffer-carrying twins — see linalg.jl.</span>
 <span id="L52"><span class="lineNum">      52</span> <span class="tlaGNC">         356 : function apply!(y::Field, L::Composed, x::Field, g::AbstractGrid, α, β)</span></span>
-<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">         741 :     tmp = allocate_output(L.b, x)</span></span>
-<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         369 :     apply!(tmp, L.b, x, g)</span></span>
-<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">         371 :     apply!(y, L.a, tmp, g, α, β)</span></span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">         733 :     tmp = allocate_output(L.b, x)</span></span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         361 :     apply!(tmp, L.b, x, g)</span></span>
+<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">         367 :     apply!(y, L.a, tmp, g, α, β)</span></span>
 <span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">         361 :     return y</span></span>
 <span id="L57"><span class="lineNum">      57</span>              : end</span>
 <span id="L58"><span class="lineNum">      58</span>              : </span>

@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-06-17 15:40:03</td>
+            <td class="headerValue">2026-07-02 17:24:38</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -123,12 +123,12 @@
 <span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">         384 : _coeff_values(c::Field) = interior(c)</span></span>
 <span id="L62"><span class="lineNum">      62</span>              : </span>
 <span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">         383 : function apply!(y::Field, S::ScalingOp, x::Field, ::AbstractGrid, α, β)</span></span>
-<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">         585 :     κ = _coeff_values(S.coeff)</span></span>
-<span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">         389 :     yi = interior(y)</span></span>
+<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">         393 :     κ = _coeff_values(S.coeff)</span></span>
+<span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">         385 :     yi = interior(y)</span></span>
 <span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">         385 :     if iszero(β)</span></span>
-<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">         776 :         yi .= α .* κ .* interior(x)</span></span>
+<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">         768 :         yi .= α .* κ .* interior(x)</span></span>
 <span id="L68"><span class="lineNum">      68</span>              :     else</span>
-<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">         134 :         yi .= α .* κ .* interior(x) .+ β .* yi</span></span>
+<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">           2 :         yi .= α .* κ .* interior(x) .+ β .* yi</span></span>
 <span id="L70"><span class="lineNum">      70</span>              :     end</span>
 <span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">         385 :     return y</span></span>
 <span id="L72"><span class="lineNum">      72</span>              : end</span>
