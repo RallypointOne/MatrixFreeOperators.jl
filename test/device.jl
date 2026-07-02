@@ -36,6 +36,29 @@
         @test collect(interior(apply(K2, copy(u)))) ≈ collect(interior(apply(K, copy(u))))
     end
 
+    @testset "BlockForest CPU round trip" begin
+        MFO = MatrixFreeOperators
+        base = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (8, 8);
+            bc=((Dirichlet(), Dirichlet()), (Periodic(), Periodic())),
+        )
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+        uf = set!(scalar_field(bf), x -> sin(x[1]) * x[2])
+        L = laplacian(bf)
+
+        L2 = Adapt.adapt(Array, L)
+        @test typeof(L2) === typeof(L)
+
+        uf2 = Adapt.adapt(Array, uf)
+        @test uf2 isa BlockField
+        @test all(i -> uf2.blocks[i] == uf.blocks[i], 1:MFO.nleaves(bf))
+        @test KernelAbstractions.get_backend(uf2.grid) == KernelAbstractions.CPU()
+
+        y2 = reduce(vcat, collect(interior(MFO.block(apply(L2, copy(uf2)), i))) for i in 1:MFO.nleaves(bf))
+        y1 = reduce(vcat, collect(interior(MFO.block(apply(L, copy(uf)), i))) for i in 1:MFO.nleaves(bf))
+        @test y2 ≈ y1
+    end
+
     @testset "GPU parity" begin
         if get(ENV, "MFO_TEST_GPU", "") == "true" && Base.find_package("CUDA") !== nothing
             include("device_gpu.jl")

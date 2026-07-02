@@ -42,6 +42,19 @@ struct Neumann{T} <: AbstractBC
 end
 Neumann() = Neumann(0)
 
+"""
+    Interface()
+
+Inter-block interface "boundary" used on the internal faces of a
+[`BlockForest`](@ref) leaf — faces shared with a neighbor block rather than the
+physical domain boundary. The homogeneous fill (`apply_bc!`/`fold_bc!`) and the
+inhomogeneous lift skip `Interface` faces: their ghosts are filled by
+[`halo_update!`](@ref) from the neighbor block, so the two never touch the same
+ghost slab. Internal (not exported): `leaf_bc` places it on leaf grids — on a
+plain user-constructed `CartesianGrid` it would leave ghosts silently unfilled.
+"""
+struct Interface <: AbstractBC end
+
 # Sign of the homogeneous ghost fill relative to the mirrored interior cell.
 _bc_sign(::Periodic) = 1
 _bc_sign(::Dirichlet) = -1
@@ -81,17 +94,19 @@ function _apply_bc_dims!(data, g, ::Val{D}, bcs::Tuple) where {D}
     h = halo_width(g)[D]
     n = local_size(g)[D]
     for k in 1:h
-        _fill_ghost!(data, Val(D), h + 1 - k, _source_low(lo, h, n, k), _bc_sign(lo))
-        _fill_ghost!(data, Val(D), h + n + k, _source_high(hi, h, n, k), _bc_sign(hi))
+        _fill_ghost!(data, Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
+        _fill_ghost!(data, Val(D), h + n + k, hi, _source_high(hi, h, n, k))
     end
     return _apply_bc_dims!(data, g, Val(D + 1), Base.tail(bcs))
 end
 _apply_bc_dims!(data, g, ::Val, ::Tuple{}) = nothing
 
-function _fill_ghost!(data, dim::Val, ghost::Int, source::Int, sign::Int)
+# Interface faces are filled by halo_update!, not the homogeneous BC fill.
+_fill_ghost!(data, ::Val, ghost::Int, ::Interface, source::Int) = nothing
+function _fill_ghost!(data, dim::Val, ghost::Int, bc::AbstractBC, source::Int)
     dst = _dimslice(data, dim, ghost:ghost)
     src = _dimslice(data, dim, source:source)
-    dst .= sign .* src
+    dst .= _bc_sign(bc) .* src
     return nothing
 end
 
@@ -113,17 +128,19 @@ function _fold_bc_dims!(data, g, ::Val{D}, bcs::Tuple) where {D}
     h = halo_width(g)[D]
     n = local_size(g)[D]
     for k in 1:h
-        _fold_ghost!(data, Val(D), h + 1 - k, _source_low(lo, h, n, k), _bc_sign(lo))
-        _fold_ghost!(data, Val(D), h + n + k, _source_high(hi, h, n, k), _bc_sign(hi))
+        _fold_ghost!(data, Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
+        _fold_ghost!(data, Val(D), h + n + k, hi, _source_high(hi, h, n, k))
     end
     return nothing
 end
 _fold_bc_dims!(data, g, ::Val, ::Tuple{}) = nothing
 
-function _fold_ghost!(data, dim::Val, ghost::Int, source::Int, sign::Int)
+# Interface faces are folded by halo_update_adjoint!, not the homogeneous adjoint.
+_fold_ghost!(data, ::Val, ghost::Int, ::Interface, source::Int) = nothing
+function _fold_ghost!(data, dim::Val, ghost::Int, bc::AbstractBC, source::Int)
     dst = _dimslice(data, dim, ghost:ghost)
     src = _dimslice(data, dim, source:source)
-    src .+= sign .* dst
+    src .+= _bc_sign(bc) .* dst
     fill!(dst, zero(eltype(data)))
     return nothing
 end
@@ -172,6 +189,7 @@ end
 _fill_inhomogeneous_dims!(data, g, ::Val, ::Tuple{}) = nothing
 
 _offset_ghost!(data, ::Val, ghost::Int, ::Periodic, Δ, k::Int) = nothing
+_offset_ghost!(data, ::Val, ghost::Int, ::Interface, Δ, k::Int) = nothing
 function _offset_ghost!(data, dim::Val, ghost::Int, bc::Dirichlet, Δ, k::Int)
     iszero(bc.value) && return nothing
     dst = _dimslice(data, dim, ghost:ghost)

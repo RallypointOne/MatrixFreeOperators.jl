@@ -85,6 +85,38 @@
         end
     end
 
+    @testset "Interface faces are skipped (filled by halo_update!)" begin
+        Interface = MatrixFreeOperators.Interface   # internal — placed by leaf_bc, not users
+        # Low face Interface (left as-is, as if a neighbor block filled it),
+        # high face Dirichlet (filled by the homogeneous mirror).
+        g = CartesianGrid(((0.0, 1.0),), (4,); bc=((Interface(), Dirichlet()),))
+        x = zeros(6)
+        x[2:5] .= [1.0, 2.0, 3.0, 4.0]
+        x[1] = 99.0
+        apply_bc!(x, g)
+        @test x[1] == 99.0          # Interface ghost untouched
+        @test x[6] == -4.0          # Dirichlet high face mirrored
+        @test x[2:5] == [1.0, 2.0, 3.0, 4.0]
+
+        # fold leaves the Interface ghost in place (it is scattered later by
+        # halo_update_adjoint!), but folds + zeros the Dirichlet ghost.
+        y = zeros(6)
+        y[2:5] .= [10.0, 20.0, 30.0, 40.0]
+        y[1] = 7.0
+        y[6] = 5.0
+        fold_bc!(y, g)
+        @test y[1] == 7.0           # Interface ghost contribution preserved
+        @test y[5] == 35.0          # Dirichlet (sign -1): 40 + (-1)·5
+        @test y[6] == 0.0           # Dirichlet ghost zeroed after folding
+
+        # inhomogeneous lift skips Interface faces too
+        z = zeros(6)
+        gi = CartesianGrid(((0.0, 1.0),), (4,); bc=((Interface(), Dirichlet(2.0)),))
+        MatrixFreeOperators.fill_bc_inhomogeneous!(z, gi)
+        @test z[1] == 0.0           # Interface: no offset
+        @test z[6] == 4.0           # Dirichlet(2.0): 2·value
+    end
+
     @testset "fill/fold adjointness for SVector eltype" begin
         g = CartesianGrid(
             ((0.0, 1.0), (0.0, 1.0)), (4, 4); bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann()))

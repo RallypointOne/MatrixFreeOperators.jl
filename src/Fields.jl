@@ -9,6 +9,17 @@ Staggered layouts add face locations as new trait types.
 struct Center end
 
 """
+    AbstractField
+
+Supertype for fields the operator algebra and solver boundary act on. [`Field`](@ref)
+is the single-grid case; [`BlockField`](@ref) is the block-structured (forest) case.
+The shared contract is `similar`/`zero_ghosts!` and the flat-vector boundary
+(`flatten`/`flat_to_interior!`/`interior_to_flat!`/`flat_length`); operators are
+otherwise written against single-grid `Field`s and reused per block.
+"""
+abstract type AbstractField end
+
+"""
     Field(data, grid)
     Field{L}(data, grid)
 
@@ -24,7 +35,7 @@ g = CartesianGrid(((0.0, 1.0),), (64,))
 u = Field(zeros(padded_size(g)), g)
 ```
 """
-struct Field{L,A<:AbstractArray,G<:AbstractGrid}
+struct Field{L,A<:AbstractArray,G<:AbstractGrid} <: AbstractField
     data::A
     grid::G
 
@@ -138,6 +149,7 @@ component(f::Field{L,<:AbstractArray{<:Number}}, d::Integer) where {L} =
 
 Base.eltype(f::Field) = eltype(f.data)
 Base.similar(f::Field{L}) where {L} = Field{L}(similar(f.data), f.grid)
+Base.similar(f::Field{L}, ::Type{E}) where {L,E} = Field{L}(similar(f.data, E), f.grid)
 Base.copy(f::Field{L}) where {L} = Field{L}(copy(f.data), f.grid)
 
 apply_bc!(f::Field) = (apply_bc!(f.data, f.grid); f)
@@ -172,6 +184,14 @@ function flatten(f::Field)
 end
 _flat_vector(v::AbstractVector{<:Number}) = v
 _flat_vector(v::AbstractVector{SVector{M,T}}) where {M,T} = copy(vec(reinterpret(T, v)))
+
+"""
+    flat_length(f::AbstractField) -> Int
+
+Number of interior scalar DOFs in the flat (Krylov) representation of `f`:
+`prod(local_size) * ncomponents`, summed over blocks for a block field.
+"""
+flat_length(f::Field) = prod(local_size(f.grid)) * ncomponents(f)
 
 """
     flat_to_interior!(f::Field, v::AbstractVector) -> f

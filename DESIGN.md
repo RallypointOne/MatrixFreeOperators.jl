@@ -120,8 +120,10 @@ convention-based interface so foreign grid types can opt in):
 - **`halo_update!(field, g)`** — the single distributed seam. v1: no-op.
   Later: MPI/MDLA/Reactant fill ghost layers. Operators call this before any
   stencil that reads neighbors.
-- (AMR, phase 2) `coarsen(g)`, `refine(g, mask)`, `neighbors(g, cell)` returning
-  level info + hanging-node flags.
+- (AMR) `BlockForest` implements this same interface per leaf and adds
+  `refine!(g, predicate)`, `coarsen!(g, predicate)`, `balance!(g)`, and `leaves(g)`
+  (see §9 AMR). Each leaf is an ordinary `CartesianGrid`; `halo_update!` does the
+  inter-block coupling. Coarse–fine interface stencils are the remaining phase.
 
 **Field:** keep it minimal — a device array plus a reference to its grid and a
 *location* tag (so staggered grids are additive later):
@@ -563,19 +565,47 @@ pre-built.
   *alternative execution modes* of the same leaf — chosen per backend — not one
   `apply!` body serving both at once.
 
-- **Adaptive grids (AMR).** Tree-based AMR (forest of octrees) via p4est/t8code
-  is the Julia ecosystem standard (Trixi.jl). The grid abstraction carries an
-  optional `topology`/hierarchy; `neighbors(g, cell)` returns level info and
-  hanging-node flags; near refinement interfaces, stencils need interpolation
-  operators. The hard part — non-conforming/hanging-node stencils for high-order
-  FD — is a phase-2 risk to prototype early on a small case.
+- **Adaptive grids (AMR) — design locked; Phase 0/1 built.** Decided against a
+  cell-based octree (p4est/Trixi-style hanging nodes everywhere break the
+  dense-array leaf stencils). Instead: a **forest of fixed-size leaf-blocks**
+  (FLASH/PARAMESH/AMReX style). The domain is a forest of `2ᴺ`-trees of equal-cell
+  blocks; refining a block replaces it with `2ᴺ` half-spacing children. Each leaf is
+  an ordinary `CartesianGrid`, so every leaf operator runs **unchanged per block**;
+  all adaptivity is confined to block faces. The load-bearing invariant is **2:1
+  balance** (adjacent leaves within one level), which reduces every coarse–fine
+  interface to three cases. The topology is a pure-Julia serial `Forest` (Morton
+  keys, `refine!`/`coarsen!`/`balance!`, neighbor queries — no new deps);
+  distributed/`P4estTopology` backends sit behind the `topology` + `halo_update!`
+  seams. Storage is **vector-of-blocks** first (`BlockField`), designed so a packed
+  contiguous GPU buffer drops in later without touching operators.
+  - **Built (Phase 0/1):** `BlockForest` + topology + `BlockField` + the flat
+    boundary; the forest action = `halo_update!` (inter-block exchange, once over the
+    forest) → per-leaf `apply_bc!` → per-leaf stencil. A new `Interface` BC marks
+    internal faces (filled by `halo_update!`, skipped by `apply_bc!`). Verified by
+    bit-parity vs an equal-resolution single `CartesianGrid` and the adjoint identity
+    (the same-level halo copy has a declared transpose `halo_update_adjoint!`,
+    mirroring `apply_bc!`/`fold_bc!`).
+  - **Remaining:** coarse–fine interface interpolation/restriction in `halo_update!`
+    (the hard part — quadratic interp to preserve 2nd-order accuracy near
+    interfaces), and a field-indicator-driven regrid/solution-transfer driver.
+  - **Extending to other tree structures (deliberately not abstracted yet).** There is
+    no pluggable "swap the tree structure" interface, and that is the design, not an
+    omission. A *fundamentally different* AMR (cell-octree, patch-based) would enter as a
+    new `AbstractGrid{N}` subtype sibling to `BlockForest` — operators are insulated by
+    the grid interface + `halo_update!` seam, so they would not change. `Forest`/`LeafKey`
+    are intentionally left as concrete types: an `AbstractForest`/`AbstractTopology`
+    abstraction is **deferred until a second topology backend (`P4estTopology`/distributed)
+    actually exists** — abstracting from one implementation guesses the interface wrong
+    (rule of three). Do not introduce it speculatively.
 
-- **Geometric multigrid.** Falls out of the algebra: restriction R and
-  prolongation P are **themselves operators** in the same algebra; the grid
-  exposes `coarsen(g)`; smoothers (Jacobi via `isdiagonal`, Chebyshev via repeated
-  `apply!`) are built from the operator; the coarse operator is rediscretization
-  (or Galerkin Rᵀ A P). References to mine: GeometricMultigrid.jl,
-  RestrictProlong.jl. V/W/F-cycles compose on top.
+- **Geometric multigrid — falls out of the AMR hierarchy (not yet built).**
+  Restriction R and prolongation P are **themselves operators** in the same algebra
+  (rank-changer template, mutual adjoints `P = Rᵀ` up to scaling); the coarse–fine
+  transfer kernels built for AMR `halo_update!` ARE the MG transfer stencils (built
+  once, used twice). The coarse operator is rediscretization (`laplacian(coarse)`);
+  smoothers are Jacobi (needs a new `operator_diagonal`, dispatched on `isdiagonal`)
+  / Chebyshev (repeated `apply!`). V/W/F-cycles compose on top. References to mine:
+  GeometricMultigrid.jl, RestrictProlong.jl.
 
 ---
 

@@ -58,12 +58,12 @@ end
 
 apply!(y::Field, L::Scaled, x::Field, g::AbstractGrid, α, β) = apply!(y, L.op, x, g, α * L.α, β)
 
-allocate_output(L::Added, x::Field) = allocate_output(L.a, x)
-allocate_output(L::Composed, x::Field) = allocate_output(L.a, allocate_output(L.b, x))
-allocate_output(L::Scaled, x::Field) = allocate_output(L.op, x)
-allocate_input(L::Added, y::Field) = allocate_input(L.a, y)
-allocate_input(L::Composed, y::Field) = allocate_input(L.b, allocate_input(L.a, y))
-allocate_input(L::Scaled, y::Field) = allocate_input(L.op, y)
+allocate_output(L::Added, x::AbstractField) = allocate_output(L.a, x)
+allocate_output(L::Composed, x::AbstractField) = allocate_output(L.a, allocate_output(L.b, x))
+allocate_output(L::Scaled, x::AbstractField) = allocate_output(L.op, x)
+allocate_input(L::Added, y::AbstractField) = allocate_input(L.a, y)
+allocate_input(L::Composed, y::AbstractField) = allocate_input(L.b, allocate_input(L.a, y))
+allocate_input(L::Scaled, y::AbstractField) = allocate_input(L.op, y)
 
 #--------------------------------------------------------------------------------# Adjoint propagation
 
