@@ -6,9 +6,8 @@
 A linear operator bound to pre-allocated scratch fields, exposing the flat
 `mul!`/`size`/`eltype` interface Krylov solvers need. Built with
 [`prepare`](@ref); after warm-up, `mul!` runs without steady-state allocations on
-single-grid [`Field`](@ref)s. (The [`BlockField`](@ref) path currently recomputes
-each leaf grid per application — a small per-leaf allocation and dynamic
-dispatch; prepare-time leaf caching is a planned follow-up.)
+single-grid [`Field`](@ref)s. The [`BlockField`](@ref) path uses the sibling
+[`PreparedForest`](@ref).
 
 The flat vectors span interior DOFs only — ghost cells are determined by
 boundary conditions and `halo_update!`, never solver unknowns. Each `mul!` copies
@@ -24,14 +23,43 @@ struct PreparedOperator{O<:AbstractOperator,G<:AbstractGrid,FX<:AbstractField,FY
 end
 
 """
+    PreparedForest
+
+Block-forest counterpart of [`PreparedOperator`](@ref): the flat `mul!`/`size`/
+`eltype` boundary for an operator over a [`BlockForest`](@ref). Beyond the padded
+scratch fields it caches, at `prepare` time, the per-leaf `(index, leaf grid)` pairs
+grouped by BC signature (`groups`) plus a scratch [`BlockField`](@ref) for
+accumulating adjoint sweeps (`adjscratch`), so steady-state `mul!` never rebuilds a
+leaf grid — which was the dominant per-application allocation. The residual cost is
+the per-leaf stencil `apply!` itself (allocation-free only when inlined into a single
+`mul!`); see the allocation-free-kernel follow-up. The cache is tied to the forest's
+regrid `generation`; a `refine!`/`coarsen!`/`balance!` after `prepare` invalidates it
+and `mul!` throws — re-run `prepare` on the new forest.
+"""
+struct PreparedForest{
+    O<:AbstractOperator,G<:BlockForest,FX<:BlockField,FY<:BlockField,C<:Tuple,S<:BlockField
+}
+    op::O
+    grid::G
+    xpad::FX
+    ypad::FY
+    groups::C
+    adjscratch::S
+    generation::Int
+end
+
+const _AnyPrepared = Union{PreparedOperator,PreparedForest}
+
+"""
     prepare(L::AbstractOperator, x::Field) -> PreparedOperator
     prepare(L::AbstractOperator) -> PreparedOperator
 
 Walk the operator tree once, allocating the scratch buffers every node needs, and
-return a [`PreparedOperator`](@ref) whose `mul!` is allocation-free in steady
-state on single-grid fields (see [`PreparedOperator`](@ref) for the block-forest
-caveat). `x` is a prototype of the input field (contents are ignored); the
-one-argument form assumes a scalar field on the operator's grid.
+return a [`PreparedOperator`](@ref) — or a [`PreparedForest`](@ref) for a
+[`BlockField`](@ref) prototype. `mul!` is then allocation-free in steady state on a
+single grid; on a block forest it rebuilds no leaf grid (its residual cost is the
+per-leaf stencil apply). `x` is a prototype of the input field (contents are
+ignored); the one-argument form assumes a scalar field on the operator's grid.
 
 The prepared operator is stateful and single-threaded — prepare once per
 concurrent solve. Requires `islinear(L)`; linearize nonlinear operators first
@@ -64,6 +92,27 @@ function prepare(L::AbstractOperator, x::AbstractField)
     return PreparedOperator(_prepare_tree(L, x), x.grid, xpad, ypad)
 end
 prepare(L::AbstractOperator) = prepare(L, scalar_field(_require_grid(L)))
+
+# Forest prepare: same tree walk (Composed still errors via _prepare_tree), plus a
+# per-leaf grid cache so mul! never rebuilds a leaf grid. adjscratch backs the
+# accumulating adjoint sweep the un-prepared path allocates per call.
+function prepare(L::AbstractOperator, x::BlockField)
+    if !islinear(L)
+        throw(
+            ArgumentError(
+                "prepare requires a linear operator; for nonlinear operators prepare " *
+                "the Jacobian linearize(L, u0) instead",
+            ),
+        )
+    end
+    xpad = similar(x)
+    zero_ghosts!(xpad)
+    ypad = allocate_output(L, x)
+    op = _prepare_tree(L, x)
+    return PreparedForest(
+        op, x.grid, xpad, ypad, _leaf_cache(x.grid), similar(x), x.grid.forest.generation[]
+    )
+end
 
 # Tree-walking buffer allocation: leaves pass through unchanged; Composed and
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
@@ -113,18 +162,83 @@ function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)
     return y
 end
 
-# Forest twin: route to the forest adjoint action (which folds interface-ghost
-# contributions across blocks); blend per-leaf interiors for the accumulating form.
-function apply!(y::BlockField, L::PreparedAdjoint, x::BlockField, g::BlockForest, α, β)
-    iszero(β) && return apply_adjoint!(y, L.op, x, g, α, β)
-    apply_adjoint!(L.scratch, L.op, x, g)
-    for i in 1:nleaves(g)
-        lg = leaf_grid(g, i)
-        yi = interior(block(y, i, lg))
-        yi .= α .* interior(block(L.scratch, i, lg)) .+ β .* yi
+#--------------------------------------------------------------------------------# Cached forest apply (the PreparedForest hot path)
+
+# Cached counterpart of the un-prepared forest apply in operators/forest.jl: iterate
+# the prepare-time leaf-grid cache (behind a function barrier, P.groups) instead of
+# rebuilding each leaf grid — the dominant per-application allocation. The combinator
+# structure mirrors forest.jl exactly — Added/Scaled/AdjointOp recurse at the forest
+# level so a nested adjoint still reaches halo_update_adjoint!'s cross-block fold —
+# and additionally handles the PreparedAdjoint nodes _prepare_tree introduces. (The
+# residual per-leaf cost is the stencil apply! itself; see the alloc-free-kernel note
+# on PreparedForest.)
+function _forest_capply!(y::BlockField, L::AbstractOperator, x::BlockField, P::PreparedForest, α, β)
+    _require_current(y)
+    halo_update!(x, P.grid)
+    _foreach_leaf(P.groups) do i, lg
+        apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
     end
     return y
 end
+function _forest_capply!(y::BlockField, L::Added, x::BlockField, P::PreparedForest, α, β)
+    _forest_capply!(y, L.a, x, P, α, β)
+    _forest_capply!(y, L.b, x, P, α, true)
+    return y
+end
+_forest_capply!(y::BlockField, L::Scaled, x::BlockField, P::PreparedForest, α, β) =
+    _forest_capply!(y, L.op, x, P, α * L.α, β)
+_forest_capply!(y::BlockField, L::AdjointOp, x::BlockField, P::PreparedForest, α, β) =
+    _forest_capply_adjoint!(y, L.op, x, P, α, β)
+
+# PreparedAdjoint: the leaf adjoint gather is allocation-free only for β = 0, so the
+# accumulating form gathers into the node's own scratch, then blends per leaf.
+function _forest_capply!(y::BlockField, L::PreparedAdjoint, x::BlockField, P::PreparedForest, α, β)
+    iszero(β) && return _forest_capply_adjoint!(y, L.op, x, P, α, β)
+    _forest_capply_adjoint!(L.scratch, L.op, x, P, true, false)
+    s = L.scratch
+    _foreach_leaf(P.groups) do i, lg
+        yi = interior(block(y, i, lg))
+        yi .= α .* interior(block(s, i, lg)) .+ β .* yi
+    end
+    return y
+end
+
+# Cached forest adjoint action, mirroring apply_adjoint! in operators/forest.jl. The
+# accumulating (β ≠ 0) branch uses the prepared adjscratch in place of similar(x̄).
+function _forest_capply_adjoint!(
+    x̄::BlockField, L::AbstractOperator, ȳ::BlockField, P::PreparedForest, α, β
+)
+    _require_uniform(P.grid)
+    _require_current(x̄)
+    _require_current(ȳ)
+    isselfadjoint(L) && return _forest_capply!(x̄, L, ȳ, P, α, β)
+    if iszero(β)
+        _foreach_leaf(P.groups) do i, lg
+            apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)
+        end
+        halo_update_adjoint!(x̄, P.grid)
+    else
+        s = P.adjscratch
+        _foreach_leaf(P.groups) do i, lg
+            apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)
+        end
+        halo_update_adjoint!(s, P.grid)
+        _foreach_leaf(P.groups) do i, lg
+            xi = interior(block(x̄, i, lg))
+            xi .= α .* interior(block(s, i, lg)) .+ β .* xi
+        end
+    end
+    return x̄
+end
+function _forest_capply_adjoint!(x̄::BlockField, L::Added, ȳ::BlockField, P::PreparedForest, α, β)
+    _forest_capply_adjoint!(x̄, L.a, ȳ, P, α, β)
+    _forest_capply_adjoint!(x̄, L.b, ȳ, P, α, true)
+    return x̄
+end
+_forest_capply_adjoint!(x̄::BlockField, L::Scaled, ȳ::BlockField, P::PreparedForest, α, β) =
+    _forest_capply_adjoint!(x̄, L.op, ȳ, P, α * conj(L.α), β)
+_forest_capply_adjoint!(x̄::BlockField, L::AdjointOp, ȳ::BlockField, P::PreparedForest, α, β) =
+    _forest_capply!(x̄, L.op, ȳ, P, α, β)
 
 #--------------------------------------------------------------------------------# Boundary lift (linear/affine split)
 
@@ -215,11 +329,11 @@ function boundary_rhs(L::AbstractOperator, x_proto::BlockField)
     return b
 end
 
-function Base.size(P::PreparedOperator)
+function Base.size(P::_AnyPrepared)
     return (flat_length(P.ypad), flat_length(P.xpad))
 end
-Base.size(P::PreparedOperator, d::Integer) = size(P)[d]
-Base.eltype(P::PreparedOperator) = _scalar_eltype(eltype(P.xpad))
+Base.size(P::_AnyPrepared, d::Integer) = size(P)[d]
+Base.eltype(P::_AnyPrepared) = _scalar_eltype(eltype(P.xpad))
 
 function LinearAlgebra.mul!(
     y::AbstractVector, P::PreparedOperator, x::AbstractVector, α::Number, β::Number
@@ -230,6 +344,30 @@ function LinearAlgebra.mul!(
     return y
 end
 function LinearAlgebra.mul!(y::AbstractVector, P::PreparedOperator, x::AbstractVector)
+    return mul!(y, P, x, true, false)
+end
+
+function LinearAlgebra.mul!(
+    y::AbstractVector, P::PreparedForest, x::AbstractVector, α::Number, β::Number
+)
+    P.generation == P.grid.forest.generation[] || throw(
+        ArgumentError(
+            "this PreparedForest was built before the forest was regridded " *
+            "(refine!/coarsen!/balance!); re-run prepare on the current forest",
+        ),
+    )
+    xpad = P.xpad
+    _foreach_leaf(P.groups) do i, lg
+        flat_to_interior!(block(xpad, i, lg), view(x, _block_range(xpad, i)))
+    end
+    _forest_capply!(P.ypad, P.op, xpad, P, true, false)
+    ypad = P.ypad
+    _foreach_leaf(P.groups) do i, lg
+        interior_to_flat!(view(y, _block_range(ypad, i)), block(ypad, i, lg), α, β)
+    end
+    return y
+end
+function LinearAlgebra.mul!(y::AbstractVector, P::PreparedForest, x::AbstractVector)
     return mul!(y, P, x, true, false)
 end
 

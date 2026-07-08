@@ -151,18 +151,24 @@ end
 Set every ghost cell of the halo-padded array `data` to zero.
 """
 function zero_ghosts!(data::AbstractArray{<:Any,N}, g::AbstractGrid{N}) where {N}
-    _zero_ghosts_dims!(data, g, Val(1))
+    hn = ntuple(d -> (halo_width(g)[d], local_size(g)[d]), Val(N))
+    _zero_ghosts_dims!(data, Val(1), hn)
     return data
 end
 
-function _zero_ghosts_dims!(data::AbstractArray{<:Any,N}, g, ::Val{D}) where {N,D}
-    D > N && return nothing
-    h = halo_width(g)[D]
-    n = local_size(g)[D]
+# Recurse on a shrinking `(halo, size)` pair tuple with an empty-tuple base case —
+# the same idiom as `_apply_bc_dims!`. Terminating on `Base.tail`/`Tuple{}` (rather
+# than a `D > N` guard over a grid forwarded unchanged) is what keeps Julia
+# specializing every level, so the ghost-slab fills allocate nothing; the earlier
+# grid-forwarding form boxed its argument each recursion — a per-leaf cost in the
+# forest adjoint gather's zero_ghosts!.
+function _zero_ghosts_dims!(data::AbstractArray{<:Any,N}, ::Val{D}, hn::Tuple) where {N,D}
+    h, n = first(hn)
     fill!(_dimslice(data, Val(D), 1:h), zero(eltype(data)))
     fill!(_dimslice(data, Val(D), (h + n + 1):(n + 2 * h)), zero(eltype(data)))
-    return _zero_ghosts_dims!(data, g, Val(D + 1))
+    return _zero_ghosts_dims!(data, Val(D + 1), Base.tail(hn))
 end
+_zero_ghosts_dims!(::AbstractArray, ::Val, ::Tuple{}) = nothing
 
 #--------------------------------------------------------------------------------# Inhomogeneous ghost offsets
 

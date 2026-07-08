@@ -27,20 +27,28 @@ function halo_update!(x::BlockField, g::BlockForest{N}) where {N}
     _require_uniform(g)
     _require_current(x)
     forest = g.forest
-    h = g.halo
-    n = g.blocksize
     for (i, K) in enumerate(forest.leaves)
-        this_block = x.blocks[i]
-        for d in 1:N, side in (-1, 1)
-            nbr = face_neighbor(forest, K, d, side)
-            nbr === nothing && continue                # domain boundary → apply_bc!
-            is_leaf(forest, nbr) || continue           # unreachable while uniform is enforced
-            nbr_block = x.blocks[leaf_index(forest, nbr)]
-            ghost, source = _face_slabs(Val(d), side, h[d], n[d])
-            _dimslice(this_block, Val(d), ghost) .= _dimslice(nbr_block, Val(d), source)
-        end
+        _halo_faces!(x, forest, K, i, g.halo, g.blocksize, Val(1))
     end
     return x
+end
+
+# Compile-time dimension recursion: a runtime `d` in `_dimslice(block, Val(d), r)`
+# boxes the SubArray type and forces dynamic dispatch in this hot loop (see the
+# _dimslice note in boundaries.jl). Recursing on `Val{D}` keeps D a constant, so the
+# face copy stays type-stable and allocation-free — the same idiom as `_apply_bc_dims!`.
+function _halo_faces!(x::BlockField, forest::Forest{N}, K, i, h, n, ::Val{D}) where {N,D}
+    D > N && return nothing
+    this_block = x.blocks[i]
+    for side in (-1, 1)
+        nbr = face_neighbor(forest, K, Val(D), side)   # nothing at a domain boundary → apply_bc!
+        if nbr !== nothing && is_leaf(forest, nbr)     # is_leaf always holds while uniform is enforced
+            nbr_block = x.blocks[leaf_index(forest, nbr)]
+            ghost, source = _face_slabs(Val(D), side, h[D], n[D])
+            _dimslice(this_block, Val(D), ghost) .= _dimslice(nbr_block, Val(D), source)
+        end
+    end
+    return _halo_faces!(x, forest, K, i, h, n, Val(D + 1))
 end
 
 """
@@ -61,20 +69,26 @@ function halo_update_adjoint!(x::BlockField, g::BlockForest{N}) where {N}
     _require_uniform(g)
     _require_current(x)
     forest = g.forest
-    h = g.halo
-    n = g.blocksize
     for (i, K) in enumerate(forest.leaves)
-        this_block = x.blocks[i]
-        for d in 1:N, side in (-1, 1)
-            nbr = face_neighbor(forest, K, d, side)
-            nbr === nothing && continue
-            is_leaf(forest, nbr) || continue
+        _halo_faces_adjoint!(x, forest, K, i, g.halo, g.blocksize, Val(1))
+    end
+    return x
+end
+
+# Exact transpose of _halo_faces!; same compile-time Val{D} recursion for the same
+# allocation-free reason.
+function _halo_faces_adjoint!(x::BlockField, forest::Forest{N}, K, i, h, n, ::Val{D}) where {N,D}
+    D > N && return nothing
+    this_block = x.blocks[i]
+    for side in (-1, 1)
+        nbr = face_neighbor(forest, K, Val(D), side)
+        if nbr !== nothing && is_leaf(forest, nbr)
             nbr_block = x.blocks[leaf_index(forest, nbr)]
-            ghost, source = _face_slabs(Val(d), side, h[d], n[d])
-            dst = _dimslice(this_block, Val(d), ghost)
-            _dimslice(nbr_block, Val(d), source) .+= dst
+            ghost, source = _face_slabs(Val(D), side, h[D], n[D])
+            dst = _dimslice(this_block, Val(D), ghost)
+            _dimslice(nbr_block, Val(D), source) .+= dst
             fill!(dst, zero(eltype(this_block)))
         end
     end
-    return x
+    return _halo_faces_adjoint!(x, forest, K, i, h, n, Val(D + 1))
 end

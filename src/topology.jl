@@ -140,14 +140,31 @@ The same-level block adjacent to `key` across the face in dimension `dim`
 a non-periodic domain boundary. The returned key may or may not be an actual leaf
 — use [`leaf_covering`](@ref) to resolve which leaf covers its region.
 """
-function face_neighbor(forest::Forest{N}, key::LeafKey{N}, dim::Int, side::Int) where {N}
+# Neighbor block coordinate along `dim` at `side` (±1), or `nothing` past a
+# non-periodic domain boundary.
+@inline function _neighbor_coord(forest::Forest, key::LeafKey, dim::Int, side::Int)
     nblocks = forest.nroot[dim] << key.level
     c = key.coords[dim] + side
     if c < 0 || c >= nblocks
         forest.periodic[dim] || return nothing
-        c = mod(c, nblocks)
+        return mod(c, nblocks)
     end
+    return c
+end
+
+function face_neighbor(forest::Forest{N}, key::LeafKey{N}, dim::Int, side::Int) where {N}
+    c = _neighbor_coord(forest, key, dim, side)
+    c === nothing && return nothing
     return LeafKey(key.level, ntuple(d -> d == dim ? c : key.coords[d], Val(N)))
+end
+
+# Compile-time-dimension variant for the hot halo sweeps ([`halo_update!`](@ref)):
+# with `D` a constant the coord rebuild carries no capturing closure over a runtime
+# dimension, so it allocates nothing.
+function face_neighbor(forest::Forest{N}, key::LeafKey{N}, ::Val{D}, side::Int) where {N,D}
+    c = _neighbor_coord(forest, key, D, side)
+    c === nothing && return nothing
+    return LeafKey(key.level, ntuple(d -> d == D ? c : key.coords[d], Val(N)))
 end
 
 """
