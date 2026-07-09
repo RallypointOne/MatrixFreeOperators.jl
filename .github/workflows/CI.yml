@@ -14,27 +14,31 @@ concurrency:
 
 jobs:
   test:
-    name: Julia ${{ matrix.version }} / ${{ matrix.os }}
+    name: Julia ${{ matrix.julia-version }} - ${{ matrix.os }} - threads ${{ matrix.julia-threads }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
       actions: write
       contents: read
+    env:
+      JULIA_NUM_THREADS: ${{ matrix.julia-threads }}
     strategy:
       fail-fast: false
       matrix:
-        version:
-          - '1'
-          - 'lts'
+        julia-version:
+          - '1.10'
+          - '1.11'
+          - '1.12'
         os:
           - ubuntu-latest
-          - windows-latest
-          - macOS-latest
+        julia-threads:
+          - '1'
+          - '2'
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v3
         with:
-          version: ${{ matrix.version }}
+          version: ${{ matrix.julia-version }}
       - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
