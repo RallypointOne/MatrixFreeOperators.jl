@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-17 16:48:30</td>
+            <td class="headerValue">2026-07-17 22:37:55</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -92,170 +92,176 @@
 <span id="L30"><span class="lineNum">      30</span>              : See also: [`refine!`](@ref), [`coarsen!`](@ref), [`leaves`](@ref).</span>
 <span id="L31"><span class="lineNum">      31</span>              : &quot;&quot;&quot;</span>
 <span id="L32"><span class="lineNum">      32</span>              : struct BlockForest{N,T,BC&lt;:Tuple,Dev} &lt;: AbstractGrid{N}</span>
-<span id="L33"><span class="lineNum">      33</span> <span class="tlaGNC tlaBgGNC">          45 :     forest::Forest{N}</span></span>
+<span id="L33"><span class="lineNum">      33</span> <span class="tlaGNC tlaBgGNC">          58 :     forest::Forest{N}</span></span>
 <span id="L34"><span class="lineNum">      34</span>              :     extent::NTuple{N,Tuple{T,T}}</span>
 <span id="L35"><span class="lineNum">      35</span>              :     spacing0::NTuple{N,T}          # root-level (coarsest) spacing</span>
 <span id="L36"><span class="lineNum">      36</span>              :     blocksize::NTuple{N,Int}</span>
 <span id="L37"><span class="lineNum">      37</span>              :     halo::NTuple{N,Int}</span>
 <span id="L38"><span class="lineNum">      38</span>              :     bc::BC                         # physical domain boundary conditions</span>
 <span id="L39"><span class="lineNum">      39</span>              :     device::Dev</span>
-<span id="L40"><span class="lineNum">      40</span>              : end</span>
-<span id="L41"><span class="lineNum">      41</span>              : </span>
-<span id="L42"><span class="lineNum">      42</span> <span class="tlaGNC">          86 : function BlockForest(</span></span>
-<span id="L43"><span class="lineNum">      43</span>              :     base::CartesianGrid{N,T}; blocksize::NTuple{N,Int}, maxlevel::Int</span>
-<span id="L44"><span class="lineNum">      44</span>              : ) where {N,T}</span>
-<span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">          43 :     for d in 1:N</span></span>
-<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">          85 :         blocksize[d] &gt;= 1 || throw(ArgumentError(&quot;blocksize must be ≥ 1, got $blocksize&quot;))</span></span>
-<span id="L47"><span class="lineNum">      47</span> <span class="tlaGNC">          86 :         base.size[d] % blocksize[d] == 0 || throw(</span></span>
-<span id="L48"><span class="lineNum">      48</span>              :             ArgumentError(</span>
-<span id="L49"><span class="lineNum">      49</span>              :                 &quot;base ncells $(base.size) must be divisible by blocksize $blocksize &quot; *</span>
-<span id="L50"><span class="lineNum">      50</span>              :                 &quot;(dimension $d)&quot;,</span>
-<span id="L51"><span class="lineNum">      51</span>              :             ),</span>
-<span id="L52"><span class="lineNum">      52</span>              :         )</span>
-<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">         126 :     end</span></span>
-<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">          42 :     maxlevel &gt;= 0 || throw(ArgumentError(&quot;maxlevel must be ≥ 0, got $maxlevel&quot;))</span></span>
-<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">          84 :     nroot = ntuple(d -&gt; base.size[d] ÷ blocksize[d], Val(N))</span></span>
-<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">          84 :     periodic = ntuple(d -&gt; base.bc[d][1] isa Periodic, Val(N))</span></span>
-<span id="L57"><span class="lineNum">      57</span> <span class="tlaGNC">          42 :     forest = Forest(nroot, periodic, maxlevel)</span></span>
-<span id="L58"><span class="lineNum">      58</span> <span class="tlaGNC">          42 :     return BlockForest{N,T,typeof(base.bc),typeof(base.device)}(</span></span>
-<span id="L59"><span class="lineNum">      59</span>              :         forest, base.extent, base.spacing, blocksize, base.halo, base.bc, base.device</span>
-<span id="L60"><span class="lineNum">      60</span>              :     )</span>
-<span id="L61"><span class="lineNum">      61</span>              : end</span>
-<span id="L62"><span class="lineNum">      62</span>              : </span>
-<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">          99 : KernelAbstractions.get_backend(bf::BlockForest) = bf.device</span></span>
-<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">         597 : nleaves(bf::BlockForest) = nleaves(bf.forest)</span></span>
-<span id="L65"><span class="lineNum">      65</span>              : </span>
-<span id="L66"><span class="lineNum">      66</span>              : # Phase gate: coarse–fine interface interpolation is not implemented yet, so halo</span>
-<span id="L67"><span class="lineNum">      67</span>              : # exchange (and hence operator application) requires a single-level forest.</span>
-<span id="L68"><span class="lineNum">      68</span>              : # Erroring here upholds the design invariant that a missing capability degrades to</span>
-<span id="L69"><span class="lineNum">      69</span>              : # an error, never a silently wrong result.</span>
-<span id="L70"><span class="lineNum">      70</span>              : function _require_uniform(bf::BlockForest)</span>
-<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">         529 :     bf.forest.uniform[] || throw(</span></span>
-<span id="L72"><span class="lineNum">      72</span>              :         ArgumentError(</span>
-<span id="L73"><span class="lineNum">      73</span>              :             &quot;operators on a non-uniform BlockForest require coarse–fine interface &quot; *</span>
-<span id="L74"><span class="lineNum">      74</span>              :             &quot;interpolation, which is not implemented yet; all leaves must be at one &quot; *</span>
-<span id="L75"><span class="lineNum">      75</span>              :             &quot;refinement level&quot;,</span>
-<span id="L76"><span class="lineNum">      76</span>              :         ),</span>
-<span id="L77"><span class="lineNum">      77</span>              :     )</span>
-<span id="L78"><span class="lineNum">      78</span> <span class="tlaGNC">         525 :     return nothing</span></span>
-<span id="L79"><span class="lineNum">      79</span>              : end</span>
-<span id="L80"><span class="lineNum">      80</span>              : </span>
-<span id="L81"><span class="lineNum">      81</span> <span class="tlaUNC tlaBgUNC">           0 : function Base.show(io::IO, bf::BlockForest{N}) where {N}</span></span>
-<span id="L82"><span class="lineNum">      82</span> <span class="tlaUNC">           0 :     print(io, &quot;BlockForest{$N}(blocksize=$(bf.blocksize), &quot;, bf.forest, &quot;)&quot;)</span></span>
-<span id="L83"><span class="lineNum">      83</span>              : end</span>
-<span id="L84"><span class="lineNum">      84</span>              : </span>
-<span id="L85"><span class="lineNum">      85</span>              : #--------------------------------------------------------------------------------# Per-leaf geometry (recomputed from the key)</span>
+<span id="L40"><span class="lineNum">      40</span>              :     schedule::Base.RefValue{ExchangeSchedule{N}}   # per-generation halo-exchange cache</span>
+<span id="L41"><span class="lineNum">      41</span>              : end</span>
+<span id="L42"><span class="lineNum">      42</span>              : </span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">         112 : function BlockForest(</span></span>
+<span id="L44"><span class="lineNum">      44</span>              :     base::CartesianGrid{N,T}; blocksize::NTuple{N,Int}, maxlevel::Int</span>
+<span id="L45"><span class="lineNum">      45</span>              : ) where {N,T}</span>
+<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">          56 :     for d in 1:N</span></span>
+<span id="L47"><span class="lineNum">      47</span> <span class="tlaGNC">         111 :         blocksize[d] &gt;= 1 || throw(ArgumentError(&quot;blocksize must be ≥ 1, got $blocksize&quot;))</span></span>
+<span id="L48"><span class="lineNum">      48</span> <span class="tlaGNC">         112 :         base.size[d] % blocksize[d] == 0 || throw(</span></span>
+<span id="L49"><span class="lineNum">      49</span>              :             ArgumentError(</span>
+<span id="L50"><span class="lineNum">      50</span>              :                 &quot;base ncells $(base.size) must be divisible by blocksize $blocksize &quot; *</span>
+<span id="L51"><span class="lineNum">      51</span>              :                 &quot;(dimension $d)&quot;,</span>
+<span id="L52"><span class="lineNum">      52</span>              :             ),</span>
+<span id="L53"><span class="lineNum">      53</span>              :         )</span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         165 :     end</span></span>
+<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">          55 :     maxlevel &gt;= 0 || throw(ArgumentError(&quot;maxlevel must be ≥ 0, got $maxlevel&quot;))</span></span>
+<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">         110 :     nroot = ntuple(d -&gt; base.size[d] ÷ blocksize[d], Val(N))</span></span>
+<span id="L57"><span class="lineNum">      57</span> <span class="tlaGNC">         110 :     periodic = ntuple(d -&gt; base.bc[d][1] isa Periodic, Val(N))</span></span>
+<span id="L58"><span class="lineNum">      58</span> <span class="tlaGNC">          55 :     forest = Forest(nroot, periodic, maxlevel)</span></span>
+<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">          55 :     return BlockForest{N,T,typeof(base.bc),typeof(base.device)}(</span></span>
+<span id="L60"><span class="lineNum">      60</span>              :         forest, base.extent, base.spacing, blocksize, base.halo, base.bc, base.device,</span>
+<span id="L61"><span class="lineNum">      61</span>              :         Ref(_empty_schedule(Val(N))),</span>
+<span id="L62"><span class="lineNum">      62</span>              :     )</span>
+<span id="L63"><span class="lineNum">      63</span>              : end</span>
+<span id="L64"><span class="lineNum">      64</span>              : </span>
+<span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">         109 : KernelAbstractions.get_backend(bf::BlockForest) = bf.device</span></span>
+<span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">         620 : nleaves(bf::BlockForest) = nleaves(bf.forest)</span></span>
+<span id="L67"><span class="lineNum">      67</span>              : </span>
+<span id="L68"><span class="lineNum">      68</span>              : # Phase gate: coarse–fine interface interpolation is not implemented yet, so halo</span>
+<span id="L69"><span class="lineNum">      69</span>              : # exchange (and hence operator application) requires a single-level forest.</span>
+<span id="L70"><span class="lineNum">      70</span>              : # Erroring here upholds the design invariant that a missing capability degrades to</span>
+<span id="L71"><span class="lineNum">      71</span>              : # an error, never a silently wrong result.</span>
+<span id="L72"><span class="lineNum">      72</span>              : function _require_uniform(bf::BlockForest)</span>
+<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">         582 :     bf.forest.uniform[] || throw(</span></span>
+<span id="L74"><span class="lineNum">      74</span>              :         ArgumentError(</span>
+<span id="L75"><span class="lineNum">      75</span>              :             &quot;operators on a non-uniform BlockForest require coarse–fine interface &quot; *</span>
+<span id="L76"><span class="lineNum">      76</span>              :             &quot;interpolation, which is not implemented yet; all leaves must be at one &quot; *</span>
+<span id="L77"><span class="lineNum">      77</span>              :             &quot;refinement level&quot;,</span>
+<span id="L78"><span class="lineNum">      78</span>              :         ),</span>
+<span id="L79"><span class="lineNum">      79</span>              :     )</span>
+<span id="L80"><span class="lineNum">      80</span> <span class="tlaGNC">         578 :     return nothing</span></span>
+<span id="L81"><span class="lineNum">      81</span>              : end</span>
+<span id="L82"><span class="lineNum">      82</span>              : </span>
+<span id="L83"><span class="lineNum">      83</span> <span class="tlaUNC tlaBgUNC">           0 : function Base.show(io::IO, bf::BlockForest{N}) where {N}</span></span>
+<span id="L84"><span class="lineNum">      84</span> <span class="tlaUNC">           0 :     print(io, &quot;BlockForest{$N}(blocksize=$(bf.blocksize), &quot;, bf.forest, &quot;)&quot;)</span></span>
+<span id="L85"><span class="lineNum">      85</span>              : end</span>
 <span id="L86"><span class="lineNum">      86</span>              : </span>
-<span id="L87"><span class="lineNum">      87</span>              : # Leaf spacing at level ℓ is the root spacing halved ℓ times.</span>
-<span id="L88"><span class="lineNum">      88</span> <span class="tlaGNC tlaBgGNC">        6098 : _leaf_spacing(bf::BlockForest{N,T}, ℓ::Int) where {N,T} =</span></span>
-<span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">        6098 :     ntuple(d -&gt; bf.spacing0[d] / (1 &lt;&lt; ℓ), Val(N))</span></span>
-<span id="L90"><span class="lineNum">      90</span>              : </span>
-<span id="L91"><span class="lineNum">      91</span>              : # Physical extent of one block: its width is blocksize·spacing; it starts at the</span>
-<span id="L92"><span class="lineNum">      92</span>              : # domain minimum offset by coords whole blocks.</span>
-<span id="L93"><span class="lineNum">      93</span>              : function _leaf_extent(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}</span>
-<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC">        3013 :     sp = _leaf_spacing(bf, key.level)</span></span>
-<span id="L95"><span class="lineNum">      95</span> <span class="tlaGNC">        3013 :     return ntuple(Val(N)) do d</span></span>
-<span id="L96"><span class="lineNum">      96</span> <span class="tlaGNC">        6026 :         w = bf.blocksize[d] * sp[d]</span></span>
-<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">        6026 :         lo = bf.extent[d][1] + key.coords[d] * w</span></span>
-<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">        6026 :         (lo, lo + w)</span></span>
-<span id="L99"><span class="lineNum">      99</span>              :     end</span>
-<span id="L100"><span class="lineNum">     100</span>              : end</span>
-<span id="L101"><span class="lineNum">     101</span>              : </span>
-<span id="L102"><span class="lineNum">     102</span>              : &quot;&quot;&quot;</span>
-<span id="L103"><span class="lineNum">     103</span>              :     leaf_center(bf::BlockForest, key::LeafKey) -&gt; SVector</span>
-<span id="L104"><span class="lineNum">     104</span>              : </span>
-<span id="L105"><span class="lineNum">     105</span>              : Physical center of the block identified by `key`.</span>
-<span id="L106"><span class="lineNum">     106</span>              : &quot;&quot;&quot;</span>
-<span id="L107"><span class="lineNum">     107</span> <span class="tlaGNC">           2 : function leaf_center(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}</span></span>
-<span id="L108"><span class="lineNum">     108</span> <span class="tlaGNC">          72 :     sp = _leaf_spacing(bf, key.level)</span></span>
-<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">          72 :     return SVector(</span></span>
-<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">          72 :         ntuple(d -&gt; bf.extent[d][1] + (key.coords[d] + T(0.5)) * bf.blocksize[d] * sp[d], Val(N))</span></span>
-<span id="L111"><span class="lineNum">     111</span>              :     )</span>
-<span id="L112"><span class="lineNum">     112</span>              : end</span>
-<span id="L113"><span class="lineNum">     113</span>              : </span>
-<span id="L114"><span class="lineNum">     114</span>              : # Per-leaf boundary conditions: physical BC on domain-boundary faces of a</span>
-<span id="L115"><span class="lineNum">     115</span>              : # non-periodic dimension, Interface() everywhere else (those ghosts are filled by</span>
-<span id="L116"><span class="lineNum">     116</span>              : # halo_update!).</span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">           6 : function leaf_bc(bf::BlockForest{N}, key::LeafKey{N}) where {N}</span></span>
-<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">        5428 :     return ntuple(Val(N)) do d</span></span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">        6038 :         if bf.forest.periodic[d]</span></span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">        1140 :             (Interface(), Interface())</span></span>
-<span id="L121"><span class="lineNum">     121</span>              :         else</span>
-<span id="L122"><span class="lineNum">     122</span> <span class="tlaGNC">        4898 :             nblocks = bf.forest.nroot[d] &lt;&lt; key.level</span></span>
-<span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC">        7950 :             lo = key.coords[d] == 0 ? bf.bc[d][1] : Interface()</span></span>
-<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">        7980 :             hi = key.coords[d] == nblocks - 1 ? bf.bc[d][2] : Interface()</span></span>
-<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">        4898 :             (lo, hi)</span></span>
-<span id="L126"><span class="lineNum">     126</span>              :         end</span>
-<span id="L127"><span class="lineNum">     127</span>              :     end</span>
-<span id="L128"><span class="lineNum">     128</span>              : end</span>
-<span id="L129"><span class="lineNum">     129</span>              : </span>
-<span id="L130"><span class="lineNum">     130</span>              : &quot;&quot;&quot;</span>
-<span id="L131"><span class="lineNum">     131</span>              :     leaf_grid(bf::BlockForest, key) -&gt; CartesianGrid</span>
-<span id="L132"><span class="lineNum">     132</span>              :     leaf_grid(bf::BlockForest, i::Integer) -&gt; CartesianGrid</span>
-<span id="L133"><span class="lineNum">     133</span>              : </span>
-<span id="L134"><span class="lineNum">     134</span>              : The ordinary `CartesianGrid` for one leaf block — what per-block operators run on.</span>
-<span id="L135"><span class="lineNum">     135</span>              : Built via the unchecked inner constructor (the forest guarantees validity) and</span>
-<span id="L136"><span class="lineNum">     136</span>              : cheap to recompute inside the apply loop, but type-unstable: the grid type varies</span>
-<span id="L137"><span class="lineNum">     137</span>              : with the leaf's interface/physical boundary mix, so each call boxes its result and</span>
-<span id="L138"><span class="lineNum">     138</span>              : consumers dispatch on it through a function barrier.</span>
-<span id="L139"><span class="lineNum">     139</span>              : &quot;&quot;&quot;</span>
-<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">        3013 : function leaf_grid(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}</span></span>
-<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">        3013 :     ext = _leaf_extent(bf, key)</span></span>
-<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">        3013 :     sp = _leaf_spacing(bf, key.level)</span></span>
-<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">        5422 :     bc = leaf_bc(bf, key)</span></span>
-<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">        6026 :     lr = ntuple(d -&gt; 1:bf.blocksize[d], Val(N))</span></span>
-<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">        3013 :     return CartesianGrid{N,T,typeof(bc),typeof(bf.device),Nothing}(</span></span>
-<span id="L146"><span class="lineNum">     146</span>              :         ext, sp, bf.blocksize, bf.halo, bc, bf.device, lr, nothing</span>
-<span id="L147"><span class="lineNum">     147</span>              :     )</span>
-<span id="L148"><span class="lineNum">     148</span>              : end</span>
-<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">        2989 : leaf_grid(bf::BlockForest, i::Integer) = leaf_grid(bf, bf.forest.leaves[i])</span></span>
-<span id="L150"><span class="lineNum">     150</span>              : </span>
-<span id="L151"><span class="lineNum">     151</span>              : &quot;&quot;&quot;</span>
-<span id="L152"><span class="lineNum">     152</span>              :     leaves(bf::BlockForest)</span>
-<span id="L153"><span class="lineNum">     153</span>              : </span>
-<span id="L154"><span class="lineNum">     154</span>              : Iterator over `(key, leaf_grid)` pairs for every leaf, in Morton (storage) order.</span>
-<span id="L155"><span class="lineNum">     155</span>              : Block storage in a [`BlockField`](@ref) over `bf` is indexed in the same order.</span>
-<span id="L156"><span class="lineNum">     156</span>              : &quot;&quot;&quot;</span>
-<span id="L157"><span class="lineNum">     157</span> <span class="tlaGNC">           3 : leaves(bf::BlockForest) = ((key, leaf_grid(bf, key)) for key in bf.forest.leaves)</span></span>
-<span id="L158"><span class="lineNum">     158</span>              : </span>
-<span id="L159"><span class="lineNum">     159</span>              : #--------------------------------------------------------------------------------# Adaptivity</span>
+<span id="L87"><span class="lineNum">      87</span>              : #--------------------------------------------------------------------------------# Per-leaf geometry (recomputed from the key)</span>
+<span id="L88"><span class="lineNum">      88</span>              : </span>
+<span id="L89"><span class="lineNum">      89</span>              : # Leaf spacing at level ℓ is the root spacing halved ℓ times.</span>
+<span id="L90"><span class="lineNum">      90</span> <span class="tlaGNC tlaBgGNC">        6158 : _leaf_spacing(bf::BlockForest{N,T}, ℓ::Int) where {N,T} =</span></span>
+<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">        6158 :     ntuple(d -&gt; bf.spacing0[d] / (1 &lt;&lt; ℓ), Val(N))</span></span>
+<span id="L92"><span class="lineNum">      92</span>              : </span>
+<span id="L93"><span class="lineNum">      93</span>              : # Physical extent of one block: its width is blocksize·spacing; it starts at the</span>
+<span id="L94"><span class="lineNum">      94</span>              : # domain minimum offset by coords whole blocks.</span>
+<span id="L95"><span class="lineNum">      95</span>              : function _leaf_extent(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}</span>
+<span id="L96"><span class="lineNum">      96</span> <span class="tlaGNC">        3041 :     sp = _leaf_spacing(bf, key.level)</span></span>
+<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">        3041 :     return ntuple(Val(N)) do d</span></span>
+<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">        6082 :         w = bf.blocksize[d] * sp[d]</span></span>
+<span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">        6082 :         lo = bf.extent[d][1] + key.coords[d] * w</span></span>
+<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC">        6082 :         (lo, lo + w)</span></span>
+<span id="L101"><span class="lineNum">     101</span>              :     end</span>
+<span id="L102"><span class="lineNum">     102</span>              : end</span>
+<span id="L103"><span class="lineNum">     103</span>              : </span>
+<span id="L104"><span class="lineNum">     104</span>              : &quot;&quot;&quot;</span>
+<span id="L105"><span class="lineNum">     105</span>              :     leaf_center(bf::BlockForest, key::LeafKey) -&gt; SVector</span>
+<span id="L106"><span class="lineNum">     106</span>              : </span>
+<span id="L107"><span class="lineNum">     107</span>              : Physical center of the block identified by `key`.</span>
+<span id="L108"><span class="lineNum">     108</span>              : &quot;&quot;&quot;</span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">           2 : function leaf_center(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">          76 :     sp = _leaf_spacing(bf, key.level)</span></span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">          76 :     return SVector(</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">          76 :         ntuple(d -&gt; bf.extent[d][1] + (key.coords[d] + T(0.5)) * bf.blocksize[d] * sp[d], Val(N))</span></span>
+<span id="L113"><span class="lineNum">     113</span>              :     )</span>
+<span id="L114"><span class="lineNum">     114</span>              : end</span>
+<span id="L115"><span class="lineNum">     115</span>              : </span>
+<span id="L116"><span class="lineNum">     116</span>              : # Per-leaf boundary conditions: physical BC on domain-boundary faces of a</span>
+<span id="L117"><span class="lineNum">     117</span>              : # non-periodic dimension, Interface() everywhere else (those ghosts are filled by</span>
+<span id="L118"><span class="lineNum">     118</span>              : # halo_update!).</span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">           6 : function leaf_bc(bf::BlockForest{N}, key::LeafKey{N}) where {N}</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">        5480 :     return ntuple(Val(N)) do d</span></span>
+<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">        6094 :         if bf.forest.periodic[d]</span></span>
+<span id="L122"><span class="lineNum">     122</span> <span class="tlaGNC">        1152 :             (Interface(), Interface())</span></span>
+<span id="L123"><span class="lineNum">     123</span>              :         else</span>
+<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">        4942 :             nblocks = bf.forest.nroot[d] &lt;&lt; key.level</span></span>
+<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">        8024 :             lo = key.coords[d] == 0 ? bf.bc[d][1] : Interface()</span></span>
+<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">        8054 :             hi = key.coords[d] == nblocks - 1 ? bf.bc[d][2] : Interface()</span></span>
+<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">        4942 :             (lo, hi)</span></span>
+<span id="L128"><span class="lineNum">     128</span>              :         end</span>
+<span id="L129"><span class="lineNum">     129</span>              :     end</span>
+<span id="L130"><span class="lineNum">     130</span>              : end</span>
+<span id="L131"><span class="lineNum">     131</span>              : </span>
+<span id="L132"><span class="lineNum">     132</span>              : &quot;&quot;&quot;</span>
+<span id="L133"><span class="lineNum">     133</span>              :     leaf_grid(bf::BlockForest, key) -&gt; CartesianGrid</span>
+<span id="L134"><span class="lineNum">     134</span>              :     leaf_grid(bf::BlockForest, i::Integer) -&gt; CartesianGrid</span>
+<span id="L135"><span class="lineNum">     135</span>              : </span>
+<span id="L136"><span class="lineNum">     136</span>              : The ordinary `CartesianGrid` for one leaf block — what per-block operators run on.</span>
+<span id="L137"><span class="lineNum">     137</span>              : Built via the unchecked inner constructor (the forest guarantees validity) and</span>
+<span id="L138"><span class="lineNum">     138</span>              : cheap to recompute inside the apply loop, but type-unstable: the grid type varies</span>
+<span id="L139"><span class="lineNum">     139</span>              : with the leaf's interface/physical boundary mix, so each call boxes its result and</span>
+<span id="L140"><span class="lineNum">     140</span>              : consumers dispatch on it through a function barrier.</span>
+<span id="L141"><span class="lineNum">     141</span>              : &quot;&quot;&quot;</span>
+<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">        3041 : function leaf_grid(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}</span></span>
+<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">        3041 :     ext = _leaf_extent(bf, key)</span></span>
+<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">        3041 :     sp = _leaf_spacing(bf, key.level)</span></span>
+<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">        5474 :     bc = leaf_bc(bf, key)</span></span>
+<span id="L146"><span class="lineNum">     146</span> <span class="tlaGNC">        6082 :     lr = ntuple(d -&gt; 1:bf.blocksize[d], Val(N))</span></span>
+<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">        3041 :     return CartesianGrid{N,T,typeof(bc),typeof(bf.device),Nothing}(</span></span>
+<span id="L148"><span class="lineNum">     148</span>              :         ext, sp, bf.blocksize, bf.halo, bc, bf.device, lr, nothing</span>
+<span id="L149"><span class="lineNum">     149</span>              :     )</span>
+<span id="L150"><span class="lineNum">     150</span>              : end</span>
+<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">        3017 : leaf_grid(bf::BlockForest, i::Integer) = leaf_grid(bf, bf.forest.leaves[i])</span></span>
+<span id="L152"><span class="lineNum">     152</span>              : </span>
+<span id="L153"><span class="lineNum">     153</span>              : &quot;&quot;&quot;</span>
+<span id="L154"><span class="lineNum">     154</span>              :     leaves(bf::BlockForest)</span>
+<span id="L155"><span class="lineNum">     155</span>              : </span>
+<span id="L156"><span class="lineNum">     156</span>              : Iterator over `(key, leaf_grid)` pairs for every leaf, in Morton (storage) order.</span>
+<span id="L157"><span class="lineNum">     157</span>              : Block storage in a [`BlockField`](@ref) over `bf` is indexed in the same order.</span>
+<span id="L158"><span class="lineNum">     158</span>              : &quot;&quot;&quot;</span>
+<span id="L159"><span class="lineNum">     159</span> <span class="tlaGNC">           3 : leaves(bf::BlockForest) = ((key, leaf_grid(bf, key)) for key in bf.forest.leaves)</span></span>
 <span id="L160"><span class="lineNum">     160</span>              : </span>
-<span id="L161"><span class="lineNum">     161</span>              : &quot;&quot;&quot;</span>
-<span id="L162"><span class="lineNum">     162</span>              :     refine!(bf::BlockForest, predicate) -&gt; bf</span>
-<span id="L163"><span class="lineNum">     163</span>              : </span>
-<span id="L164"><span class="lineNum">     164</span>              : Refine every leaf whose center satisfies `predicate(center::SVector)` (and is below</span>
-<span id="L165"><span class="lineNum">     165</span>              : `maxlevel`), then re-establish 2:1 balance. Fields must be (re)allocated after a</span>
-<span id="L166"><span class="lineNum">     166</span>              : regrid — block storage is tied to the leaf set at allocation time.</span>
-<span id="L167"><span class="lineNum">     167</span>              : &quot;&quot;&quot;</span>
-<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">          12 : function refine!(bf::BlockForest, predicate)</span></span>
-<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">          66 :     refine!(bf.forest, key -&gt; predicate(leaf_center(bf, key)))</span></span>
-<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">          12 :     return bf</span></span>
-<span id="L171"><span class="lineNum">     171</span>              : end</span>
-<span id="L172"><span class="lineNum">     172</span>              : </span>
-<span id="L173"><span class="lineNum">     173</span>              : &quot;&quot;&quot;</span>
-<span id="L174"><span class="lineNum">     174</span>              :     coarsen!(bf::BlockForest, predicate) -&gt; bf</span>
-<span id="L175"><span class="lineNum">     175</span>              : </span>
-<span id="L176"><span class="lineNum">     176</span>              : Coarsen each complete family of `2ᴺ` sibling leaves whose centers all satisfy</span>
-<span id="L177"><span class="lineNum">     177</span>              : `predicate(center::SVector)`, then re-establish 2:1 balance.</span>
-<span id="L178"><span class="lineNum">     178</span>              : &quot;&quot;&quot;</span>
-<span id="L179"><span class="lineNum">     179</span> <span class="tlaGNC">           1 : function coarsen!(bf::BlockForest, predicate)</span></span>
-<span id="L180"><span class="lineNum">     180</span> <span class="tlaGNC">          17 :     coarsen!(bf.forest, key -&gt; predicate(leaf_center(bf, key)))</span></span>
-<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">           1 :     return bf</span></span>
-<span id="L182"><span class="lineNum">     182</span>              : end</span>
-<span id="L183"><span class="lineNum">     183</span>              : </span>
-<span id="L184"><span class="lineNum">     184</span>              : &quot;&quot;&quot;</span>
-<span id="L185"><span class="lineNum">     185</span>              :     balance!(bf::BlockForest) -&gt; bf</span>
-<span id="L186"><span class="lineNum">     186</span>              : </span>
-<span id="L187"><span class="lineNum">     187</span>              : Re-establish the 2:1 balance invariant across leaf faces.</span>
-<span id="L188"><span class="lineNum">     188</span>              : &quot;&quot;&quot;</span>
-<span id="L189"><span class="lineNum">     189</span> <span class="tlaUNC tlaBgUNC">           0 : balance!(bf::BlockForest) = (balance!(bf.forest); bf)</span></span>
-<span id="L190"><span class="lineNum">     190</span>              : </span>
-<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC tlaBgGNC">           3 : function Adapt.adapt_structure(to, bf::BlockForest{N,T}) where {N,T}</span></span>
-<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">           3 :     device = KernelAbstractions.get_backend(Adapt.adapt(to, similar(Vector{Bool}, 0)))</span></span>
-<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC">           3 :     return BlockForest{N,T,typeof(bf.bc),typeof(device)}(</span></span>
-<span id="L194"><span class="lineNum">     194</span>              :         bf.forest, bf.extent, bf.spacing0, bf.blocksize, bf.halo, bf.bc, device</span>
-<span id="L195"><span class="lineNum">     195</span>              :     )</span>
-<span id="L196"><span class="lineNum">     196</span>              : end</span>
+<span id="L161"><span class="lineNum">     161</span>              : #--------------------------------------------------------------------------------# Adaptivity</span>
+<span id="L162"><span class="lineNum">     162</span>              : </span>
+<span id="L163"><span class="lineNum">     163</span>              : &quot;&quot;&quot;</span>
+<span id="L164"><span class="lineNum">     164</span>              :     refine!(bf::BlockForest, predicate) -&gt; bf</span>
+<span id="L165"><span class="lineNum">     165</span>              : </span>
+<span id="L166"><span class="lineNum">     166</span>              : Refine every leaf whose center satisfies `predicate(center::SVector)` (and is below</span>
+<span id="L167"><span class="lineNum">     167</span>              : `maxlevel`), then re-establish 2:1 balance. Fields must be (re)allocated after a</span>
+<span id="L168"><span class="lineNum">     168</span>              : regrid — block storage is tied to the leaf set at allocation time.</span>
+<span id="L169"><span class="lineNum">     169</span>              : &quot;&quot;&quot;</span>
+<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">          13 : function refine!(bf::BlockForest, predicate)</span></span>
+<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">          71 :     refine!(bf.forest, key -&gt; predicate(leaf_center(bf, key)))</span></span>
+<span id="L172"><span class="lineNum">     172</span> <span class="tlaGNC">          13 :     return bf</span></span>
+<span id="L173"><span class="lineNum">     173</span>              : end</span>
+<span id="L174"><span class="lineNum">     174</span>              : </span>
+<span id="L175"><span class="lineNum">     175</span>              : &quot;&quot;&quot;</span>
+<span id="L176"><span class="lineNum">     176</span>              :     coarsen!(bf::BlockForest, predicate) -&gt; bf</span>
+<span id="L177"><span class="lineNum">     177</span>              : </span>
+<span id="L178"><span class="lineNum">     178</span>              : Coarsen each complete family of `2ᴺ` sibling leaves whose centers all satisfy</span>
+<span id="L179"><span class="lineNum">     179</span>              : `predicate(center::SVector)`, then re-establish 2:1 balance.</span>
+<span id="L180"><span class="lineNum">     180</span>              : &quot;&quot;&quot;</span>
+<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">           1 : function coarsen!(bf::BlockForest, predicate)</span></span>
+<span id="L182"><span class="lineNum">     182</span> <span class="tlaGNC">          17 :     coarsen!(bf.forest, key -&gt; predicate(leaf_center(bf, key)))</span></span>
+<span id="L183"><span class="lineNum">     183</span> <span class="tlaGNC">           1 :     return bf</span></span>
+<span id="L184"><span class="lineNum">     184</span>              : end</span>
+<span id="L185"><span class="lineNum">     185</span>              : </span>
+<span id="L186"><span class="lineNum">     186</span>              : &quot;&quot;&quot;</span>
+<span id="L187"><span class="lineNum">     187</span>              :     balance!(bf::BlockForest) -&gt; bf</span>
+<span id="L188"><span class="lineNum">     188</span>              : </span>
+<span id="L189"><span class="lineNum">     189</span>              : Re-establish the 2:1 balance invariant across leaf faces.</span>
+<span id="L190"><span class="lineNum">     190</span>              : &quot;&quot;&quot;</span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaUNC tlaBgUNC">           0 : balance!(bf::BlockForest) = (balance!(bf.forest); bf)</span></span>
+<span id="L192"><span class="lineNum">     192</span>              : </span>
+<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC tlaBgGNC">           3 : function Adapt.adapt_structure(to, bf::BlockForest{N,T}) where {N,T}</span></span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">           3 :     device = KernelAbstractions.get_backend(Adapt.adapt(to, similar(Vector{Bool}, 0)))</span></span>
+<span id="L195"><span class="lineNum">     195</span>              :     # The schedule Ref is shared deliberately, like `forest`: descriptors are</span>
+<span id="L196"><span class="lineNum">     196</span>              :     # device-independent index data, and sharing keeps the cache warm across</span>
+<span id="L197"><span class="lineNum">     197</span>              :     # adaptation.</span>
+<span id="L198"><span class="lineNum">     198</span> <span class="tlaGNC">           3 :     return BlockForest{N,T,typeof(bf.bc),typeof(device)}(</span></span>
+<span id="L199"><span class="lineNum">     199</span>              :         bf.forest, bf.extent, bf.spacing0, bf.blocksize, bf.halo, bf.bc, device,</span>
+<span id="L200"><span class="lineNum">     200</span>              :         bf.schedule,</span>
+<span id="L201"><span class="lineNum">     201</span>              :     )</span>
+<span id="L202"><span class="lineNum">     202</span>              : end</span>
         </pre>
               </td>
             </tr>

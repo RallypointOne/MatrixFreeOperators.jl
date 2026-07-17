@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-17 16:48:30</td>
+            <td class="headerValue">2026-07-17 22:37:55</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -77,30 +77,30 @@
 <span id="L15"><span class="lineNum">      15</span>              : See also: [`scalar_field`](@ref), [`vector_field`](@ref), [`block`](@ref).</span>
 <span id="L16"><span class="lineNum">      16</span>              : &quot;&quot;&quot;</span>
 <span id="L17"><span class="lineNum">      17</span>              : struct BlockField{L,A&lt;:AbstractArray,G&lt;:BlockForest} &lt;: AbstractField</span>
-<span id="L18"><span class="lineNum">      18</span> <span class="tlaGNC tlaBgGNC">         322 :     blocks::Vector{A}</span></span>
+<span id="L18"><span class="lineNum">      18</span> <span class="tlaGNC tlaBgGNC">         338 :     blocks::Vector{A}</span></span>
 <span id="L19"><span class="lineNum">      19</span>              :     grid::G</span>
 <span id="L20"><span class="lineNum">      20</span>              :     generation::Int</span>
 <span id="L21"><span class="lineNum">      21</span>              : end</span>
-<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">          98 : BlockField{L}(blocks::Vector{&lt;:AbstractArray}, grid::BlockForest) where {L} =</span></span>
+<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">         108 : BlockField{L}(blocks::Vector{&lt;:AbstractArray}, grid::BlockForest) where {L} =</span></span>
 <span id="L23"><span class="lineNum">      23</span>              :     BlockField{L,eltype(blocks),typeof(grid)}(blocks, grid, grid.forest.generation[])</span>
-<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC">          98 : BlockField(blocks::Vector{&lt;:AbstractArray}, grid::BlockForest) = BlockField{Center}(blocks, grid)</span></span>
+<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC">         108 : BlockField(blocks::Vector{&lt;:AbstractArray}, grid::BlockForest) = BlockField{Center}(blocks, grid)</span></span>
 <span id="L25"><span class="lineNum">      25</span>              : </span>
 <span id="L26"><span class="lineNum">      26</span>              : # Regrid guard: block storage is tied to the leaf set the field was allocated on.</span>
 <span id="L27"><span class="lineNum">      27</span>              : function _require_current(f::BlockField)</span>
-<span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC">       23450 :     f.generation == f.grid.forest.generation[] || throw(</span></span>
+<span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC">       23490 :     f.generation == f.grid.forest.generation[] || throw(</span></span>
 <span id="L29"><span class="lineNum">      29</span>              :         ArgumentError(</span>
 <span id="L30"><span class="lineNum">      30</span>              :             &quot;this BlockField was allocated before the forest was regridded &quot; *</span>
 <span id="L31"><span class="lineNum">      31</span>              :             &quot;(refine!/coarsen!/balance!); allocate a fresh field on the current forest&quot;,</span>
 <span id="L32"><span class="lineNum">      32</span>              :         ),</span>
 <span id="L33"><span class="lineNum">      33</span>              :     )</span>
-<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">       23438 :     return nothing</span></span>
+<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">       23478 :     return nothing</span></span>
 <span id="L35"><span class="lineNum">      35</span>              : end</span>
 <span id="L36"><span class="lineNum">      36</span>              : </span>
-<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">          73 : function scalar_field(bf::BlockForest, ::Type{T}=eltype(bf.spacing0)) where {T&lt;:Number}</span></span>
-<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">         180 :     backend = KernelAbstractions.get_backend(bf)</span></span>
-<span id="L39"><span class="lineNum">      39</span> <span class="tlaGNC">          90 :     psize = bf.blocksize .+ 2 .* bf.halo</span></span>
-<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">          90 :     blocks = [KernelAbstractions.zeros(backend, T, psize...) for _ in 1:nleaves(bf)]</span></span>
-<span id="L41"><span class="lineNum">      41</span> <span class="tlaGNC">          90 :     return BlockField(blocks, bf)</span></span>
+<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">          83 : function scalar_field(bf::BlockForest, ::Type{T}=eltype(bf.spacing0)) where {T&lt;:Number}</span></span>
+<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">         200 :     backend = KernelAbstractions.get_backend(bf)</span></span>
+<span id="L39"><span class="lineNum">      39</span> <span class="tlaGNC">         100 :     psize = bf.blocksize .+ 2 .* bf.halo</span></span>
+<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">         100 :     blocks = [KernelAbstractions.zeros(backend, T, psize...) for _ in 1:nleaves(bf)]</span></span>
+<span id="L41"><span class="lineNum">      41</span> <span class="tlaGNC">         100 :     return BlockField(blocks, bf)</span></span>
 <span id="L42"><span class="lineNum">      42</span>              : end</span>
 <span id="L43"><span class="lineNum">      43</span>              : </span>
 <span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">           8 : function vector_field(bf::BlockForest{N}, ::Type{T}=eltype(bf.spacing0)) where {N,T&lt;:Number}</span></span>
@@ -118,11 +118,11 @@
 <span id="L56"><span class="lineNum">      56</span>              : on its leaf [`CartesianGrid`](@ref). This is what per-block operators consume; pass</span>
 <span id="L57"><span class="lineNum">      57</span>              : a precomputed `leaf_grid` to avoid rebuilding it.</span>
 <span id="L58"><span class="lineNum">      58</span>              : &quot;&quot;&quot;</span>
-<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">        3625 : function block(f::BlockField{L}, i::Integer, leaf_grid) where {L}</span></span>
-<span id="L60"><span class="lineNum">      60</span> <span class="tlaGNC">       22447 :     _require_current(f)</span></span>
-<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">       41251 :     return Field{L}(f.blocks[i], leaf_grid)</span></span>
+<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">        3653 : function block(f::BlockField{L}, i::Integer, leaf_grid) where {L}</span></span>
+<span id="L60"><span class="lineNum">      60</span> <span class="tlaGNC">       22475 :     _require_current(f)</span></span>
+<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">       41279 :     return Field{L}(f.blocks[i], leaf_grid)</span></span>
 <span id="L62"><span class="lineNum">      62</span>              : end</span>
-<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">        2105 : block(f::BlockField, i::Integer) = block(f, i, leaf_grid(f.grid, i))</span></span>
+<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">        2133 : block(f::BlockField, i::Integer) = block(f, i, leaf_grid(f.grid, i))</span></span>
 <span id="L64"><span class="lineNum">      64</span>              : </span>
 <span id="L65"><span class="lineNum">      65</span>              : #--------------------------------------------------------------------------------# Prepare-time leaf cache</span>
 <span id="L66"><span class="lineNum">      66</span>              : </span>
@@ -171,14 +171,14 @@
 <span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">           9 :     blocks = [similar(b, E) for b in f.blocks]</span></span>
 <span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">           9 :     return BlockField{L,eltype(blocks),typeof(f.grid)}(blocks, f.grid, f.generation)</span></span>
 <span id="L111"><span class="lineNum">     111</span>              : end</span>
-<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">          61 : Base.copy(f::BlockField{L,A,G}) where {L,A,G} =</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">          67 : Base.copy(f::BlockField{L,A,G}) where {L,A,G} =</span></span>
 <span id="L113"><span class="lineNum">     113</span>              :     BlockField{L,A,G}([copy(b) for b in f.blocks], f.grid, f.generation)</span>
 <span id="L114"><span class="lineNum">     114</span>              : </span>
-<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          36 : function set!(f::BlockField, fun::F) where {F}</span></span>
-<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          36 :     for i in 1:nleaves(f.grid)</span></span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">         222 :         set!(block(f, i), fun)</span></span>
-<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">         404 :     end</span></span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">          32 :     return f</span></span>
+<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          40 : function set!(f::BlockField, fun::F) where {F}</span></span>
+<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          40 :     for i in 1:nleaves(f.grid)</span></span>
+<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">         250 :         set!(block(f, i), fun)</span></span>
+<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">         456 :     end</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">          36 :     return f</span></span>
 <span id="L120"><span class="lineNum">     120</span>              : end</span>
 <span id="L121"><span class="lineNum">     121</span>              : </span>
 <span id="L122"><span class="lineNum">     122</span>              : function zero_ghosts!(f::BlockField)</span>

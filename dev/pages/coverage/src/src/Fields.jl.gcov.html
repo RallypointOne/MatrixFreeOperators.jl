@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-17 16:48:30</td>
+            <td class="headerValue">2026-07-17 22:37:55</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -102,14 +102,14 @@
 <span id="L40"><span class="lineNum">      40</span>              :     grid::G</span>
 <span id="L41"><span class="lineNum">      41</span>              : </span>
 <span id="L42"><span class="lineNum">      42</span> <span class="tlaGNC tlaBgGNC">          11 :     function Field{L}(data::A, grid::G) where {L,A&lt;:AbstractArray,G&lt;:AbstractGrid}</span></span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">       49121 :         if size(data) != padded_size(grid)</span></span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">       49177 :         if size(data) != padded_size(grid)</span></span>
 <span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">          20 :             throw(</span></span>
 <span id="L45"><span class="lineNum">      45</span>              :                 DimensionMismatch(</span>
 <span id="L46"><span class="lineNum">      46</span>              :                     &quot;field data size $(size(data)) must equal padded grid size $(padded_size(grid))&quot;,</span>
 <span id="L47"><span class="lineNum">      47</span>              :                 ),</span>
 <span id="L48"><span class="lineNum">      48</span>              :             )</span>
 <span id="L49"><span class="lineNum">      49</span>              :         end</span>
-<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">       24573 :         return new{L,A,G}(data, grid)</span></span>
+<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">       24601 :         return new{L,A,G}(data, grid)</span></span>
 <span id="L51"><span class="lineNum">      51</span>              :     end</span>
 <span id="L52"><span class="lineNum">      52</span>              : end</span>
 <span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">        1289 : Field(data::AbstractArray, grid::AbstractGrid) = Field{Center}(data, grid)</span></span>
@@ -163,7 +163,7 @@
 <span id="L101"><span class="lineNum">     101</span>              : </span>
 <span id="L102"><span class="lineNum">     102</span>              : View of the interior (owned, non-halo) cells of the field.</span>
 <span id="L103"><span class="lineNum">     103</span>              : &quot;&quot;&quot;</span>
-<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">       22632 : interior(f::Field) = view(f.data, interior(f.grid))</span></span>
+<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">       22660 : interior(f::Field) = view(f.data, interior(f.grid))</span></span>
 <span id="L105"><span class="lineNum">     105</span>              : </span>
 <span id="L106"><span class="lineNum">     106</span>              : &quot;&quot;&quot;</span>
 <span id="L107"><span class="lineNum">     107</span>              :     set!(f::Field, fun) -&gt; f</span>
@@ -178,9 +178,9 @@
 <span id="L116"><span class="lineNum">     116</span>              : u = set!(scalar_field(g), x -&gt; sin(x[1]))</span>
 <span id="L117"><span class="lineNum">     117</span>              : ```</span>
 <span id="L118"><span class="lineNum">     118</span>              : &quot;&quot;&quot;</span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">         335 : function set!(f::Field, fun::F) where {F}</span></span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">         626 :     interior(f) .= fun.(cell_center.(Ref(f.grid), interior(f.grid)))</span></span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">         335 :     return f</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">         363 : function set!(f::Field, fun::F) where {F}</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">         682 :     interior(f) .= fun.(cell_center.(Ref(f.grid), interior(f.grid)))</span></span>
+<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">         363 :     return f</span></span>
 <span id="L122"><span class="lineNum">     122</span>              : end</span>
 <span id="L123"><span class="lineNum">     123</span>              : </span>
 <span id="L124"><span class="lineNum">     124</span>              : &quot;&quot;&quot;</span>
