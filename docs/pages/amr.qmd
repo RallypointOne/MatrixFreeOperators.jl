@@ -1,0 +1,181 @@
+---
+title: "Adaptive Mesh Refinement"
+---
+
+`BlockForest` adds adaptive resolution while keeping every existing operator
+working **unchanged**. This page tells the story of the design — the problem, the
+approach, and the one rule everything rests on — and shows the current
+capabilities.
+
+## The motivation: stop wasting cells
+
+A *uniform* grid wastes effort. Most of a simulation is smooth and undemanding,
+but a few regions — a shock front, a flame, a boundary layer — need fine cells.
+Adaptive Mesh Refinement (AMR) concentrates resolution only where it is needed.
+The hard constraint here: do that **without rewriting every operator**, because
+the whole package assumes a field is a dense rectangular array you sweep a stencil
+across.
+
+```
+Uniform grid — fine EVERYWHERE       Adaptive forest — fine ONLY where needed
+(most cells do nothing useful)       (resolution follows the feature ▓)
+
+┌─┬─┬─┬─┬─┬─┬─┬─┐                     ┌───────┬───────┐
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │       │       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │       │       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     ├───┬───┼───────┤
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │▓▓▓│   │       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     ├─┬─┼───┤       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │▓│▓│   │       │
+└─┴─┴─┴─┴─┴─┴─┴─┘                     └─┴─┴───┴───────┘
+```
+
+## A forest of fixed-size leaf-blocks
+
+Rather than refine individual cells, the domain is tiled by many equal-sized small
+**blocks** — e.g. each block is an `8×8` (2-D) or `8×8×8` (3-D) patch of cells, an
+ordinary [`CartesianGrid`](../index.qmd) with its own halo. To add resolution
+somewhere, you replace one block with `2ᴺ` child blocks covering the same physical
+area at half the spacing, and recurse. Each root block and its descendants form a
+tree; the collection of trees is the *forest*. A **leaf** is a block nobody refined
+further — the leaves tile the domain with no gaps or overlaps, and that is where
+the solution lives.
+
+```
+ Spatial view (2×2 root tiling)              Tree view
+
+ Level 0        refine BL corner             root₀   root₁   root₂   root₃
+ ┌────┬────┐    ┌────┬────┐                    │
+ │ r0 │ r1 │    │ r0 │ r1 │              refine r0
+ ├────┼────┤ ─▶ ├─┬─┬┼────┤                    │
+ │ r2 │ r3 │    ├─┼─┤│    │              ┌───┬──┴─┬───┐
+ │    │    │    ├─┼─┤│ r3 │             c0  c1   c2  c3   (4 leaves,
+ └────┴────┘    └─┴─┴┴────┘                              half the spacing)
+```
+
+### Fixed-size blocks keep every leaf a plain array
+
+Every block always holds the **same cell count** — only the physical spacing
+shrinks with depth (level `ℓ` → `h₀ / 2^ℓ`). Because each leaf is still a dense
+rectangular array, **every existing leaf operator runs unchanged per block** — the
+same stencil sweep, broadcasts, and KernelAbstractions kernels. All of the
+adaptivity complexity is confined to the *block faces* (the coarse–fine
+interfaces).
+
+```
+   Level-0 block                 Level-1 child block
+   spacing = h                   spacing = h/2
+   ┌─┬─┬─┬─┐                     ┌┬┬┬┐
+   ├─┼─┼─┼─┤                     ├┼┼┼┤    same 4×4 cells,
+   ├─┼─┼─┼─┤                     ├┼┼┼┤    HALF the physical footprint
+   ├─┼─┼─┼─┤                     ├┼┼┼┤    ⇒ twice the resolution
+   └─┴─┴─┴─┘                     └┴┴┴┘
+   4×4 dense array               4×4 dense array   ← still a plain array!
+```
+
+This is why the design picks the block-structured school (FLASH / PARAMESH /
+AMReX) and rejects a cell-based octree (p4est / Trixi style): the octree puts a
+hanging node at nearly every cell, which would break the dense-array stencil sweeps
+the whole package is built on. The block-structured choice trades a little
+redundant memory at block boundaries for keeping the interior of every block a
+plain array.
+
+### The load-bearing rule: 2:1 balance
+
+The invariant everything rests on is **2:1 balance**: any two neighboring leaves
+stay within one refinement level of each other. This reduces every coarse–fine
+interface to just three cases — same level / one-coarser / one-finer — which is
+what makes interface interpolation tractable. `refine!` and `coarsen!` re-establish
+balance automatically (you can also call `balance!` directly).
+
+```
+   LEGAL  (neighbors ≤ 1 level apart)     ILLEGAL (2 levels apart)
+   ┌─────────┬────┬────┐                  ┌─────────┬──┬──┐
+   │         │ L1 │ L1 │                  │         ├──┼──┤
+   │   L0    ├────┼────┤                  │   L0    ├──┼──┤   L2 directly
+   │         │ L1 │ L1 │                  │         ├──┼──┤   touching L0
+   └─────────┴────┴────┘                  └─────────┴──┴──┘   → forbidden
+```
+
+### Where the intelligence lives
+
+Operators barely change. The forest does a single `halo_update!` over the whole
+forest to fill each block's ghost cells from its neighbors; then each leaf fills
+only its *physical* domain-boundary faces and runs its ordinary stencil. So the
+only genuinely new operator code is that inter-block exchange — plus its declared
+transpose `halo_update_adjoint!`, which keeps the adjoint identity
+`⟨Lx,y⟩ = ⟨x,Lᵀy⟩` exact on a forest so Krylov solvers stay correct.
+
+```
+  forest
+    │
+    ▼
+  ┌───────────────────────────────────────────────┐
+  │ 1.  halo_update!(forest)                       │   ONCE, whole forest —
+  │     fill each block's INTERFACE ghosts from    │   the only genuinely
+  │     its neighbors                              │   new operator code
+  └───────────────────────────────────────────────┘
+    │
+    ├───────────────┬───────────────┐
+    ▼               ▼               ▼
+  ┌───────────┐   ┌───────────┐   ┌───────────┐
+  │per leaf:  │   │per leaf:  │   │per leaf:  │
+  │2 apply_bc!│   │2 apply_bc!│   │2 apply_bc!│  ← physical faces only
+  │3 stencil  │   │3 stencil  │   │3 stencil  │  ← EXISTING single-grid code
+  └───────────┘   └───────────┘   └───────────┘
+```
+
+Internal faces carry the `Interface` boundary and are skipped by `apply_bc!` —
+`halo_update!` already filled them; physical faces keep the base grid's BCs.
+
+## Usage
+
+A `BlockForest` wraps a base `CartesianGrid` (the root tiling). Operators and
+fields are built on it exactly as on a single grid:
+
+```{julia}
+using MatrixFreeOperators, LinearAlgebra
+
+base   = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+forest = BlockForest(base; blocksize = (4, 4), maxlevel = 4)   # 2×2 root tiling
+
+length(collect(leaves(forest)))      # 4 leaf blocks at level 0
+```
+
+Refine a region with a predicate on each block's center; balance is restored
+automatically:
+
+```{julia}
+refine!(forest, x -> x[1] < 0.3 && x[2] < 0.3)   # refine near the origin corner
+length(collect(leaves(forest)))                  # grew, still 2:1 balanced
+```
+
+### Parity with a single grid
+
+On a uniformly-refined forest, the operators reproduce a single `CartesianGrid` of
+the same resolution exactly. The interior values are identical (just stored in a
+different, block-by-block order), so any order-independent reduction matches:
+
+```{julia}
+g  = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+bf = BlockForest(g; blocksize = (4, 4), maxlevel = 3)   # level 0 ⇒ same 8×8
+
+u  = set!(scalar_field(g),  x -> sinpi(x[1]) * sinpi(x[2]))
+uf = set!(scalar_field(bf), x -> sinpi(x[1]) * sinpi(x[2]))
+
+norm(flatten(laplacian(g) * u)) ≈ norm(flatten(laplacian(bf) * uf))
+```
+
+## Status
+
+This PR is deliberately the *foundation*: the forest grid, field, and operator
+path, verified by bit-parity against a single grid and by the adjoint identity on a
+forest. The genuinely hard adaptive math is left for later phases.
+
+```
+  Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
+  Phase 1  ██████████  DONE   inter-block halo_update! + operator PARITY
+           ░░░░░░░░░░  next   coarse–fine INTERPOLATION (non-uniform forests)
+           ░░░░░░░░░░  next   Restriction/Prolongation + V-cycle MULTIGRID
+           ░░░░░░░░░░  next   indicator-driven REGRID driver
+```

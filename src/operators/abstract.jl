@@ -58,7 +58,7 @@ isdiagonal(::AbstractOperator) = false
 #--------------------------------------------------------------------------------# Action
 
 """
-    apply!(y::Field, L::AbstractOperator, x::Field, g::AbstractGrid, α=true, β=false) -> y
+    apply!(y::AbstractField, L::AbstractOperator, x::AbstractField, g::AbstractGrid, α=true, β=false) -> y
 
 Apply the operator in place: `y = α·L(x) + β·y` on the interior of `y`. Ghost
 layers of `x` are treated as scratch (overwritten with halo/BC fills); ghost
@@ -66,13 +66,13 @@ layers of `y` are left untouched by the accumulating form.
 
 See also: [`apply`](@ref), [`apply_adjoint!`](@ref).
 """
-function apply!(y::Field, L::AbstractOperator, x::Field, g::AbstractGrid)
+function apply!(y::AbstractField, L::AbstractOperator, x::AbstractField, g::AbstractGrid)
     return apply!(y, L, x, g, true, false)
 end
-apply!(y::Field, L::AbstractOperator, x::Field) = apply!(y, L, x, x.grid)
+apply!(y::AbstractField, L::AbstractOperator, x::AbstractField) = apply!(y, L, x, x.grid)
 
 """
-    apply(L::AbstractOperator, x::Field) -> Field
+    apply(L::AbstractOperator, x::AbstractField) -> AbstractField
 
 Allocating application `L(x)`. The pure path used by autodiff; hot loops should
 use [`prepare`](@ref) + `mul!` or in-place [`apply!`](@ref) instead.
@@ -85,26 +85,26 @@ u = set!(scalar_field(g), x -> sin(x[1]))
 Δu = apply(laplacian(g), u)        # equivalently laplacian(g)(u) or laplacian(g) * u
 ```
 """
-function apply(L::AbstractOperator, x::Field)
+function apply(L::AbstractOperator, x::AbstractField)
     y = allocate_output(L, x)
     apply!(y, L, x, x.grid)
     return y
 end
 
-(L::AbstractOperator)(x::Field) = apply(L, x)
-Base.:*(L::AbstractOperator, x::Field) = apply(L, x)
+(L::AbstractOperator)(x::AbstractField) = apply(L, x)
+Base.:*(L::AbstractOperator, x::AbstractField) = apply(L, x)
 
 # Output field for L(x): same shape/eltype as x by default; ghost layers zeroed so
 # every package-produced field has deterministic ghosts. Rank-changing leaves
-# override to switch the element type.
-function allocate_output(::AbstractOperator, x::Field)
+# override to switch the element type. Generic over Field / BlockField.
+function allocate_output(::AbstractOperator, x::AbstractField)
     y = similar(x)
     zero_ghosts!(y)
     return y
 end
 
 # Input-shaped field for L (the output shape of its adjoint). Rank-changers override.
-function allocate_input(::AbstractOperator, y::Field)
+function allocate_input(::AbstractOperator, y::AbstractField)
     x = similar(y)
     zero_ghosts!(x)
     return x
@@ -140,13 +140,13 @@ end
 adjoint_operator(L::AbstractOperator) = AdjointOp(L)
 
 """
-    apply_adjoint!(x̄::Field, L::AbstractOperator, ȳ::Field, g::AbstractGrid, α=true, β=false) -> x̄
+    apply_adjoint!(x̄::AbstractField, L::AbstractOperator, ȳ::AbstractField, g::AbstractGrid, α=true, β=false) -> x̄
 
 Apply the adjoint of a linear operator in place: `x̄ = α·Lᵀ(ȳ) + β·x̄`. Ghost
 layers of `ȳ` are treated as scratch (zeroed — only interior values are adjoint
 inputs, matching the flat Krylov boundary).
 """
-function apply_adjoint!(x̄::Field, L::AbstractOperator, ȳ::Field, g::AbstractGrid)
+function apply_adjoint!(x̄::AbstractField, L::AbstractOperator, ȳ::AbstractField, g::AbstractGrid)
     return apply_adjoint!(x̄, L, ȳ, g, true, false)
 end
 
@@ -170,8 +170,8 @@ isselfadjoint(L::AdjointOp) = isselfadjoint(L.op)
 isdiagonal(L::AdjointOp) = isdiagonal(L.op)
 adjoint_operator(L::AdjointOp) = L.op
 operator_grid(L::AdjointOp) = operator_grid(L.op)
-allocate_output(L::AdjointOp, x::Field) = allocate_input(L.op, x)
-allocate_input(L::AdjointOp, y::Field) = allocate_output(L.op, y)
+allocate_output(L::AdjointOp, x::AbstractField) = allocate_input(L.op, x)
+allocate_input(L::AdjointOp, y::AbstractField) = allocate_output(L.op, y)
 
 function apply!(y::Field, L::AdjointOp, x::Field, g::AbstractGrid, α, β)
     return apply_adjoint!(y, L.op, x, g, α, β)

@@ -25,6 +25,7 @@ book:
     - part: "Docs"
       chapters:
         - index.qmd
+        - pages/amr.qmd
     - part: "API"
       chapters:
         - pages/api.qmd
