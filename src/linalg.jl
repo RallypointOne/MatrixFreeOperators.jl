@@ -130,9 +130,9 @@ function _prepare_tree(L::Composed, x::AbstractField)
     pa = _prepare_tree(L.a, tmp)
     return PreparedComposed(pa, pb, tmp)
 end
-# The intermediate would need an inter-block exchange — same deferral as the
-# unprepared forest path.
-_prepare_tree(L::Composed, ::BlockField) = _check_forest_supported(L)
+# Composed on a BlockField uses the generic method above: the PreparedComposed
+# tmp is a whole BlockField, and _forest_capply! recurses at the forest level so
+# the intermediate gets its inter-block exchange.
 
 function _prepare_tree(L::AdjointOp, x::AbstractField)
     return PreparedAdjoint(L.op, allocate_output(L, x))
@@ -192,6 +192,25 @@ _forest_capply!(y::BlockField, L::Scaled, x::BlockField, P::PreparedForest, α, 
     _forest_capply!(y, L.op, x, P, α * L.α, β)
 _forest_capply!(y::BlockField, L::AdjointOp, x::BlockField, P::PreparedForest, α, β) =
     _forest_capply_adjoint!(y, L.op, x, P, α, β)
+
+# PreparedComposed: the held tmp is a BlockField; recursing at the forest level
+# gives the intermediate its inter-block exchange. The adjoint of a∘b is bᵀ∘aᵀ,
+# and tmp doubles as the cotangent intermediate (aᵀȳ has tmp's shape, and tmp is
+# dead between applications).
+function _forest_capply!(
+    y::BlockField, L::PreparedComposed, x::BlockField, P::PreparedForest, α, β
+)
+    _forest_capply!(L.tmp, L.b, x, P, true, false)
+    _forest_capply!(y, L.a, L.tmp, P, α, β)
+    return y
+end
+function _forest_capply_adjoint!(
+    x̄::BlockField, L::PreparedComposed, ȳ::BlockField, P::PreparedForest, α, β
+)
+    _forest_capply_adjoint!(L.tmp, L.a, ȳ, P, true, false)
+    _forest_capply_adjoint!(x̄, L.b, L.tmp, P, α, β)
+    return x̄
+end
 
 # PreparedAdjoint: the leaf adjoint gather is allocation-free only for β = 0, so the
 # accumulating form gathers into the node's own scratch, then blends per leaf.
@@ -322,7 +341,6 @@ end
 # Forest lift: the inhomogeneous fill and the stencil are local to each block
 # (Interface ghosts stay zero), so the single-grid lift runs per leaf unchanged.
 function boundary_rhs(L::AbstractOperator, x_proto::BlockField)
-    _check_forest_supported(L)
     b = allocate_output(L, x_proto)
     g = x_proto.grid
     for i in 1:nleaves(g)
@@ -331,6 +349,36 @@ function boundary_rhs(L::AbstractOperator, x_proto::BlockField)
         block(b, i, lg).data .= bi.data
     end
     return b
+end
+
+# Forest combinator lifts recurse at the FOREST level (the ::Field methods above
+# would run per leaf, where a nested Composed's `apply(L.a, b_b)` misses the
+# inter-block exchange its lift field needs).
+function boundary_rhs(L::Added, x_proto::BlockField)
+    ba = boundary_rhs(L.a, x_proto)
+    bb = boundary_rhs(L.b, x_proto)
+    for (a, b) in zip(ba.blocks, bb.blocks)
+        a .+= b
+    end
+    return ba
+end
+function boundary_rhs(L::Scaled, x_proto::BlockField)
+    b = boundary_rhs(L.op, x_proto)
+    for blk in b.blocks
+        blk .*= L.α
+    end
+    return b
+end
+# Affine composition on a forest: a(b(x) + c_b) + c_a — the middle term a(c_b)
+# applies `a` to a real BlockField, whose forest apply performs the exchange.
+function boundary_rhs(L::Composed, x_proto::BlockField)
+    bb = boundary_rhs(L.b, x_proto)
+    lift = apply(L.a, bb)
+    ba = boundary_rhs(L.a, bb)
+    for (l, b) in zip(lift.blocks, ba.blocks)
+        l .+= b
+    end
+    return lift
 end
 
 function Base.size(P::_AnyPrepared)

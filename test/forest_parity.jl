@@ -149,16 +149,44 @@
         end
     end
 
-    @testset "Composed is rejected on a forest (deferred to coarse–fine phase)" begin
-        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
-        bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+    @testset "Composed on a forest: parity, prepared path, composition law" begin
+        for bc in bcs
+            g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8); bc=bc)
+            bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+            u = set!(scalar_field(g), fun)
+            uf = set!(scalar_field(bf), fun)
+            L2g = laplacian(g) * laplacian(g)
+            L2f = laplacian(bf) * laplacian(bf)
+            @test reconstruct(L2f * uf, (8, 8)) == collect(interior(L2g * u))
+            # nested inside Added/Scaled, still at the forest level
+            Sg = laplacian(g) + 2.0 * (derivative(g, 1; order=1) * laplacian(g))
+            Sf = laplacian(bf) + 2.0 * (derivative(bf, 1; order=1) * laplacian(bf))
+            @test reconstruct(Sf * uf, (8, 8)) == collect(interior(Sg * u))
+        end
+        # prepared mul! matches the un-prepared path, and the adjoint identity holds
+        bf = BlockForest(
+            CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8)); blocksize=(4, 4), maxlevel=2
+        )
         uf = set!(scalar_field(bf), fun)
         L2 = laplacian(bf) * laplacian(bf)
-        @test_throws ArgumentError L2 * uf
-        @test_throws ArgumentError prepare(L2, uf)
-        # nested inside Added/Scaled must be caught too
-        @test_throws ArgumentError (laplacian(bf) + 2.0 * L2) * uf
-        @test_throws ArgumentError prepare(laplacian(bf) + 2.0 * L2, uf)
+        A = prepare(L2, uf)
+        v = flatten(uf)
+        out = similar(v)
+        mul!(out, A, v)
+        @test out == flatten(L2 * copy(uf))
+        M = materialize(A)
+        @test M ≈ M'                                # Δ² is self-adjoint on a uniform forest
+        Dc = derivative(bf, 1; order=1) * laplacian(bf)
+        Ac = materialize(prepare(Dc, uf))
+        Act = materialize(prepare(adjoint(Dc), uf))
+        @test Act ≈ Ac'
+        # rank-changing composition: the intermediate is a vector BlockField whose
+        # inter-block exchange must reproduce the single-grid wide Laplacian exactly
+        g8 = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+        u8 = set!(scalar_field(g8), fun)
+        wide = apply(divergence(g8), apply(MFO.gradient(g8), u8))
+        DG = divergence(bf) * MFO.gradient(bf)
+        @test reconstruct(DG * copy(uf), (8, 8)) == collect(interior(wide))
     end
 
     @testset "rank-changers: gradient/divergence parity + adjoint identity" begin
