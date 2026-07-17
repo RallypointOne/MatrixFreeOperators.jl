@@ -82,19 +82,29 @@
         @test MFO.nleaves(bf2) == MFO.nleaves(bf)
     end
 
-    @testset "non-uniform forest is rejected until the coarse–fine phase" begin
-        base = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+    @testset "operators apply across refinement levels (coarse–fine phase)" begin
+        bcd = ((Dirichlet(), Dirichlet()), (Dirichlet(), Dirichlet()))
+        base = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8); bc=bcd)
         bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
         refine!(bf, x -> x[1] < 0.5 && x[2] < 0.5)     # one corner root → mixed levels
         @test !bf.forest.uniform[]
-        uf = scalar_field(bf)                           # allocated on the current forest
-        @test_throws ArgumentError laplacian(bf) * uf
-        @test_throws ArgumentError halo_update!(uf, bf)
-        # refining the remaining coarse blocks restores a single level → applies again
-        refine!(bf, x -> !(x[1] < 0.5 && x[2] < 0.5))
-        @test bf.forest.uniform[]
-        uf2 = set!(scalar_field(bf), x -> x[1] * x[2])
-        @test laplacian(bf) * uf2 isa BlockField
+        uf = set!(scalar_field(bf), x -> x[1]^2 + x[2]^2)   # Δu = 4 exactly
+        Lu = laplacian(bf) * uf
+        # Every stencil fed only by interior/interface ghosts must be exact; skip
+        # the one-cell layer whose stencil reads a homogeneous physical-BC ghost.
+        for (i, key) in enumerate(bf.forest.leaves)
+            nblocks = ntuple(d -> bf.forest.nroot[d] << key.level, 2)
+            vals = collect(interior(MFO.block(Lu, i)))
+            for I in CartesianIndices(vals)
+                skip = any(
+                    d ->
+                        (key.coords[d] == 0 && I[d] == 1) ||
+                        (key.coords[d] == nblocks[d] - 1 && I[d] == bf.blocksize[d]),
+                    1:2,
+                )
+                skip || @test vals[I] ≈ 4 atol = 1e-10
+            end
+        end
     end
 
     @testset "fields allocated before a regrid are rejected" begin

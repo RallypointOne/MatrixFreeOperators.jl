@@ -47,6 +47,14 @@ only when their BC handling makes it exact.
 """
 isselfadjoint(::AbstractOperator) = false
 
+# Whether the grid's inter-block ghost coupling is symmetric — the extra condition
+# a stencil leaf's self-adjointness claim needs on a composite grid. Same-level
+# halo copies couple both neighbors symmetrically; coarse–fine interpolation does
+# not, so a non-uniform forest breaks self-adjointness even for the Laplacian
+# (queried live: a regrid can flip it, and stencil leaves hold only the grid).
+_selfadjoint_grid(::AbstractGrid) = true
+_selfadjoint_grid(g::BlockForest) = g.forest.uniform[]
+
 """
     isdiagonal(L::AbstractOperator) -> Bool
 

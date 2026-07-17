@@ -55,6 +55,13 @@ plain user-constructed `CartesianGrid` it would leave ghosts silently unfilled.
 """
 struct Interface <: AbstractBC end
 
+# Whether any face is an Interface — i.e. the grid is a forest leaf whose
+# cross-block ghost values are external inputs, so a stencil's adjoint must
+# scatter cotangents into them instead of shortcutting through the forward
+# action. Constant-folds: the BC types are grid type parameters.
+_has_interface(g::AbstractGrid) =
+    any(pair -> pair[1] isa Interface || pair[2] isa Interface, boundary_conditions(g))
+
 # Sign of the homogeneous ghost fill relative to the mirrored interior cell.
 _bc_sign(::Periodic) = 1
 _bc_sign(::Dirichlet) = -1

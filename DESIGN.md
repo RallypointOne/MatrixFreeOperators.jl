@@ -123,7 +123,8 @@ convention-based interface so foreign grid types can opt in):
 - (AMR) `BlockForest` implements this same interface per leaf and adds
   `refine!(g, predicate)`, `coarsen!(g, predicate)`, `balance!(g)`, and `leaves(g)`
   (see §9 AMR). Each leaf is an ordinary `CartesianGrid`; `halo_update!` does the
-  inter-block coupling. Coarse–fine interface stencils are the remaining phase.
+  inter-block coupling — same-level copies plus quadratic coarse–fine
+  interpolation/restriction at refinement interfaces (see §9).
 
 **Field:** keep it minimal — a device array plus a reference to its grid and a
 *location* tag (so staggered grids are additive later):
@@ -591,9 +592,26 @@ pre-built.
     `view .=` copies with no per-application topology queries; the adjoint runs the
     same descriptors transposed (scatter-add then zero). The descriptor list is also
     the send/recv list a future distributed backend consumes.
-  - **Remaining:** coarse–fine interface interpolation/restriction in `halo_update!`
-    (the hard part — quadratic interp to preserve 2nd-order accuracy near
-    interfaces), and a field-indicator-driven regrid/solution-transfer driver.
+  - **Built (coarse–fine phase):** operators apply across refinement levels. The
+    schedule carries two more homogeneous descriptor vectors: coarse→fine ghost
+    interpolation (Martin–Cartwright quadratic — normal parabola (5/21, 5/6, −1/14)
+    through the fine block's first interior cell and two coarse layers, tensor-product
+    3-point tangential quadratics at ξ = ±1/4, one-sided at coarse tangential extremes
+    so fills read only block interiors) and fine→coarse flux-matching restriction
+    (coarse ghost set so the coarse face flux equals the mean fine flux; a plain 2^N
+    volume average leaves O(1) interface truncation ⇒ 1st-order solutions, rejected).
+    Forward sweep: copies → interp → restrict (restriction reads interp-filled fine
+    ghosts); the adjoint runs phases and descriptors in exact reverse order, making it
+    the exact transpose by construction. Quadratic exactness of every weight set is
+    unit-tested; the acceptance norm is the **volume-weighted L1 of the action**
+    (pointwise interface action error is O(h) by design for this scheme family —
+    Chombo/AMReX behavior; solutions and L1-action converge at 2nd order).
+    **Self-adjointness is grid-aware:** coarse–fine coupling is nonsymmetric, so
+    `isselfadjoint(laplacian(bf))` is `false` on a non-uniform forest (queried live)
+    — the adjoint folds/shortcuts degrade to the declared transpose, never a wrong
+    result. Requires halo width 1 and even blocksize ≥ 4 per dim (validated at
+    schedule build; uniform forests keep the looser v1 constraints).
+  - **Remaining:** a field-indicator-driven regrid/solution-transfer driver (#13).
   - **Extending to other tree structures (deliberately not abstracted yet).** There is
     no pluggable "swap the tree structure" interface, and that is the design, not an
     omission. A *fundamentally different* AMR (cell-octree, patch-based) would enter as a
@@ -608,7 +626,8 @@ pre-built.
   Restriction R and prolongation P are **themselves operators** in the same algebra
   (rank-changer template, mutual adjoints `P = Rᵀ` up to scaling); the coarse–fine
   transfer kernels built for AMR `halo_update!` ARE the MG transfer stencils (built
-  once, used twice). The coarse operator is rediscretization (`laplacian(coarse)`);
+  once, used twice — the weight builders live in `src/schedule.jl`: `_lagrange3`,
+  `_cf_normal_weights`, `_cf_tangential_weights`). The coarse operator is rediscretization (`laplacian(coarse)`);
   smoothers are Jacobi (needs a new `operator_diagonal`, dispatched on `isdiagonal`)
   / Chebyshev (repeated `apply!`). V/W/F-cycles compose on top. References to mine:
   GeometricMultigrid.jl, RestrictProlong.jl.

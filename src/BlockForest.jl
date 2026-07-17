@@ -37,7 +37,7 @@ struct BlockForest{N,T,BC<:Tuple,Dev} <: AbstractGrid{N}
     halo::NTuple{N,Int}
     bc::BC                         # physical domain boundary conditions
     device::Dev
-    schedule::Base.RefValue{ExchangeSchedule{N}}   # per-generation halo-exchange cache
+    schedule::Base.RefValue{ExchangeSchedule{N,T}}   # per-generation halo-exchange cache
 end
 
 function BlockForest(
@@ -58,27 +58,12 @@ function BlockForest(
     forest = Forest(nroot, periodic, maxlevel)
     return BlockForest{N,T,typeof(base.bc),typeof(base.device)}(
         forest, base.extent, base.spacing, blocksize, base.halo, base.bc, base.device,
-        Ref(_empty_schedule(Val(N))),
+        Ref(_empty_schedule(Val(N), T)),
     )
 end
 
 KernelAbstractions.get_backend(bf::BlockForest) = bf.device
 nleaves(bf::BlockForest) = nleaves(bf.forest)
-
-# Phase gate: coarse–fine interface interpolation is not implemented yet, so halo
-# exchange (and hence operator application) requires a single-level forest.
-# Erroring here upholds the design invariant that a missing capability degrades to
-# an error, never a silently wrong result.
-function _require_uniform(bf::BlockForest)
-    bf.forest.uniform[] || throw(
-        ArgumentError(
-            "operators on a non-uniform BlockForest require coarse–fine interface " *
-            "interpolation, which is not implemented yet; all leaves must be at one " *
-            "refinement level",
-        ),
-    )
-    return nothing
-end
 
 function Base.show(io::IO, bf::BlockForest{N}) where {N}
     print(io, "BlockForest{$N}(blocksize=$(bf.blocksize), ", bf.forest, ")")
