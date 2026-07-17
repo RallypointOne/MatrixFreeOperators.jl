@@ -610,7 +610,11 @@ pre-built.
     `isselfadjoint(laplacian(bf))` is `false` on a non-uniform forest (queried live)
     — the adjoint folds/shortcuts degrade to the declared transpose, never a wrong
     result. Requires halo width 1 and even blocksize ≥ 4 per dim (validated at
-    schedule build; uniform forests keep the looser v1 constraints).
+    schedule build; uniform forests keep the looser v1 constraints). `Composed`
+    works on forests: its intermediate is a whole `BlockField` and every combinator
+    (apply, prepared apply, adjoint, `boundary_rhs`) recurses at the forest level,
+    so the intermediate gets its inter-block exchange — the per-leaf path would
+    silently miss the cross-block coupling.
   - **Remaining:** a field-indicator-driven regrid/solution-transfer driver (#13).
   - **Extending to other tree structures (deliberately not abstracted yet).** There is
     no pluggable "swap the tree structure" interface, and that is the design, not an

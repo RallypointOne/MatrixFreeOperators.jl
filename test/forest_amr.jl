@@ -190,6 +190,73 @@
         @test !(A ≈ A')                                  # and L itself is not symmetric
     end
 
+    @testset "Composed on a non-uniform forest: adjoint identity + boundary lift" begin
+        rng = Random.MersenneTwister(17)
+        base = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (16, 16);
+            bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+        )
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+        refine!(bf, x -> x[1] < 0.5 && x[2] < 0.5)
+        for L in (
+            laplacian(bf) * laplacian(bf),
+            derivative(bf, 1; order=1) * laplacian(bf),
+            divergence(bf) * MFO.gradient(bf),
+        )
+            x = scalar_field(bf)
+            y = scalar_field(bf)
+            for i in 1:MFO.nleaves(bf)
+                interior(MFO.block(x, i)) .= rand(rng, bf.blocksize...)
+                interior(MFO.block(y, i)) .= rand(rng, bf.blocksize...)
+            end
+            Lx = apply(L, copy(x))
+            Lty = apply_adjoint!(scalar_field(bf), L, copy(y), bf)
+            ip1 = sum(
+                i -> dot(
+                    collect(interior(MFO.block(Lx, i))), collect(interior(MFO.block(y, i)))
+                ),
+                1:MFO.nleaves(bf),
+            )
+            ip2 = sum(
+                i -> dot(
+                    collect(interior(MFO.block(x, i))), collect(interior(MFO.block(Lty, i)))
+                ),
+                1:MFO.nleaves(bf),
+            )
+            @test ip1 ≈ ip2
+        end
+        # prepared transpose is structural on the non-uniform forest
+        Dc = derivative(bf, 1; order=1) * laplacian(bf)
+        Ac = materialize(prepare(Dc, scalar_field(bf)))
+        Act = materialize(prepare(adjoint(Dc), scalar_field(bf)))
+        @test Act ≈ Ac'
+
+        # Composed boundary lift needs the forest-level path: parity vs the
+        # single-grid lift on an equal-resolution uniform forest with
+        # inhomogeneous BC data (the per-leaf lift would silently miss the
+        # cross-block exchange inside apply(L.a, b_b)).
+        bci = ((Dirichlet(1.0), Dirichlet(-2.0)), (Neumann(0.5), Dirichlet(3.0)))
+        gi = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8); bc=bci)
+        bfi = BlockForest(gi; blocksize=(4, 4), maxlevel=2)
+        for (Lg, Lf) in (
+            (laplacian(gi) * laplacian(gi), laplacian(bfi) * laplacian(bfi)),
+            (
+                laplacian(gi) + 2.0 * (laplacian(gi) * laplacian(gi)),
+                laplacian(bfi) + 2.0 * (laplacian(bfi) * laplacian(bfi)),
+            ),
+        )
+            bg = collect(interior(boundary_rhs(Lg, scalar_field(gi))))
+            bff = boundary_rhs(Lf, scalar_field(bfi))
+            rec = zeros(8, 8)
+            for i in 1:MFO.nleaves(bfi)
+                key = bfi.forest.leaves[i]
+                idx = ntuple(d -> (key.coords[d] * 4) .+ (1:4), 2)
+                rec[idx...] .= collect(interior(MFO.block(bff, i)))
+            end
+            @test rec ≈ bg
+        end
+    end
+
     @testset "block-geometry constraints degrade to an error" begin
         base9 = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (9, 9))
         bf9 = BlockForest(base9; blocksize=(3, 3), maxlevel=2)   # odd blocksize

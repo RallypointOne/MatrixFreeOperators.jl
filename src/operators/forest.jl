@@ -5,30 +5,11 @@
 # per-generation exchange schedule), then each leaf runs the ordinary apply! (whose
 # own halo_update! is a no-op on the leaf
 # CartesianGrid; apply_bc! fills only physical-boundary faces, Interface faces
-# being left as halo_update! filled them). Combinators (Added, Scaled, AdjointOp)
-# recurse at the FOREST level — never per leaf — so a nested adjoint always
-# reaches the forest adjoint action and its cross-block fold; Composed throws
-# until its intermediate field gets an inter-block exchange (coarse–fine phase).
-
-# Composed needs an inter-block halo exchange on its intermediate field. Erroring
-# — wherever it sits in the tree — upholds the design invariant: degrade to an
-# error, never a wrong result.
-_check_forest_supported(::AbstractOperator) = nothing
-_check_forest_supported(L::Scaled) = _check_forest_supported(L.op)
-_check_forest_supported(L::AdjointOp) = _check_forest_supported(L.op)
-function _check_forest_supported(L::Added)
-    _check_forest_supported(L.a)
-    return _check_forest_supported(L.b)
-end
-function _check_forest_supported(::Composed)
-    throw(
-        ArgumentError(
-            "Composed operators are not supported on a BlockForest yet: the " *
-            "intermediate field needs an inter-block halo exchange (coarse–fine " *
-            "phase); apply the factors separately per application instead",
-        ),
-    )
-end
+# being left as halo_update! filled them). Combinators (Added, Scaled, Composed,
+# AdjointOp) recurse at the FOREST level — never per leaf — so a nested adjoint
+# always reaches the forest adjoint action and its cross-block fold, and a
+# Composed intermediate is a whole BlockField whose operand application performs
+# its own inter-block exchange.
 
 """
     apply!(y::BlockField, L::AbstractOperator, x::BlockField, g::BlockForest, α=true, β=false) -> y
@@ -37,9 +18,8 @@ Apply `L` over a block-structured forest: exchange inter-block halos once, then 
 the per-leaf stencil on every block.
 """
 function apply!(y::BlockField, L::AbstractOperator, x::BlockField, g::BlockForest, α, β)
-    _check_forest_supported(L)
     _require_current(y)
-    halo_update!(x, g)                  # also checks uniformity and x's generation
+    halo_update!(x, g)                  # also checks x's generation
     for i in 1:nleaves(g)
         lg = leaf_grid(g, i)
         apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
@@ -60,6 +40,15 @@ end
 function apply!(y::BlockField, L::Scaled, x::BlockField, g::BlockForest, α, β)
     return apply!(y, L.op, x, g, α * L.α, β)
 end
+# The intermediate is a whole BlockField (allocated per call, like the single-grid
+# pure path): the outer operand's forest apply! performs its own inter-block
+# exchange on it, which is what a per-leaf Composed application would miss.
+function apply!(y::BlockField, L::Composed, x::BlockField, g::BlockForest, α, β)
+    tmp = allocate_output(L.b, x)
+    apply!(tmp, L.b, x, g)
+    apply!(y, L.a, tmp, g, α, β)
+    return y
+end
 
 # Lazy adjoint wrappers route through the forest adjoint action so interface-ghost
 # contributions are folded across blocks by halo_update_adjoint! (the per-leaf
@@ -79,6 +68,12 @@ end
 function apply_adjoint!(x̄::BlockField, L::Scaled, ȳ::BlockField, g::BlockForest, α, β)
     return apply_adjoint!(x̄, L.op, ȳ, g, α * conj(L.α), β)
 end
+function apply_adjoint!(x̄::BlockField, L::Composed, ȳ::BlockField, g::BlockForest, α, β)
+    tmp = allocate_input(L.a, ȳ)
+    apply_adjoint!(tmp, L.a, ȳ, g)
+    apply_adjoint!(x̄, L.b, tmp, g, α, β)
+    return x̄
+end
 
 """
     apply_adjoint!(x̄::BlockField, L, ȳ::BlockField, g::BlockForest, α=true, β=false) -> x̄
@@ -91,7 +86,6 @@ place) followed by [`halo_update_adjoint!`](@ref) folding those into the neighbo
 interiors.
 """
 function apply_adjoint!(x̄::BlockField, L::AbstractOperator, ȳ::BlockField, g::BlockForest, α, β)
-    _check_forest_supported(L)
     _require_current(x̄)
     _require_current(ȳ)
     # Sound on a non-uniform forest too: isselfadjoint is grid-aware (false once
