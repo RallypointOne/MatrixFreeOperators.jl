@@ -19,6 +19,7 @@ export Derivative, derivative, derivative_stencil
 export Gradient, gradient, Divergence, divergence
 export ScalingOp, scaling, IdentityOp, identity_op
 export Advection, advection, SelfAdvection
+export Restriction, restriction, Prolongation, prolongation
 export Scaled, Added, Composed
 export LinearizedOp, linearize, linearize!
 export PreparedOperator, PreparedForest, prepare, boundary_rhs
@@ -39,6 +40,8 @@ include("operators/gradient.jl")
 include("operators/divergence.jl")
 include("operators/scaling.jl")
 include("operators/advection.jl")
+include("operators/prolongation.jl")
+include("operators/restriction.jl")
 include("operators/diagonal.jl")
 include("operators/forest.jl")
 include("operators/linearize.jl")

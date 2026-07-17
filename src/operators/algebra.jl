@@ -49,10 +49,12 @@ end
 
 # Pure path: the intermediate is allocated per call (autodiff-friendly). The
 # prepared path replaces Composed nodes with buffer-carrying twins — see linalg.jl.
+# Each factor sees the grid of the field it consumes: the factors of a transfer
+# chain (restriction/prolongation) live on different grids.
 function apply!(y::Field, L::Composed, x::Field, g::AbstractGrid, α, β)
     tmp = allocate_output(L.b, x)
     apply!(tmp, L.b, x, g)
-    apply!(y, L.a, tmp, g, α, β)
+    apply!(y, L.a, tmp, tmp.grid, α, β)
     return y
 end
 
@@ -79,8 +81,8 @@ end
 
 function apply_adjoint!(x̄::Field, L::Composed, ȳ::Field, g::AbstractGrid, α, β)
     tmp = allocate_input(L.a, ȳ)
-    apply_adjoint!(tmp, L.a, ȳ, g)
-    apply_adjoint!(x̄, L.b, tmp, g, α, β)
+    apply_adjoint!(tmp, L.a, ȳ, ȳ.grid)
+    apply_adjoint!(x̄, L.b, tmp, tmp.grid, α, β)
     return x̄
 end
 
