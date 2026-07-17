@@ -63,6 +63,21 @@ smoothers. Defaults to `false`.
 """
 isdiagonal(::AbstractOperator) = false
 
+"""
+    operator_diagonal(L::AbstractOperator) -> Number | Field
+
+Exact diagonal of `L` as a linear map over interior DOFs, including boundary
+contributions — a `Number` when the diagonal is uniform, a scalar
+[`Field`](@ref) (ghost entries zero) otherwise. Powers the multigrid smoothers.
+There is no generic fallback: leaves declare their diagonal explicitly, so a
+missing declaration errors instead of degrading to a wrong diagonal.
+"""
+operator_diagonal(L::AbstractOperator) = throw(
+    ArgumentError(
+        "operator_diagonal has no method for $(nameof(typeof(L))); declare one to enable Jacobi/Chebyshev smoothing",
+    ),
+)
+
 #--------------------------------------------------------------------------------# Action
 
 """

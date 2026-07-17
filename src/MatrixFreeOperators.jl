@@ -13,7 +13,7 @@ export BlockForest, BlockField, refine!, coarsen!, balance!, leaves
 export AbstractField, Field, Center, scalar_field, vector_field, set!, ncomponents, component
 export flatten, flat_to_interior!, interior_to_flat!
 export AbstractOperator, apply, apply!, apply_adjoint!, AdjointOp
-export islinear, isconstant, isselfadjoint, isdiagonal
+export islinear, isconstant, isselfadjoint, isdiagonal, operator_diagonal
 export Laplacian, laplacian, laplacian_stencil, laplacian_7pt_noflux
 export Derivative, derivative, derivative_stencil
 export Gradient, gradient, Divergence, divergence
@@ -39,6 +39,7 @@ include("operators/gradient.jl")
 include("operators/divergence.jl")
 include("operators/scaling.jl")
 include("operators/advection.jl")
+include("operators/diagonal.jl")
 include("operators/forest.jl")
 include("operators/linearize.jl")
 include("linalg.jl")
