@@ -26,6 +26,7 @@ export PreparedOperator, PreparedForest, prepare, boundary_rhs
 include("Grids.jl")
 include("boundaries.jl")
 include("topology.jl")
+include("schedule.jl")
 include("BlockForest.jl")
 include("Fields.jl")
 include("blockfield.jl")
