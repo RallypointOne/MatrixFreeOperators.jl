@@ -153,6 +153,34 @@ function cell_center(g::CartesianGrid{N,T}, I::CartesianIndex{N}) where {N,T}
     )
 end
 
+"""
+    coarsen(g::CartesianGrid) -> CartesianGrid
+
+The next-coarser grid in a 2:1 multigrid hierarchy: half the cells per
+dimension over the same extent, so the spacing doubles. Boundary conditions,
+halo width, and device carry over verbatim. Requires an even cell count in
+every dimension.
+
+### Examples
+
+```julia
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))
+gc = coarsen(g)          # 32×32, spacing doubled
+```
+"""
+function coarsen(g::CartesianGrid{N}) where {N}
+    all(iseven, local_size(g)) || throw(
+        ArgumentError(
+            "coarsen requires an even cell count in every dimension, got $(local_size(g))"
+        ),
+    )
+    g.topology === nothing ||
+        throw(ArgumentError("coarsen does not support distributed grids yet"))
+    return CartesianGrid(
+        g.extent, ntuple(d -> g.size[d] >> 1, Val(N)); bc=g.bc, halo=g.halo, device=g.device
+    )
+end
+
 KernelAbstractions.get_backend(g::CartesianGrid) = g.device
 
 _inv_spacing(g::AbstractGrid{N}) where {N} = ntuple(d -> inv(spacing(g)[d]), Val(N))
