@@ -626,14 +626,32 @@ pre-built.
     actually exists** — abstracting from one implementation guesses the interface wrong
     (rule of three). Do not introduce it speculatively.
 
-- **Geometric multigrid — falls out of the AMR hierarchy (not yet built).**
+- **Geometric multigrid — built (uniform grids, v1 scope: issue #11).**
   Restriction R and prolongation P are **themselves operators** in the same algebra
-  (rank-changer template, mutual adjoints `P = Rᵀ` up to scaling); the coarse–fine
-  transfer kernels built for AMR `halo_update!` ARE the MG transfer stencils (built
-  once, used twice — the weight builders live in `src/schedule.jl`: `_lagrange3`,
-  `_cf_normal_weights`, `_cf_tangential_weights`). The coarse operator is rediscretization (`laplacian(coarse)`);
-  smoothers are Jacobi (needs a new `operator_diagonal`, dispatched on `isdiagonal`)
-  / Chebyshev (repeated `apply!`). V/W/F-cycles compose on top. References to mine:
+  (`src/operators/prolongation.jl`/`restriction.jl` — the rank-changer template's
+  first two-grid leaves: `operator_grid` is the *input* grid, `size` is rectangular).
+  P is per-dim **linear** interpolation on the cell-centered 2:1 pair (3/4 parent,
+  1/4 neighbor, boundary children read the coarse homogeneous ghost fill); R **is
+  defined as** `2⁻ᴺ·Pᵀ` (full weighting) sharing one kernel pair, so the dot-product
+  identity is exact by construction and `adjoint_operator` declares the partners.
+  A deliberate deviation from the earlier plan to reuse the AMR `_lagrange3`
+  quadratic weights: those kernels are interface-only ghost fills, and linear P +
+  full-weighting R is the textbook cell-centered pair satisfying the transfer-order
+  rule for 2nd-order PDEs — the quadratic weights remain the upgrade path.
+  Coarse operators are **rediscretizations** on `coarsen(g)` via a tree walk
+  (`ScalingOp` coefficient fields child-averaged, not restricted — R's Dirichlet
+  fold would corrupt a material coefficient at walls). Note: cell-centered Galerkin
+  `R·A·P` ≠ rediscretization even in the periodic interior (both O(h²)-consistent;
+  tests assert structure + action agreement, never equality). Smoothers: weighted
+  Jacobi and fixed-coefficient Chebyshev (power-iteration bounds at setup), both on
+  the new `operator_diagonal` (exact incl. BC diagonal contributions
+  `(-2 + bc_sign)·h⁻²`; `Number` when uniform, `Field` otherwise; no fallback —
+  missing declarations error). The V-cycle (`src/multigrid.jl`) is symmetric
+  (ν₁ = ν₂, R = c·Pᵀ, exact dense-LU coarsest solve) so
+  `MultigridPreconditioner` is a fixed SPD linear map feeding `Krylov.cg` via
+  `mul!`; `MultigridSolver`/`solve` wrap it as a stationary iteration.
+  Deferred: `:W`/`:F` cycles, forest MG (the AMR hierarchy is the natural level
+  structure), `Advection` rediscretization, GPU coarsest solve. References mined:
   GeometricMultigrid.jl, RestrictProlong.jl.
 
 ---

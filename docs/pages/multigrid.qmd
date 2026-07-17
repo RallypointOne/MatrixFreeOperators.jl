@@ -1,0 +1,129 @@
+---
+title: "Geometric Multigrid"
+---
+
+Geometric multigrid turns the operator algebra into a fast Poisson-class solver:
+transfer operators live in the same algebra as everything else, smoothers are
+built from the operator's own diagonal, and the V-cycle composes on top. This
+page tells the story — why Krylov alone is not enough, how the pieces fall out
+of machinery that already exists, and what ships today.
+
+## The motivation: CG iterations grow with the grid
+
+An unpreconditioned Krylov solve of `-∇²u = f` needs more iterations every time
+the grid is refined — the condition number of the discrete Laplacian grows like
+`h⁻²`, so halving the spacing roughly doubles the CG iteration count. Multigrid
+breaks that link: smooth error components are cheap to kill on *coarser* grids,
+so a fixed handful of V-cycles solves the system at **any** resolution. Used as
+a preconditioner it makes the CG iteration count essentially grid-independent:
+
+```
+   iterations to rtol = 1e-8, 2-D Poisson, random RHS
+
+   grid        plain CG      MG-preconditioned CG
+   32×32          111                 10
+   64×64          220                 10
+```
+
+## Transfers are operators in the algebra
+
+The two grid-transfer maps are ordinary operators — the same rank-changer
+template as [`Gradient`](../pages/api.qmd)/`Divergence`, just with **two grids**
+instead of two tensor ranks:
+
+```julia
+gf = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))
+gc = coarsen(gf)                  # half the cells, double the spacing
+
+P = prolongation(gc, gf)          # coarse -> fine   (size 4096 × 1024)
+R = restriction(gf, gc)           # fine  -> coarse  (size 1024 × 4096)
+```
+
+`prolongation` is per-dimension linear interpolation on the cell-centered 2:1
+pair: each fine cell sits a quarter coarse-cell off its parent's center, so it
+blends parent (3/4) and neighbor (1/4). Boundary children read the coarse
+grid's homogeneous ghost fill, which keeps the interpolant consistent with the
+boundary conditions. `restriction` **is defined as** the scaled transpose
+`R = 2⁻ᴺ·Pᵀ` (full weighting) and shares P's kernels, so the adjoint identity
+`⟨P·x, y⟩ = ⟨x, Pᵀ·y⟩` holds to machine precision by construction — `adjoint(R)`
+and `adjoint(P)` return each other, scaled. They compose like any operator:
+`R * laplacian(gf) * P` is the Galerkin coarse operator, ready for
+`prepare`/`materialize`.
+
+## Smoothers come from the operator's diagonal
+
+A multigrid smoother only needs the diagonal of the operator.
+[`operator_diagonal`](../pages/api.qmd) extracts it *exactly* — a `Number` when
+uniform (all-periodic Laplacian), a `Field` otherwise, with the
+Dirichlet/Neumann mirror fills' contribution to boundary cells included. There
+is deliberately no generic fallback: an operator without a declared diagonal
+errors instead of silently smoothing with a wrong one.
+
+Two smoother configurations ship:
+
+- [`Jacobi`](../pages/api.qmd)`(ω=2/3, sweeps=2)` — weighted Jacobi,
+  `x ← x + ω·D⁻¹·(b - A·x)`.
+- [`Chebyshev`](../pages/api.qmd)`(degree=3)` — a fixed Chebyshev polynomial in
+  `D⁻¹·A` targeting the upper spectrum `[λmax/4, λmax]`, with `λmax` estimated
+  by power iteration at construction. Stronger than Jacobi per operator
+  application, still just repeated `apply!`.
+
+Both are applied identically before and after each coarse-grid correction, so
+the whole V-cycle stays a **symmetric** linear map — that is what makes it a
+legal CG preconditioner.
+
+## Coarse operators are rediscretizations
+
+Each level's operator is the same expression rebuilt on the coarser grid —
+`laplacian(coarsen(g))`, not a matrix product. A tree walk rediscretizes any
+supported operator expression (`Laplacian`, `Derivative`, `Gradient`,
+`Divergence`, `ScalingOp`, `IdentityOp`, and their `+`/`*`/scalar combinations);
+a `ScalingOp`'s coefficient field is child-averaged onto the coarse grid. The
+same boundary-condition objects apply verbatim — coarse levels solve the
+homogeneous correction equation, which is exactly what `apply_bc!` enforces.
+
+An honest note: for cell-centered transfers the Galerkin product `R·A·P` is a
+*different* consistent coarse operator than the rediscretization — even in the
+periodic interior their stencils differ, while both are second-order
+approximations of the same PDE. The test suite checks exactly that (shared
+nullspace, symmetry, O(h²) agreement of actions) rather than pretending they
+are equal. The coarsest level is solved exactly with a dense LU factored once
+at construction, which keeps the whole cycle a fixed linear operator.
+
+## Usage
+
+As a Krylov preconditioner — `mul!(z, M, r)` runs one V-cycle, so `M` acts as
+an approximate inverse, which is exactly the Krylov.jl `M` convention:
+
+```julia
+g  = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))
+L  = -1 * laplacian(g)                       # SPD under Dirichlet
+A  = prepare(L)
+b  = flatten(f) .- flatten(boundary_rhs(L, g))
+
+mg = MultigridPreconditioner(L; smoother=Jacobi(2/3), cycle=:V, levels=:auto)
+u, stats = Krylov.cg(A, b; M=mg)
+```
+
+Or as a standalone solver — the stationary iteration `u ← u + M·(b - A·u)`:
+
+```julia
+u = solve(MultigridSolver(L), b; rtol=1e-8)
+```
+
+`levels=:auto` coarsens while the cell counts stay even (down to ≤ 64 DOFs);
+pass `levels=n` to force a depth. Construction does all allocation — level
+grids, rediscretized operators, smoother state, the coarsest LU — so the
+steady-state `mul!` is allocation-free, like a `prepare`d operator. It is also
+stateful and single-threaded the same way: one preconditioner per concurrent
+solve.
+
+## Status
+
+Ships today: uniform `CartesianGrid`, scalar fields, `:V` cycle, `Jacobi` and
+`Chebyshev` smoothers, dense-LU coarsest solve, exact `operator_diagonal` for
+the supported leaves. Deliberately deferred: `:W`/`:F` cycles, multigrid on a
+`BlockForest` (the AMR hierarchy is the natural level structure — see
+[AMR](amr.qmd)), `Advection` rediscretization, and GPU-resident coarsest
+solves. Unsupported configurations throw an `ArgumentError` up front rather
+than degrade.
