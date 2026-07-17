@@ -1,7 +1,7 @@
 module MatrixFreeOperators
 
 using Adapt: Adapt
-using LinearAlgebra: LinearAlgebra, dot, mul!, norm
+using LinearAlgebra: LinearAlgebra, diag, dot, issuccess, ldiv!, lu, mul!, norm
 using StaticArrays: SVector
 import KernelAbstractions
 
@@ -23,6 +23,7 @@ export Restriction, restriction, Prolongation, prolongation
 export Scaled, Added, Composed
 export LinearizedOp, linearize, linearize!
 export PreparedOperator, PreparedForest, prepare, boundary_rhs
+export MultigridPreconditioner, MultigridSolver, solve, Jacobi, Chebyshev
 
 include("Grids.jl")
 include("boundaries.jl")
@@ -46,5 +47,6 @@ include("operators/diagonal.jl")
 include("operators/forest.jl")
 include("operators/linearize.jl")
 include("linalg.jl")
+include("multigrid.jl")
 
 end # module

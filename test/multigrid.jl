@@ -230,4 +230,137 @@
         )
         @test eigmax(Symmetric(Gd)) < 0
     end
+
+    @testset "preconditioner is SPD" begin
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16))
+        L = -1 * laplacian(g)
+        for smoother in (Jacobi(), Chebyshev(2))
+            mg = MultigridPreconditioner(L; smoother, levels=2)
+            @test size(mg) == (256, 256)
+            @test eltype(mg) === Float64
+            S = materialize(mg)
+            @test S ≈ S'
+            @test eigmin(Symmetric(S)) > 0
+            @test S == materialize(mg)      # deterministic, stateful-but-repeatable
+        end
+    end
+
+    @testset "MG-preconditioned cg vs plain cg" begin
+        # random RHS: a pure sine RHS is an exact eigenvector of the discrete
+        # Laplacian and plain cg converges on it in one iteration
+        function poisson_iters(n)
+            g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (n, n))
+            L = -1 * laplacian(g)
+            A = prepare(L)
+            Random.seed!(7)
+            b = rand(size(A, 2))
+            _, stats_mg = Krylov.cg(A, b; M=MultigridPreconditioner(L))
+            _, stats_pl = Krylov.cg(A, b)
+            return stats_mg.niter, stats_pl.niter
+        end
+        k32, p32 = poisson_iters(32)
+        k64, p64 = poisson_iters(64)
+        @test k64 <= p64 ÷ 2          # far fewer iterations
+        @test k64 - k32 <= 3          # near-grid-independence
+        @test p64 > p32               # while plain cg grows
+
+        # accuracy vs the analytic solution through the preconditioned solve
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))
+        L = -1 * laplacian(g)
+        A = prepare(L)
+        b = flatten(set!(scalar_field(g), x -> 2 * pi^2 * sinpi(x[1]) * sinpi(x[2])))
+        u, _ = Krylov.cg(A, b; M=MultigridPreconditioner(L), rtol=1e-10)
+        uex = flatten(set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2])))
+        @test maximum(abs, u .- uex) < 1e-3
+    end
+
+    @testset "variable-coefficient SPD system" begin
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16))
+        σ = set!(scalar_field(g), x -> 1 + x[1] * x[2])
+        L = scaling(σ) - laplacian(g)
+        A = prepare(L)
+        f = flatten(set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2])))
+        u, stats = Krylov.cg(A, f; M=MultigridPreconditioner(L; levels=2), rtol=1e-10)
+        r = similar(f)
+        mul!(r, A, u)
+        @test norm(f .- r) <= 1e-8 * norm(f)
+        @test stats.solved
+    end
+
+    @testset "standalone MultigridSolver" begin
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))
+        L = -1 * laplacian(g)
+        b = flatten(set!(scalar_field(g), x -> 2 * pi^2 * sinpi(x[1]) * sinpi(x[2])))
+        u = solve(MultigridSolver(L), b; rtol=1e-10)
+        A = prepare(L)
+        r = similar(b)
+        mul!(r, A, u)
+        @test norm(b .- r) <= 1e-10 * norm(b)
+        uex = flatten(set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2])))
+        @test maximum(abs, u .- uex) < 1e-3
+
+        # inhomogeneous Dirichlet folded through boundary_rhs: u = 1 on ∂Ω
+        gi = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)),
+            (32, 32);
+            bc=ntuple(_ -> (Dirichlet(1.0), Dirichlet(1.0)), 2),
+        )
+        Li = -1 * laplacian(gi)
+        fi = flatten(set!(scalar_field(gi), x -> 2 * pi^2 * sinpi(x[1]) * sinpi(x[2])))
+        rhs = fi .- flatten(boundary_rhs(Li, gi))
+        ui = solve(MultigridSolver(Li), rhs; rtol=1e-10)
+        uexi = flatten(
+            set!(scalar_field(gi), x -> 1 + sinpi(x[1]) * sinpi(x[2]))
+        )
+        @test maximum(abs, ui .- uexi) < 4e-3
+    end
+
+    @testset "steady-state allocation guard" begin
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))
+        L = -1 * laplacian(g)
+        for smoother in (Jacobi(), Chebyshev(2))
+            mg = MultigridPreconditioner(L; smoother)
+            r = rand(size(mg, 2))
+            z = similar(r)
+            mul!(z, mg, r)
+            mul!(z, mg, r)
+            alloc = @allocated mul!(z, mg, r)
+            @test alloc <= 512
+        end
+    end
+
+    @testset "level policy and error paths" begin
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))
+        L = -1 * laplacian(g)
+        @test length(MultigridPreconditioner(L).levels) == 4        # 64² → 8²
+        @test length(MultigridPreconditioner(L; levels=3).levels) == 3
+        @test occursin("4 levels", repr(MultigridPreconditioner(L)))
+
+        @test_throws ArgumentError MultigridPreconditioner(L; cycle=:W)
+        @test_throws ArgumentError MultigridPreconditioner(L; levels=1)
+        @test_throws ArgumentError MultigridPreconditioner(L; levels=12)  # runs out of even sizes
+        g1d = CartesianGrid(((0.0, 1.0),), (64,))
+        @test_throws ArgumentError MultigridPreconditioner(-1 * laplacian(g1d))  # :auto stops at ≤64 DOFs
+        @test_throws ArgumentError MultigridPreconditioner(
+            advection(g, SelfAdvection()); levels=2
+        )
+        @test_throws ArgumentError MatrixFreeOperators._rediscretize(
+            AdjointOp(laplacian(g)), coarsen(g)
+        )
+
+        # all-Neumann Poisson: constant nullspace reaches the coarsest dense LU
+        gn = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)),
+            (16, 16);
+            bc=ntuple(_ -> (Neumann(), Neumann()), 2),
+        )
+        err = try
+            MultigridPreconditioner(-1 * laplacian(gn); levels=2)
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test occursin("singular", err.msg)
+    end
 end
