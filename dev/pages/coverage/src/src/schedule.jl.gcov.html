@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-17 22:54:20</td>
+            <td class="headerValue">2026-07-17 23:04:49</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -71,7 +71,7 @@
 <span id="L9"><span class="lineNum">       9</span>              : the ghost slab is scatter-added into the source slab, then zeroed.</span>
 <span id="L10"><span class="lineNum">      10</span>              : &quot;&quot;&quot;</span>
 <span id="L11"><span class="lineNum">      11</span>              : struct CopyDescriptor{N}</span>
-<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">        1876 :     src::Int</span></span>
+<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">        2004 :     src::Int</span></span>
 <span id="L13"><span class="lineNum">      13</span>              :     dst::Int</span>
 <span id="L14"><span class="lineNum">      14</span>              :     src_ranges::NTuple{N,UnitRange{Int}}</span>
 <span id="L15"><span class="lineNum">      15</span>              :     dst_ranges::NTuple{N,UnitRange{Int}}</span>
@@ -86,7 +86,7 @@
 <span id="L24"><span class="lineNum">      24</span>              : columns.</span>
 <span id="L25"><span class="lineNum">      25</span>              : &quot;&quot;&quot;</span>
 <span id="L26"><span class="lineNum">      26</span>              : struct SlabTerm{N,T}</span>
-<span id="L27"><span class="lineNum">      27</span> <span class="tlaGNC">        5940 :     block::Int</span></span>
+<span id="L27"><span class="lineNum">      27</span> <span class="tlaGNC">        6204 :     block::Int</span></span>
 <span id="L28"><span class="lineNum">      28</span>              :     ranges::NTuple{N,StepRange{Int,Int}}</span>
 <span id="L29"><span class="lineNum">      29</span>              :     weight::T</span>
 <span id="L30"><span class="lineNum">      30</span>              : end</span>
@@ -102,7 +102,7 @@
 <span id="L40"><span class="lineNum">      40</span>              : their weights by construction.</span>
 <span id="L41"><span class="lineNum">      41</span>              : &quot;&quot;&quot;</span>
 <span id="L42"><span class="lineNum">      42</span>              : struct GhostFill{N,T}</span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">         900 :     dst_block::Int</span></span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">         940 :     dst_block::Int</span></span>
 <span id="L44"><span class="lineNum">      44</span>              :     dst_ranges::NTuple{N,StepRange{Int,Int}}</span>
 <span id="L45"><span class="lineNum">      45</span>              :     terms::Vector{SlabTerm{N,T}}</span>
 <span id="L46"><span class="lineNum">      46</span>              : end</span>
@@ -127,7 +127,7 @@
 <span id="L65"><span class="lineNum">      65</span>              : cache keys on the live `forest.generation[]`.</span>
 <span id="L66"><span class="lineNum">      66</span>              : &quot;&quot;&quot;</span>
 <span id="L67"><span class="lineNum">      67</span>              : struct ExchangeSchedule{N,T}</span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">         120 :     copies::Vector{CopyDescriptor{N}}</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">         132 :     copies::Vector{CopyDescriptor{N}}</span></span>
 <span id="L69"><span class="lineNum">      69</span>              :     interp::Vector{GhostFill{N,T}}</span>
 <span id="L70"><span class="lineNum">      70</span>              :     restrict::Vector{GhostFill{N,T}}</span>
 <span id="L71"><span class="lineNum">      71</span>              :     generation::Int</span>
@@ -135,7 +135,7 @@
 <span id="L73"><span class="lineNum">      73</span>              : </span>
 <span id="L74"><span class="lineNum">      74</span>              : # Sentinel: generation -1 never matches a live forest generation (construction</span>
 <span id="L75"><span class="lineNum">      75</span>              : # already bumps it to ≥ 1), so the first _exchange_schedule fetch always builds.</span>
-<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">          68 : _empty_schedule(::Val{N}, ::Type{T}) where {N,T} =</span></span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">          74 : _empty_schedule(::Val{N}, ::Type{T}) where {N,T} =</span></span>
 <span id="L77"><span class="lineNum">      77</span>              :     ExchangeSchedule{N,T}(CopyDescriptor{N}[], GhostFill{N,T}[], GhostFill{N,T}[], -1)</span>
 <span id="L78"><span class="lineNum">      78</span>              : </span>
 <span id="L79"><span class="lineNum">      79</span>              : #--------------------------------------------------------------------------------# Coarse–fine transfer weights</span>
@@ -145,7 +145,7 @@
 <span id="L83"><span class="lineNum">      83</span>              : # across refinement interfaces; these ARE the multigrid transfer stencils</span>
 <span id="L84"><span class="lineNum">      84</span>              : # (Restriction/Prolongation extract them — issue #11).</span>
 <span id="L85"><span class="lineNum">      85</span>              : function _lagrange3(a, b, c, ξ)</span>
-<span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">         900 :     return (</span></span>
+<span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">         940 :     return (</span></span>
 <span id="L87"><span class="lineNum">      87</span>              :         (ξ - b) * (ξ - c) / ((a - b) * (a - c)),</span>
 <span id="L88"><span class="lineNum">      88</span>              :         (ξ - a) * (ξ - c) / ((b - a) * (b - c)),</span>
 <span id="L89"><span class="lineNum">      89</span>              :         (ξ - a) * (ξ - b) / ((c - a) * (c - b)),</span>
@@ -156,13 +156,13 @@
 <span id="L94"><span class="lineNum">      94</span>              : # coarse-cell units with the interface at 0: through the fine block's own first</span>
 <span id="L95"><span class="lineNum">      95</span>              : # interior cell (−1/4) and the coarse neighbor's first two interior layers</span>
 <span id="L96"><span class="lineNum">      96</span>              : # (1/2, 3/2), evaluated at the fine ghost center (1/4) → (5/21, 5/6, −1/14).</span>
-<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">         180 : _cf_normal_weights(::Type{T}) where {T} = _lagrange3(-T(1) / 4, T(1) / 2, T(3) / 2, T(1) / 4)</span></span>
+<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">         188 : _cf_normal_weights(::Type{T}) where {T} = _lagrange3(-T(1) / 4, T(1) / 2, T(3) / 2, T(1) / 4)</span></span>
 <span id="L98"><span class="lineNum">      98</span>              : </span>
 <span id="L99"><span class="lineNum">      99</span>              : # Tangential 3-point quadratic at ξ = ±1/4 (a fine column sits a quarter coarse</span>
 <span id="L100"><span class="lineNum">     100</span>              : # cell off its coarse column's center). `offs` are the coarse node offsets:</span>
 <span id="L101"><span class="lineNum">     101</span>              : # (−1, 0, 1) centered in the interior; shifted one-sided at the coarse block's</span>
 <span id="L102"><span class="lineNum">     102</span>              : # tangential extremes so coarse–fine fills only ever read block interiors.</span>
-<span id="L103"><span class="lineNum">     103</span> <span class="tlaGNC">         720 : _cf_tangential_weights(offs::NTuple{3,Int}, ξ::T) where {T} =</span></span>
+<span id="L103"><span class="lineNum">     103</span> <span class="tlaGNC">         752 : _cf_tangential_weights(offs::NTuple{3,Int}, ξ::T) where {T} =</span></span>
 <span id="L104"><span class="lineNum">     104</span>              :     _lagrange3(T(offs[1]), T(offs[2]), T(offs[3]), ξ)</span>
         </pre>
               </td>

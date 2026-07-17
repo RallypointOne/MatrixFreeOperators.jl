@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-17 22:54:20</td>
+            <td class="headerValue">2026-07-17 23:04:49</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -80,26 +80,26 @@
 <span id="L18"><span class="lineNum">      18</span>              : @inline function derivative_stencil(</span>
 <span id="L19"><span class="lineNum">      19</span>              :     u::AbstractArray{&lt;:Any,N}, I::CartesianIndex{N}, dim::Int, order::Int, inv_h</span>
 <span id="L20"><span class="lineNum">      20</span>              : ) where {N}</span>
-<span id="L21"><span class="lineNum">      21</span> <span class="tlaGNC tlaBgGNC">       84302 :     uc = @inbounds u[I]</span></span>
-<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">       84302 :     δ = _unitindex(Val(N), dim)</span></span>
-<span id="L23"><span class="lineNum">      23</span> <span class="tlaGNC">       84302 :     du = if order == 1</span></span>
-<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC">       78182 :         @inbounds (u[I + δ] - u[I - δ]) * (inv_h / 2)</span></span>
+<span id="L21"><span class="lineNum">      21</span> <span class="tlaGNC tlaBgGNC">      290062 :     uc = @inbounds u[I]</span></span>
+<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">      290062 :     δ = _unitindex(Val(N), dim)</span></span>
+<span id="L23"><span class="lineNum">      23</span> <span class="tlaGNC">      290062 :     du = if order == 1</span></span>
+<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC">      283942 :         @inbounds (u[I + δ] - u[I - δ]) * (inv_h / 2)</span></span>
 <span id="L25"><span class="lineNum">      25</span>              :     else</span>
-<span id="L26"><span class="lineNum">      26</span> <span class="tlaGNC">       90422 :         @inbounds (u[I - δ] - 2 * uc + u[I + δ]) * inv_h^2</span></span>
+<span id="L26"><span class="lineNum">      26</span> <span class="tlaGNC">      296182 :         @inbounds (u[I - δ] - 2 * uc + u[I + δ]) * inv_h^2</span></span>
 <span id="L27"><span class="lineNum">      27</span>              :     end</span>
-<span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC">       84302 :     return (uc, du)</span></span>
+<span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC">      290062 :     return (uc, du)</span></span>
 <span id="L29"><span class="lineNum">      29</span>              : end</span>
 <span id="L30"><span class="lineNum">      30</span>              : </span>
-<span id="L31"><span class="lineNum">      31</span> <span class="tlaGNC">       84302 : @inline _deriv_at(u, I, dim, order, inv_h) = derivative_stencil(u, I, dim, order, inv_h)[2]</span></span>
+<span id="L31"><span class="lineNum">      31</span> <span class="tlaGNC">      290062 : @inline _deriv_at(u, I, dim, order, inv_h) = derivative_stencil(u, I, dim, order, inv_h)[2]</span></span>
 <span id="L32"><span class="lineNum">      32</span>              : </span>
 <span id="L33"><span class="lineNum">      33</span>              : # Adjoint gathers: flipped stencil weights, bounds-masked. Order 1 is</span>
 <span id="L34"><span class="lineNum">      34</span>              : # antisymmetric (sign flip); order 2 is symmetric (its own flip).</span>
 <span id="L35"><span class="lineNum">      35</span>              : @inline function _deriv_adjoint_gather(</span>
 <span id="L36"><span class="lineNum">      36</span>              :     ȳ::AbstractArray{&lt;:Any,N}, J::CartesianIndex{N}, dim::Int, order::Int, inv_h</span>
 <span id="L37"><span class="lineNum">      37</span>              : ) where {N}</span>
-<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">       31682 :     δ = _unitindex(Val(N), dim)</span></span>
-<span id="L39"><span class="lineNum">      39</span> <span class="tlaGNC">       31682 :     if order == 1</span></span>
-<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">       25706 :         return (_maskedget(ȳ, J - δ) - _maskedget(ȳ, J + δ)) * (inv_h / 2)</span></span>
+<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">      493490 :     δ = _unitindex(Val(N), dim)</span></span>
+<span id="L39"><span class="lineNum">      39</span> <span class="tlaGNC">      493490 :     if order == 1</span></span>
+<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">      487514 :         return (_maskedget(ȳ, J - δ) - _maskedget(ȳ, J + δ)) * (inv_h / 2)</span></span>
 <span id="L41"><span class="lineNum">      41</span>              :     else</span>
 <span id="L42"><span class="lineNum">      42</span> <span class="tlaGNC">        5976 :         return (_maskedget(ȳ, J - δ) - 2 * _maskedget(ȳ, J) + _maskedget(ȳ, J + δ)) *</span></span>
 <span id="L43"><span class="lineNum">      43</span>              :                inv_h^2</span>
@@ -113,7 +113,7 @@
 <span id="L51"><span class="lineNum">      51</span>              : [`derivative`](@ref).</span>
 <span id="L52"><span class="lineNum">      52</span>              : &quot;&quot;&quot;</span>
 <span id="L53"><span class="lineNum">      53</span>              : struct Derivative{G&lt;:AbstractGrid} &lt;: AbstractOperator</span>
-<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         111 :     grid::G</span></span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         122 :     grid::G</span></span>
 <span id="L55"><span class="lineNum">      55</span>              :     dim::Int</span>
 <span id="L56"><span class="lineNum">      56</span>              :     order::Int</span>
 <span id="L57"><span class="lineNum">      57</span>              : end</span>
@@ -135,45 +135,45 @@
 <span id="L73"><span class="lineNum">      73</span>              : </span>
 <span id="L74"><span class="lineNum">      74</span>              : See also: [`laplacian`](@ref), [`gradient`](@ref), [`derivative_stencil`](@ref).</span>
 <span id="L75"><span class="lineNum">      75</span>              : &quot;&quot;&quot;</span>
-<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">         112 : function derivative(g::AbstractGrid, dim::Integer; order::Integer=1)</span></span>
-<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">         114 :     1 &lt;= dim &lt;= dimension(g) ||</span></span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">         123 : function derivative(g::AbstractGrid, dim::Integer; order::Integer=1)</span></span>
+<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">         125 :     1 &lt;= dim &lt;= dimension(g) ||</span></span>
 <span id="L78"><span class="lineNum">      78</span>              :         throw(ArgumentError(&quot;dimension $dim out of range for a $(dimension(g))-D grid&quot;))</span>
-<span id="L79"><span class="lineNum">      79</span> <span class="tlaGNC">         111 :     order in (1, 2) || throw(ArgumentError(&quot;derivative order must be 1 or 2, got $order&quot;))</span></span>
-<span id="L80"><span class="lineNum">      80</span> <span class="tlaGNC">         109 :     return Derivative(g, Int(dim), Int(order))</span></span>
+<span id="L79"><span class="lineNum">      79</span> <span class="tlaGNC">         122 :     order in (1, 2) || throw(ArgumentError(&quot;derivative order must be 1 or 2, got $order&quot;))</span></span>
+<span id="L80"><span class="lineNum">      80</span> <span class="tlaGNC">         120 :     return Derivative(g, Int(dim), Int(order))</span></span>
 <span id="L81"><span class="lineNum">      81</span>              : end</span>
 <span id="L82"><span class="lineNum">      82</span>              : </span>
 <span id="L83"><span class="lineNum">      83</span> <span class="tlaUNC tlaBgUNC">           0 : islinear(::Derivative) = true</span></span>
 <span id="L84"><span class="lineNum">      84</span> <span class="tlaUNC">           0 : isconstant(::Derivative) = true</span></span>
-<span id="L85"><span class="lineNum">      85</span> <span class="tlaGNC tlaBgGNC">         128 : isselfadjoint(L::Derivative) = L.order == 2 &amp;&amp; _selfadjoint_grid(L.grid)</span></span>
+<span id="L85"><span class="lineNum">      85</span> <span class="tlaGNC tlaBgGNC">         643 : isselfadjoint(L::Derivative) = L.order == 2 &amp;&amp; _selfadjoint_grid(L.grid)</span></span>
 <span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">          23 : operator_grid(L::Derivative) = L.grid</span></span>
-<span id="L87"><span class="lineNum">      87</span> <span class="tlaGNC">         114 : adjoint_operator(L::Derivative) = isselfadjoint(L) ? L : AdjointOp(L)</span></span>
+<span id="L87"><span class="lineNum">      87</span> <span class="tlaGNC">         118 : adjoint_operator(L::Derivative) = isselfadjoint(L) ? L : AdjointOp(L)</span></span>
 <span id="L88"><span class="lineNum">      88</span>              : </span>
-<span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">        1718 : function apply!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)</span></span>
-<span id="L90"><span class="lineNum">      90</span> <span class="tlaGNC">        4911 :     halo_update!(x, g)</span></span>
-<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">        4911 :     apply_bc!(x)</span></span>
-<span id="L92"><span class="lineNum">      92</span> <span class="tlaGNC">        4911 :     return _apply_raw!(y, L, x, g, α, β)</span></span>
+<span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">        7138 : function apply!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L90"><span class="lineNum">      90</span> <span class="tlaGNC">       17759 :     halo_update!(x, g)</span></span>
+<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">       17759 :     apply_bc!(x)</span></span>
+<span id="L92"><span class="lineNum">      92</span> <span class="tlaGNC">       17759 :     return _apply_raw!(y, L, x, g, α, β)</span></span>
 <span id="L93"><span class="lineNum">      93</span>              : end</span>
 <span id="L94"><span class="lineNum">      94</span>              : </span>
-<span id="L95"><span class="lineNum">      95</span> <span class="tlaGNC">        4916 : function _apply_raw!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)</span></span>
-<span id="L96"><span class="lineNum">      96</span> <span class="tlaGNC">        4920 :     inv_h = _inv_spacing(g)[L.dim]</span></span>
-<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">        4916 :     yi = interior(y)</span></span>
-<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">        4916 :     if iszero(β)</span></span>
-<span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">        9773 :         yi .= α .* _deriv_at.(Ref(x.data), interior(g), L.dim, L.order, inv_h)</span></span>
+<span id="L95"><span class="lineNum">      95</span> <span class="tlaGNC">       17764 : function _apply_raw!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L96"><span class="lineNum">      96</span> <span class="tlaGNC">       17768 :     inv_h = _inv_spacing(g)[L.dim]</span></span>
+<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">       17764 :     yi = interior(y)</span></span>
+<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">       17764 :     if iszero(β)</span></span>
+<span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">       35429 :         yi .= α .* _deriv_at.(Ref(x.data), interior(g), L.dim, L.order, inv_h)</span></span>
 <span id="L100"><span class="lineNum">     100</span>              :     else</span>
-<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">           1 :         yi .= α .* _deriv_at.(Ref(x.data), interior(g), L.dim, L.order, inv_h) .+ β .* yi</span></span>
+<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">          21 :         yi .= α .* _deriv_at.(Ref(x.data), interior(g), L.dim, L.order, inv_h) .+ β .* yi</span></span>
 <span id="L102"><span class="lineNum">     102</span>              :     end</span>
-<span id="L103"><span class="lineNum">     103</span> <span class="tlaGNC">        4916 :     return y</span></span>
+<span id="L103"><span class="lineNum">     103</span> <span class="tlaGNC">       17764 :     return y</span></span>
 <span id="L104"><span class="lineNum">     104</span>              : end</span>
 <span id="L105"><span class="lineNum">     105</span>              : </span>
-<span id="L106"><span class="lineNum">     106</span> <span class="tlaGNC">         472 : function apply_adjoint!(x̄::Field, L::Derivative, ȳ::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L106"><span class="lineNum">     106</span> <span class="tlaGNC">         500 : function apply_adjoint!(x̄::Field, L::Derivative, ȳ::Field, g::AbstractGrid, α, β)</span></span>
 <span id="L107"><span class="lineNum">     107</span>              :     # order 2 is self-adjoint only on an all-physical-BC grid — a forest leaf's</span>
 <span id="L108"><span class="lineNum">     108</span>              :     # Interface ghosts need the mechanical transpose (see the Laplacian adjoint).</span>
-<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">         765 :     L.order == 2 &amp;&amp; !_has_interface(g) &amp;&amp; return apply!(x̄, L, ȳ, g, α, β)</span></span>
-<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">         765 :     inv_h = _inv_spacing(g)[L.dim]</span></span>
-<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">         765 :     gather = let dim = L.dim, order = L.order, inv_h = inv_h</span></span>
-<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">       32447 :         (u, J) -&gt; _deriv_adjoint_gather(u, J, dim, order, inv_h)</span></span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">       13593 :     L.order == 2 &amp;&amp; !_has_interface(g) &amp;&amp; return apply!(x̄, L, ȳ, g, α, β)</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">       13593 :     inv_h = _inv_spacing(g)[L.dim]</span></span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">       13593 :     gather = let dim = L.dim, order = L.order, inv_h = inv_h</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">      507083 :         (u, J) -&gt; _deriv_adjoint_gather(u, J, dim, order, inv_h)</span></span>
 <span id="L113"><span class="lineNum">     113</span>              :     end</span>
-<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">         765 :     return adjoint_gather!(x̄, ȳ, gather, α, β)</span></span>
+<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">       13593 :     return adjoint_gather!(x̄, ȳ, gather, α, β)</span></span>
 <span id="L115"><span class="lineNum">     115</span>              : end</span>
 <span id="L116"><span class="lineNum">     116</span>              : </span>
 <span id="L117"><span class="lineNum">     117</span>              : function Adapt.adapt_structure(to, L::Derivative)</span>
