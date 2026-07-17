@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>MatrixFreeOperators.jl</title>
+<title>Adaptive Mesh Refinement – MatrixFreeOperators.jl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -61,24 +61,25 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </style>
 
 
-<script src="site_libs/quarto-nav/quarto-nav.js"></script>
-<script src="site_libs/quarto-nav/headroom.min.js"></script>
-<script src="site_libs/clipboard/clipboard.min.js"></script>
-<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
-<script src="site_libs/quarto-search/fuse.min.js"></script>
-<script src="site_libs/quarto-search/quarto-search.js"></script>
-<meta name="quarto:offset" content="./">
-<link href="./pages/amr.html" rel="next">
-<script src="site_libs/quarto-html/quarto.js" type="module"></script>
-<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
-<script src="site_libs/quarto-html/popper.min.js"></script>
-<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
-<script src="site_libs/quarto-html/anchor.min.js"></script>
-<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="site_libs/quarto-html/quarto-syntax-highlighting-3793a09f727e4166f67f05d827e59191.css" rel="stylesheet" id="quarto-text-highlighting-styles">
-<script src="site_libs/bootstrap/bootstrap.min.js"></script>
-<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="site_libs/bootstrap/bootstrap-987265e5dec9c87e0ebed6b216ef880f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../pages/api.html" rel="next">
+<link href="../index.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-3793a09f727e4166f67f05d827e59191.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-987265e5dec9c87e0ebed6b216ef880f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -105,7 +106,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 }</script>
 
 
-<link rel="stylesheet" href="assets/styles.css">
+<link rel="stylesheet" href="../assets/styles.css">
 </head>
 
 <body class="nav-sidebar floating nav-fixed quarto-light">
@@ -149,7 +150,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Docs</a></li><li class="breadcrumb-item"><a href="./index.html"><span class="chapter-title">MatrixFreeOperators.jl</span></a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/amr.html"><span class="chapter-title">Adaptive Mesh Refinement</span></a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
       <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
@@ -180,12 +181,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./index.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">MatrixFreeOperators.jl</span></a>
+  <a href="../index.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">MatrixFreeOperators.jl</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./pages/amr.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Adaptive Mesh Refinement</span></a>
+  <a href="../pages/amr.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Adaptive Mesh Refinement</span></a>
   </div>
 </li>
       </ul>
@@ -201,7 +202,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./pages/api.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">API</span></a>
+  <a href="../pages/api.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">API</span></a>
   </div>
 </li>
       </ul>
@@ -217,7 +218,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="./pages/coverage.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Coverage</span></a>
+  <a href="../pages/coverage.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Coverage</span></a>
   </div>
 </li>
       </ul>
@@ -232,17 +233,27 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">Table of contents</h2>
    
   <ul>
-  <li><a href="#overview" id="toc-overview" class="nav-link active" data-scroll-target="#overview">Overview</a></li>
-  <li><a href="#quickstart" id="toc-quickstart" class="nav-link" data-scroll-target="#quickstart">Quickstart</a></li>
+  <li><a href="#the-motivation-stop-wasting-cells" id="toc-the-motivation-stop-wasting-cells" class="nav-link active" data-scroll-target="#the-motivation-stop-wasting-cells">The motivation: stop wasting cells</a></li>
+  <li><a href="#a-forest-of-fixed-size-leaf-blocks" id="toc-a-forest-of-fixed-size-leaf-blocks" class="nav-link" data-scroll-target="#a-forest-of-fixed-size-leaf-blocks">A forest of fixed-size leaf-blocks</a>
+  <ul class="collapse">
+  <li><a href="#fixed-size-blocks-keep-every-leaf-a-plain-array" id="toc-fixed-size-blocks-keep-every-leaf-a-plain-array" class="nav-link" data-scroll-target="#fixed-size-blocks-keep-every-leaf-a-plain-array">Fixed-size blocks keep every leaf a plain array</a></li>
+  <li><a href="#the-load-bearing-rule-21-balance" id="toc-the-load-bearing-rule-21-balance" class="nav-link" data-scroll-target="#the-load-bearing-rule-21-balance">The load-bearing rule: 2:1 balance</a></li>
+  <li><a href="#where-the-intelligence-lives" id="toc-where-the-intelligence-lives" class="nav-link" data-scroll-target="#where-the-intelligence-lives">Where the intelligence lives</a></li>
+  </ul></li>
+  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a>
+  <ul class="collapse">
+  <li><a href="#parity-with-a-single-grid" id="toc-parity-with-a-single-grid" class="nav-link" data-scroll-target="#parity-with-a-single-grid">Parity with a single grid</a></li>
+  </ul></li>
+  <li><a href="#status" id="toc-status" class="nav-link" data-scroll-target="#status">Status</a></li>
   </ul>
 </nav>
     </div>
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Docs</a></li><li class="breadcrumb-item"><a href="./index.html"><span class="chapter-title">MatrixFreeOperators.jl</span></a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/amr.html"><span class="chapter-title">Adaptive Mesh Refinement</span></a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title">MatrixFreeOperators.jl</h1>
+<h1 class="title"><span class="chapter-title">Adaptive Mesh Refinement</span></h1>
 </div>
 
 
@@ -259,30 +270,126 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p>Welcome to the documentation for <strong>MatrixFreeOperators.jl</strong>.</p>
-<section id="overview" class="level2">
-<h2 class="anchored" data-anchor-id="overview">Overview</h2>
-<p>MatrixFreeOperators.jl provides matrix-free linear (and some nonlinear) operators for solving PDEs on structured grids. Operators are lazy, composable symbols (<code>laplacian</code>, <code>gradient</code>, <code>divergence</code>, <code>scaling</code>, <code>advection</code>, …) combined with <code>+</code>, <code>-</code>, <code>*</code>, and scalar scaling. Leaves are written as array-level broadcasts, so the same operator runs on CPU and GPU arrays, differentiates automatically with Enzyme or Mooncake (including gradients w.r.t. operator parameters such as material-coefficient fields), and feeds Krylov.jl directly through <code>prepare</code> + <code>mul!</code> with zero steady-state allocations.</p>
+<p><code>BlockForest</code> adds adaptive resolution while keeping every existing operator working <strong>unchanged</strong>. This page tells the story of the design — the problem, the approach, and the one rule everything rests on — and shows the current capabilities.</p>
+<section id="the-motivation-stop-wasting-cells" class="level2">
+<h2 class="anchored" data-anchor-id="the-motivation-stop-wasting-cells">The motivation: stop wasting cells</h2>
+<p>A <em>uniform</em> grid wastes effort. Most of a simulation is smooth and undemanding, but a few regions — a shock front, a flame, a boundary layer — need fine cells. Adaptive Mesh Refinement (AMR) concentrates resolution only where it is needed. The hard constraint here: do that <strong>without rewriting every operator</strong>, because the whole package assumes a field is a dense rectangular array you sweep a stencil across.</p>
+<pre><code>Uniform grid — fine EVERYWHERE       Adaptive forest — fine ONLY where needed
+(most cells do nothing useful)       (resolution follows the feature ▓)
+
+┌─┬─┬─┬─┬─┬─┬─┬─┐                     ┌───────┬───────┐
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │       │       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │       │       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     ├───┬───┼───────┤
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │▓▓▓│   │       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     ├─┬─┼───┤       │
+├─┼─┼─┼─┼─┼─┼─┼─┤                     │▓│▓│   │       │
+└─┴─┴─┴─┴─┴─┴─┴─┘                     └─┴─┴───┴───────┘</code></pre>
 </section>
-<section id="quickstart" class="level2">
-<h2 class="anchored" data-anchor-id="quickstart">Quickstart</h2>
+<section id="a-forest-of-fixed-size-leaf-blocks" class="level2">
+<h2 class="anchored" data-anchor-id="a-forest-of-fixed-size-leaf-blocks">A forest of fixed-size leaf-blocks</h2>
+<p>Rather than refine individual cells, the domain is tiled by many equal-sized small <strong>blocks</strong> — e.g.&nbsp;each block is an <code>8×8</code> (2-D) or <code>8×8×8</code> (3-D) patch of cells, an ordinary <a href="../index.html"><code>CartesianGrid</code></a> with its own halo. To add resolution somewhere, you replace one block with <code>2ᴺ</code> child blocks covering the same physical area at half the spacing, and recurse. Each root block and its descendants form a tree; the collection of trees is the <em>forest</em>. A <strong>leaf</strong> is a block nobody refined further — the leaves tile the domain with no gaps or overlaps, and that is where the solution lives.</p>
+<pre><code> Spatial view (2×2 root tiling)              Tree view
+
+ Level 0        refine BL corner             root₀   root₁   root₂   root₃
+ ┌────┬────┐    ┌────┬────┐                    │
+ │ r0 │ r1 │    │ r0 │ r1 │              refine r0
+ ├────┼────┤ ─▶ ├─┬─┬┼────┤                    │
+ │ r2 │ r3 │    ├─┼─┤│    │              ┌───┬──┴─┬───┐
+ │    │    │    ├─┼─┤│ r3 │             c0  c1   c2  c3   (4 leaves,
+ └────┴────┘    └─┴─┴┴────┘                              half the spacing)</code></pre>
+<section id="fixed-size-blocks-keep-every-leaf-a-plain-array" class="level3">
+<h3 class="anchored" data-anchor-id="fixed-size-blocks-keep-every-leaf-a-plain-array">Fixed-size blocks keep every leaf a plain array</h3>
+<p>Every block always holds the <strong>same cell count</strong> — only the physical spacing shrinks with depth (level <code>ℓ</code> → <code>h₀ / 2^ℓ</code>). Because each leaf is still a dense rectangular array, <strong>every existing leaf operator runs unchanged per block</strong> — the same stencil sweep, broadcasts, and KernelAbstractions kernels. All of the adaptivity complexity is confined to the <em>block faces</em> (the coarse–fine interfaces).</p>
+<pre><code>   Level-0 block                 Level-1 child block
+   spacing = h                   spacing = h/2
+   ┌─┬─┬─┬─┐                     ┌┬┬┬┐
+   ├─┼─┼─┼─┤                     ├┼┼┼┤    same 4×4 cells,
+   ├─┼─┼─┼─┤                     ├┼┼┼┤    HALF the physical footprint
+   ├─┼─┼─┼─┤                     ├┼┼┼┤    ⇒ twice the resolution
+   └─┴─┴─┴─┘                     └┴┴┴┘
+   4×4 dense array               4×4 dense array   ← still a plain array!</code></pre>
+<p>This is why the design picks the block-structured school (FLASH / PARAMESH / AMReX) and rejects a cell-based octree (p4est / Trixi style): the octree puts a hanging node at nearly every cell, which would break the dense-array stencil sweeps the whole package is built on. The block-structured choice trades a little redundant memory at block boundaries for keeping the interior of every block a plain array.</p>
+</section>
+<section id="the-load-bearing-rule-21-balance" class="level3">
+<h3 class="anchored" data-anchor-id="the-load-bearing-rule-21-balance">The load-bearing rule: 2:1 balance</h3>
+<p>The invariant everything rests on is <strong>2:1 balance</strong>: any two neighboring leaves stay within one refinement level of each other. This reduces every coarse–fine interface to just three cases — same level / one-coarser / one-finer — which is what makes interface interpolation tractable. <code>refine!</code> and <code>coarsen!</code> re-establish balance automatically (you can also call <code>balance!</code> directly).</p>
+<pre><code>   LEGAL  (neighbors ≤ 1 level apart)     ILLEGAL (2 levels apart)
+   ┌─────────┬────┬────┐                  ┌─────────┬──┬──┐
+   │         │ L1 │ L1 │                  │         ├──┼──┤
+   │   L0    ├────┼────┤                  │   L0    ├──┼──┤   L2 directly
+   │         │ L1 │ L1 │                  │         ├──┼──┤   touching L0
+   └─────────┴────┴────┘                  └─────────┴──┴──┘   → forbidden</code></pre>
+</section>
+<section id="where-the-intelligence-lives" class="level3">
+<h3 class="anchored" data-anchor-id="where-the-intelligence-lives">Where the intelligence lives</h3>
+<p>Operators barely change. The forest does a single <code>halo_update!</code> over the whole forest to fill each block’s ghost cells from its neighbors; then each leaf fills only its <em>physical</em> domain-boundary faces and runs its ordinary stencil. So the only genuinely new operator code is that inter-block exchange — plus its declared transpose <code>halo_update_adjoint!</code>, which keeps the adjoint identity <code>⟨Lx,y⟩ = ⟨x,Lᵀy⟩</code> exact on a forest so Krylov solvers stay correct.</p>
+<pre><code>  forest
+    │
+    ▼
+  ┌───────────────────────────────────────────────┐
+  │ 1.  halo_update!(forest)                       │   ONCE, whole forest —
+  │     fill each block's INTERFACE ghosts from    │   the only genuinely
+  │     its neighbors                              │   new operator code
+  └───────────────────────────────────────────────┘
+    │
+    ├───────────────┬───────────────┐
+    ▼               ▼               ▼
+  ┌───────────┐   ┌───────────┐   ┌───────────┐
+  │per leaf:  │   │per leaf:  │   │per leaf:  │
+  │2 apply_bc!│   │2 apply_bc!│   │2 apply_bc!│  ← physical faces only
+  │3 stencil  │   │3 stencil  │   │3 stencil  │  ← EXISTING single-grid code
+  └───────────┘   └───────────┘   └───────────┘</code></pre>
+<p>Internal faces carry the <code>Interface</code> boundary and are skipped by <code>apply_bc!</code> — <code>halo_update!</code> already filled them; physical faces keep the base grid’s BCs.</p>
+</section>
+</section>
+<section id="usage" class="level2">
+<h2 class="anchored" data-anchor-id="usage">Usage</h2>
+<p>A <code>BlockForest</code> wraps a base <code>CartesianGrid</code> (the root tiling). Operators and fields are built on it exactly as on a single grid:</p>
 <div id="2" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">MatrixFreeOperators</span>, <span class="bu">Krylov</span>, <span class="bu">LinearAlgebra</span></span>
-<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># -Δu + σu = f on (0,1)², homogeneous Dirichlet, manufactured solution</span></span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">32</span>, <span class="fl">32</span>))</span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>σ <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fl">1</span> <span class="op">+</span> x[<span class="fl">1</span>] <span class="op">*</span> x[<span class="fl">2</span>])</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>K <span class="op">=</span> <span class="fu">scaling</span>(σ) <span class="op">-</span> <span class="fu">laplacian</span>(g)</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>f <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> (<span class="fl">2</span>π<span class="op">^</span><span class="fl">2</span> <span class="op">+</span> <span class="fl">1</span> <span class="op">+</span> x[<span class="fl">1</span>] <span class="op">*</span> x[<span class="fl">2</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))</span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prepare</span>(K, <span class="fu">scalar_field</span>(g))</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>u, stats <span class="op">=</span> <span class="fu">cg</span>(P, <span class="fu">flatten</span>(f))</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="fu">maximum</span>(abs, u <span class="op">.-</span> <span class="fu">flatten</span>(<span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">MatrixFreeOperators</span>, <span class="bu">LinearAlgebra</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>base   <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">8</span>, <span class="fl">8</span>))</span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>forest <span class="op">=</span> <span class="fu">BlockForest</span>(base; blocksize <span class="op">=</span> (<span class="fl">4</span>, <span class="fl">4</span>), maxlevel <span class="op">=</span> <span class="fl">4</span>)   <span class="co"># 2×2 root tiling</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">collect</span>(<span class="fu">leaves</span>(forest)))      <span class="co"># 4 leaf blocks at level 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>0.0007541253359059086</code></pre>
+<pre><code>4</code></pre>
 </div>
 </div>
+<p>Refine a region with a predicate on each block’s center; balance is restored automatically:</p>
+<div id="4" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">refine!</span>(forest, x <span class="op">-&gt;</span> x[<span class="fl">1</span>] <span class="op">&lt;</span> <span class="fl">0.3</span> <span class="op">&amp;&amp;</span> x[<span class="fl">2</span>] <span class="op">&lt;</span> <span class="fl">0.3</span>)   <span class="co"># refine near the origin corner</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">collect</span>(<span class="fu">leaves</span>(forest)))                  <span class="co"># grew, still 2:1 balanced</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>7</code></pre>
+</div>
+</div>
+<section id="parity-with-a-single-grid" class="level3">
+<h3 class="anchored" data-anchor-id="parity-with-a-single-grid">Parity with a single grid</h3>
+<p>On a uniformly-refined forest, the operators reproduce a single <code>CartesianGrid</code> of the same resolution exactly. The interior values are identical (just stored in a different, block-by-block order), so any order-independent reduction matches:</p>
+<div id="6" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>g  <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">8</span>, <span class="fl">8</span>))</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>bf <span class="op">=</span> <span class="fu">BlockForest</span>(g; blocksize <span class="op">=</span> (<span class="fl">4</span>, <span class="fl">4</span>), maxlevel <span class="op">=</span> <span class="fl">3</span>)   <span class="co"># level 0 ⇒ same 8×8</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>u  <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g),  x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>uf <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(bf), x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="fu">norm</span>(<span class="fu">flatten</span>(<span class="fu">laplacian</span>(g) <span class="op">*</span> u)) <span class="op">≈</span> <span class="fu">norm</span>(<span class="fu">flatten</span>(<span class="fu">laplacian</span>(bf) <span class="op">*</span> uf))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>true</code></pre>
+</div>
+</div>
+</section>
+</section>
+<section id="status" class="level2">
+<h2 class="anchored" data-anchor-id="status">Status</h2>
+<p>This PR is deliberately the <em>foundation</em>: the forest grid, field, and operator path, verified by bit-parity against a single grid and by the adjoint identity on a forest. The genuinely hard adaptive math is left for later phases.</p>
+<pre><code>  Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
+  Phase 1  ██████████  DONE   inter-block halo_update! + operator PARITY
+           ░░░░░░░░░░  next   coarse–fine INTERPOLATION (non-uniform forests)
+           ░░░░░░░░░░  next   Restriction/Prolongation + V-cycle MULTIGRID
+           ░░░░░░░░░░  next   indicator-driven REGRID driver</code></pre>
 
 
 </section>
@@ -690,10 +797,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
+      <a href="../index.html" class="pagination-link" aria-label="MatrixFreeOperators.jl">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">MatrixFreeOperators.jl</span></span>
+      </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="./pages/amr.html" class="pagination-link" aria-label="Adaptive Mesh Refinement">
-        <span class="nav-page-text"><span class="chapter-title">Adaptive Mesh Refinement</span></span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../pages/api.html" class="pagination-link" aria-label="API">
+        <span class="nav-page-text"><span class="chapter-title">API</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
