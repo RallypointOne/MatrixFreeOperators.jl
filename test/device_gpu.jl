@@ -50,6 +50,29 @@ CUDA.allowscalar(false)
         end
     end
 
+    @testset "BlockForest coarse–fine action parity (non-uniform)" begin
+        MFO = MatrixFreeOperators
+        base = CartesianGrid(
+            ((0.0, 2π), (0.0, 1.0)), (16, 16);
+            bc=((Periodic(), Periodic()), (Dirichlet(), Dirichlet())),
+        )
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+        refine!(bf, x -> x[1] < π && x[2] < 0.5)       # mixed levels: CF ghost fills run
+        @test !bf.forest.uniform[]
+        uf = set!(scalar_field(bf), x -> sin(x[1]) * x[2])
+        for L in (laplacian(bf), derivative(bf, 1; order=1))
+            y_cpu = [
+                collect(interior(MFO.block(apply(L, copy(uf)), i))) for i in 1:MFO.nleaves(bf)
+            ]
+            Lg = Adapt.adapt(CuArray, L)
+            ug = Adapt.adapt(CuArray, uf)
+            yg = apply(Lg, ug)
+            for i in 1:MFO.nleaves(bf)
+                @test Array(collect(interior(MFO.block(yg, i)))) ≈ y_cpu[i]
+            end
+        end
+    end
+
     @testset "BlockForest flat/Krylov path parity" begin
         MFO = MatrixFreeOperators
         base = CartesianGrid(

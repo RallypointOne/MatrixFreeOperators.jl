@@ -94,9 +94,9 @@ laplacian(g::AbstractGrid) = Laplacian(g)
 
 islinear(::Laplacian) = true
 isconstant(::Laplacian) = true
-isselfadjoint(::Laplacian) = true
+isselfadjoint(L::Laplacian) = _selfadjoint_grid(L.grid)
 operator_grid(L::Laplacian) = L.grid
-adjoint_operator(L::Laplacian) = L
+adjoint_operator(L::Laplacian) = isselfadjoint(L) ? L : AdjointOp(L)
 
 function apply!(y::Field, L::Laplacian, x::Field, g::AbstractGrid, α, β)
     halo_update!(x, g)
@@ -115,8 +115,29 @@ function _apply_raw!(y::Field, ::Laplacian, x::Field, g::AbstractGrid, α, β)
     return y
 end
 
+# Adjoint gather of the Laplacian: the flipped stencil is itself (symmetric
+# weights), bounds-masked so only interior cotangents contribute.
+@inline function _lap_adjoint_gather(
+    ȳ::AbstractArray{<:Any,N}, J::CartesianIndex{N}, inv_h2::NTuple{N}
+) where {N}
+    terms = ntuple(Val(N)) do d
+        δ = _unitindex(Val(N), d)
+        (_maskedget(ȳ, J - δ) - 2 * _maskedget(ȳ, J) + _maskedget(ȳ, J + δ)) * inv_h2[d]
+    end
+    return sum(terms)
+end
+
 function apply_adjoint!(x̄::Field, L::Laplacian, ȳ::Field, g::AbstractGrid, α, β)
-    return apply!(x̄, L, ȳ, g, α, β)
+    # On an all-physical-BC grid the homogeneous fill makes the interior→interior
+    # map symmetric, so the forward action IS the adjoint. A forest leaf's
+    # Interface ghosts are external inputs: the mechanical transpose must scatter
+    # cotangents into them for halo_update_adjoint! to fold across blocks.
+    _has_interface(g) || return apply!(x̄, L, ȳ, g, α, β)
+    inv_h2 = _inv_spacing2(g)
+    gather = let inv_h2 = inv_h2
+        (u, J) -> _lap_adjoint_gather(u, J, inv_h2)
+    end
+    return adjoint_gather!(x̄, ȳ, gather, α, β)
 end
 
 Adapt.adapt_structure(to, L::Laplacian) = Laplacian(Adapt.adapt(to, L.grid))

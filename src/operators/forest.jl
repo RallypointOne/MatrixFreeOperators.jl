@@ -92,9 +92,11 @@ interiors.
 """
 function apply_adjoint!(x̄::BlockField, L::AbstractOperator, ȳ::BlockField, g::BlockForest, α, β)
     _check_forest_supported(L)
-    _require_uniform(g)
     _require_current(x̄)
     _require_current(ȳ)
+    # Sound on a non-uniform forest too: isselfadjoint is grid-aware (false once
+    # coarse–fine coupling breaks the halo symmetry), so this only fires when the
+    # forward action IS the adjoint.
     isselfadjoint(L) && return apply!(x̄, L, ȳ, g, α, β)
     if iszero(β)
         for i in 1:nleaves(g)

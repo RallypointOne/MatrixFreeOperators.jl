@@ -30,12 +30,18 @@ end
 
 @inline _deriv_at(u, I, dim, order, inv_h) = derivative_stencil(u, I, dim, order, inv_h)[2]
 
-# Adjoint gather of the order-1 centered stencil: flipped weights, bounds-masked.
+# Adjoint gathers: flipped stencil weights, bounds-masked. Order 1 is
+# antisymmetric (sign flip); order 2 is symmetric (its own flip).
 @inline function _deriv_adjoint_gather(
-    ȳ::AbstractArray{<:Any,N}, J::CartesianIndex{N}, dim::Int, inv_h
+    ȳ::AbstractArray{<:Any,N}, J::CartesianIndex{N}, dim::Int, order::Int, inv_h
 ) where {N}
     δ = _unitindex(Val(N), dim)
-    return (_maskedget(ȳ, J - δ) - _maskedget(ȳ, J + δ)) * (inv_h / 2)
+    if order == 1
+        return (_maskedget(ȳ, J - δ) - _maskedget(ȳ, J + δ)) * (inv_h / 2)
+    else
+        return (_maskedget(ȳ, J - δ) - 2 * _maskedget(ȳ, J) + _maskedget(ȳ, J + δ)) *
+               inv_h^2
+    end
 end
 
 """
@@ -76,9 +82,9 @@ end
 
 islinear(::Derivative) = true
 isconstant(::Derivative) = true
-isselfadjoint(L::Derivative) = L.order == 2
+isselfadjoint(L::Derivative) = L.order == 2 && _selfadjoint_grid(L.grid)
 operator_grid(L::Derivative) = L.grid
-adjoint_operator(L::Derivative) = L.order == 2 ? L : AdjointOp(L)
+adjoint_operator(L::Derivative) = isselfadjoint(L) ? L : AdjointOp(L)
 
 function apply!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)
     halo_update!(x, g)
@@ -98,10 +104,12 @@ function _apply_raw!(y::Field, L::Derivative, x::Field, g::AbstractGrid, α, β)
 end
 
 function apply_adjoint!(x̄::Field, L::Derivative, ȳ::Field, g::AbstractGrid, α, β)
-    L.order == 2 && return apply!(x̄, L, ȳ, g, α, β)
+    # order 2 is self-adjoint only on an all-physical-BC grid — a forest leaf's
+    # Interface ghosts need the mechanical transpose (see the Laplacian adjoint).
+    L.order == 2 && !_has_interface(g) && return apply!(x̄, L, ȳ, g, α, β)
     inv_h = _inv_spacing(g)[L.dim]
-    gather = let dim = L.dim, inv_h = inv_h
-        (u, J) -> _deriv_adjoint_gather(u, J, dim, inv_h)
+    gather = let dim = L.dim, order = L.order, inv_h = inv_h
+        (u, J) -> _deriv_adjoint_gather(u, J, dim, order, inv_h)
     end
     return adjoint_gather!(x̄, ȳ, gather, α, β)
 end

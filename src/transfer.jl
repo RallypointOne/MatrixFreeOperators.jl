@@ -1,11 +1,11 @@
 #--------------------------------------------------------------------------------# Inter-block halo exchange
 
-# Slab geometry of a face copy along a dimension (h = halo width, n = interior count
-# per block, both for that dimension). The same-level copy reuses the periodic source
-# indices: this block's low-ghost slab [1:h] mirrors the neighbor's high-interior
-# slab [n+1:n+h], and the high-ghost slab [h+n+1:2h+n] mirrors the neighbor's
-# low-interior slab [h+1:2h]. Build-time only — the schedule stores the resolved
-# ranges, so the hot path never recomputes this.
+# Slab geometry of a same-level face copy along a dimension (h = halo width, n =
+# interior count per block, both for that dimension). The copy reuses the periodic
+# source indices: this block's low-ghost slab [1:h] mirrors the neighbor's
+# high-interior slab [n+1:n+h], and the high-ghost slab [h+n+1:2h+n] mirrors the
+# neighbor's low-interior slab [h+1:2h]. Build-time only — the schedule stores the
+# resolved ranges, so the hot path never recomputes this.
 @inline function _face_slabs(side::Int, h::Int, n::Int)
     if side == -1
         return (1:h, (n + 1):(n + h))                  # (this ghost, neighbor source)
@@ -14,23 +14,202 @@
     end
 end
 
-# Full padded box for a face slab: range `r` along dim `d`, the full padded extent
-# transversely (matching the retired `_dimslice` Colon). The corner cells it spans
-# are not read by axis-aligned (Laplacian/Derivative) stencils — see the
-# `halo_update_adjoint!` caveat.
+# Full padded box for a same-level face slab: range `r` along dim `d`, the full
+# padded extent transversely (matching the retired `_dimslice` Colon). The corner
+# cells it spans are not read by axis-aligned (Laplacian/Derivative) stencils.
 _face_box(d::Int, r::UnitRange{Int}, h::NTuple{N,Int}, n::NTuple{N,Int}) where {N} =
     ntuple(t -> t == d ? r : (1:(n[t] + 2h[t])), Val(N))
 
-# Build the same-level exchange schedule: for every leaf face with a same-level
-# neighbor (including periodic wrap), one CopyDescriptor. Domain-boundary faces
-# (`face_neighbor === nothing`) emit nothing — they are `apply_bc!` territory. The
-# iteration order (Morton leaf, dim, side) is exactly the retired `Val{D}` sweep's
-# execution order, so each ghost slab is the `dst` of exactly one descriptor and the
-# run order is bit-identical to the previous implementation.
-function _build_exchange_schedule(bf::BlockForest{N}) where {N}
-    _require_uniform(bf)     # Part 2 fills the coarse–fine branch and lifts this
+#--------------------------------------------------------------------------------# Coarse–fine descriptor emission
+
+# The quadratic coarse–fine scheme fills exactly one ghost layer and needs the
+# coarse tangential taps and both coarse normal layers to be interior, which
+# bounds the block geometry. Uniform forests keep the looser v1 constraints.
+function _validate_coarse_fine(bf::BlockForest{N}) where {N}
+    all(==(1), bf.halo) || throw(
+        ArgumentError(
+            "coarse–fine interface interpolation requires halo width 1 in every " *
+            "dimension, got $(bf.halo)",
+        ),
+    )
+    ok = N == 1 ? all(>=(2), bf.blocksize) : all(n -> n >= 4 && iseven(n), bf.blocksize)
+    ok || throw(
+        ArgumentError(
+            "coarse–fine interface interpolation requires blocksize ≥ " *
+            "$(N == 1 ? "2" : "4 and even") in every dimension, got $(bf.blocksize)",
+        ),
+    )
+    return nothing
+end
+
+_throw_unbalanced(K) = throw(
+    ArgumentError(
+        "forest is not 2:1 balanced at leaf $K; run balance! after manual topology " *
+        "edits (refine!/coarsen! re-balance automatically)",
+    ),
+)
+
+# One run of same-parity fine ghost columns in a single tangential dimension of a
+# coarse→fine face, with its coarse column range and 3-point tangential stencil.
+# The `coarse` range holds the padded center-column J of each fine column in the
+# run; `offs`/`w` are the node offsets and weights about J.
+struct _TangClass{T}
+    fine::StepRange{Int,Int}
+    coarse::UnitRange{Int}
+    offs::NTuple{3,Int}
+    w::NTuple{3,T}
+end
+
+# Partition one tangential dimension of a coarse→fine face into descriptor
+# classes. q is the fine block's quadrant bit within the coarse neighbor
+# (0 = low half, 1 = high half): fine ghost column j (1-based, padded j+1) maps
+# to coarse column J = (q·nt + j + 1) >> 1 (padded J+1). The two fine columns at
+# the coarse block's tangential extreme share its first/last column and take the
+# one-sided (shifted) stencil; all interior columns take the centered one.
+function _tangential_classes(nt::Int, q::Int, ::Type{T}) where {T}
+    ξm, ξp = -T(1) / 4, T(1) / 4
+    half = nt >> 1
+    ctr = (-1, 0, 1)
+    if q == 0
+        lo = (0, 1, 2)
+        return [
+            _TangClass{T}(2:2:2, 2:2, lo, _cf_tangential_weights(lo, ξm)),
+            _TangClass{T}(3:2:3, 2:2, lo, _cf_tangential_weights(lo, ξp)),
+            _TangClass{T}(4:2:nt, 3:(half + 1), ctr, _cf_tangential_weights(ctr, ξm)),
+            _TangClass{T}(5:2:(nt + 1), 3:(half + 1), ctr, _cf_tangential_weights(ctr, ξp)),
+        ]
+    else
+        hi = (-2, -1, 0)
+        return [
+            _TangClass{T}(2:2:(nt - 2), (half + 2):nt, ctr, _cf_tangential_weights(ctr, ξm)),
+            _TangClass{T}(3:2:(nt - 1), (half + 2):nt, ctr, _cf_tangential_weights(ctr, ξp)),
+            _TangClass{T}(nt:2:nt, (nt + 1):(nt + 1), hi, _cf_tangential_weights(hi, ξm)),
+            _TangClass{T}((nt + 1):2:(nt + 1), (nt + 1):(nt + 1), hi, _cf_tangential_weights(hi, ξp)),
+        ]
+    end
+end
+
+# Assemble an N-dimensional range box from a normal-dimension range and one range
+# per tangential dimension. Build-time only.
+function _cf_box(::Val{N}, d::Int, dr::StepRange{Int,Int}, tdims, tranges) where {N}
+    return ntuple(Val(N)) do k
+        k == d ? dr : tranges[findfirst(==(k), tdims)]
+    end
+end
+
+_step1(r::UnitRange{Int}) = first(r):1:last(r)
+
+# Coarse→fine (Martin–Cartwright quadratic interpolation): fill the fine leaf K's
+# ghost layer on face (d, side) from the coarse neighbor `cover` and K's own
+# first interior layer — g = 5/21·u_own + 5/6·U₁ + (−1/14)·U₂, with U₁/U₂ first
+# interpolated to the ghost's tangential position (tensor-product 3-point
+# quadratics at ξ = ±1/4). One descriptor per tangential class combination;
+# every term reads block interiors only, so the fill is order-independent and
+# never touches BC ghosts.
+function _emit_interp!(
+    interp::Vector{GhostFill{N,T}}, bf::BlockForest{N,T}, i::Int, K::LeafKey{N},
+    d::Int, side::Int, cover::LeafKey{N},
+) where {N,T}
+    forest, n = bf.forest, bf.blocksize
+    ci = leaf_index(forest, cover)
+    nd = n[d]
+    g_n = side == -1 ? 1 : nd + 2            # K's ghost layer
+    f_n = side == -1 ? 2 : nd + 1            # K's own first interior layer
+    U1_n = side == -1 ? nd + 1 : 2           # coarse first interior layer at the face
+    U2_n = side == -1 ? nd : 3               # coarse second interior layer
+    w_own, w_U1, w_U2 = _cf_normal_weights(T)
+    tdims = Tuple(filter(!=(d), ntuple(identity, Val(N))))
+    classlists = map(t -> _tangential_classes(n[t], K.coords[t] & 1, T), tdims)
+    for combo in Iterators.product(classlists...)
+        fine_t = map(c -> c.fine, combo)
+        terms = SlabTerm{N,T}[]
+        push!(terms, SlabTerm{N,T}(i, _cf_box(Val(N), d, f_n:1:f_n, tdims, fine_t), w_own))
+        for (layer_n, w_layer) in ((U1_n, w_U1), (U2_n, w_U2))
+            for taps in Iterators.product(ntuple(_ -> (1, 2, 3), length(tdims))...)
+                w = w_layer
+                for (k, c) in zip(taps, combo)
+                    w *= c.w[k]
+                end
+                coarse_t = map(taps, combo) do k, c
+                    (first(c.coarse) + c.offs[k]):1:(last(c.coarse) + c.offs[k])
+                end
+                push!(
+                    terms,
+                    SlabTerm{N,T}(
+                        ci, _cf_box(Val(N), d, layer_n:1:layer_n, tdims, coarse_t), w
+                    ),
+                )
+            end
+        end
+        push!(
+            interp,
+            GhostFill{N,T}(i, _cf_box(Val(N), d, g_n:1:g_n, tdims, fine_t), terms),
+        )
+    end
+    return nothing
+end
+
+# Fine→coarse (flux-matching restriction): fill the coarse leaf K's ghost layer
+# on face (d, side) so its stencil flux through the interface equals the mean of
+# the fine-grid fluxes — g = u₁ + 2/2^(N−1) · Σ (u_f1 − g_f) over the fine
+# columns under each coarse ghost cell. Reads the abutting fine children's first
+# interior layer and their interpolation-filled ghosts (⇒ restriction runs after
+# interpolation). One descriptor per abutting fine child; the children tile K's
+# ghost slab disjointly. A plain 2^N volume average would leave O(1) truncation
+# at the interface (1st-order solutions) — rejected.
+function _emit_restrict!(
+    restrict::Vector{GhostFill{N,T}}, bf::BlockForest{N,T}, i::Int, K::LeafKey{N},
+    d::Int, side::Int, nbr::LeafKey{N},
+) where {N,T}
+    forest, n = bf.forest, bf.blocksize
+    nd = n[d]
+    gC_n = side == -1 ? 1 : nd + 2           # K's ghost layer
+    u1_n = side == -1 ? 2 : nd + 1           # K's own first interior layer
+    uf_n = side == -1 ? nd + 1 : 2           # fine child's interior layer facing K
+    gf_n = side == -1 ? nd + 2 : 1           # fine child's interp-filled ghost facing K
+    tdims = Tuple(filter(!=(d), ntuple(identity, Val(N))))
+    wf = T(2) / (1 << (N - 1))
+    facing = side == 1 ? 0 : 1               # child d-bit on the face shared with K
+    for child in children(nbr)
+        (child.coords[d] & 1) == facing || continue
+        is_leaf(forest, child) || _throw_unbalanced(K)
+        cj = leaf_index(forest, child)
+        dst_t = map(tdims) do t
+            lo = 2 + (child.coords[t] & 1) * (n[t] >> 1)
+            lo:1:(lo + (n[t] >> 1) - 1)
+        end
+        terms = SlabTerm{N,T}[]
+        push!(terms, SlabTerm{N,T}(i, _cf_box(Val(N), d, u1_n:1:u1_n, tdims, dst_t), one(T)))
+        for parities in Iterators.product(ntuple(_ -> (0, 1), length(tdims))...)
+            fine_t = map(tdims, parities) do t, p
+                (2 + p):2:(n[t] + p)
+            end
+            push!(terms, SlabTerm{N,T}(cj, _cf_box(Val(N), d, uf_n:1:uf_n, tdims, fine_t), wf))
+            push!(terms, SlabTerm{N,T}(cj, _cf_box(Val(N), d, gf_n:1:gf_n, tdims, fine_t), -wf))
+        end
+        push!(
+            restrict,
+            GhostFill{N,T}(i, _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t), terms),
+        )
+    end
+    return nothing
+end
+
+#--------------------------------------------------------------------------------# Schedule build + cache
+
+# Build the exchange schedule: for every leaf face, classify against the 2:1
+# balance's three cases — same-level neighbor (copy), one-coarser neighbor
+# (coarse→fine interpolation), one-finer neighbors (fine→coarse restriction).
+# Domain-boundary faces (`face_neighbor === nothing`) emit nothing — they are
+# `apply_bc!` territory. Each ghost region is the dst of exactly one descriptor;
+# same-level iteration order (Morton leaf, dim, side) matches the retired `Val{D}`
+# sweep's execution order, so uniform-forest behavior is bit-identical.
+function _build_exchange_schedule(bf::BlockForest{N,T}) where {N,T}
     forest, h, n = bf.forest, bf.halo, bf.blocksize
+    forest.uniform[] || _validate_coarse_fine(bf)
     copies = CopyDescriptor{N}[]
+    interp = GhostFill{N,T}[]
+    restrict = GhostFill{N,T}[]
     for (i, K) in enumerate(forest.leaves), d in 1:N, side in (-1, 1)
         nbr = face_neighbor(forest, K, d, side)
         nbr === nothing && continue
@@ -43,14 +222,17 @@ function _build_exchange_schedule(bf::BlockForest{N}) where {N}
                     _face_box(d, source, h, n), _face_box(d, ghost, h, n),
                 ),
             )
-            # else — coarse–fine face; unreachable while uniform is enforced. Part 2:
-            #   leaf_covering(forest, nbr) !== nothing → coarse neighbor (K is finer)
-            #     → coarse→fine quadratic ghost-interpolation descriptor
-            #   otherwise nbr is a refined node (K is coarser)
-            #     → fine→coarse restriction descriptor from nbr's face children
+        else
+            cover = leaf_covering(forest, nbr)
+            if cover !== nothing                    # K is the finer side
+                cover.level == K.level - 1 || _throw_unbalanced(K)
+                _emit_interp!(interp, bf, i, K, d, side, cover)
+            else                                    # K is the coarser side
+                _emit_restrict!(restrict, bf, i, K, d, side, nbr)
+            end
         end
     end
-    return ExchangeSchedule{N}(copies, forest.generation[])
+    return ExchangeSchedule{N,T}(copies, interp, restrict, forest.generation[])
 end
 
 # Per-generation cache accessor: keyed by the live forest generation, so a schedule
@@ -66,19 +248,24 @@ function _exchange_schedule(bf::BlockForest)
     return sched
 end
 
+#--------------------------------------------------------------------------------# Halo sweeps
+
 """
     halo_update!(x::BlockField, g::BlockForest) -> x
 
-Fill each leaf block's interface ghosts from its neighbors. For every leaf face
-with a same-level neighbor (including periodic wrap), copy the neighbor's
-boundary-interior slab into this block's ghost slab. Domain-boundary faces are left
-to the per-leaf `apply_bc!`. Must run once over the whole forest before any stencil
-sweep. Coarse–fine interfaces are a later phase — a non-uniform forest throws.
+Fill each leaf block's interface ghosts from its neighbors, in three phases over
+the precomputed per-generation [`ExchangeSchedule`](@ref): same-level slab copies,
+then coarse→fine quadratic interpolation, then fine→coarse flux-matching
+restriction (which reads the interpolation-filled fine ghosts). Domain-boundary
+faces are left to the per-leaf `apply_bc!`. Must run once over the whole forest
+before any stencil sweep.
 """
 function halo_update!(x::BlockField, g::BlockForest)
-    _require_uniform(g)
     _require_current(x)
-    _run_copies!(x.blocks, _exchange_schedule(g).copies)
+    sched = _exchange_schedule(g)
+    _run_copies!(x.blocks, sched.copies)
+    _run_fills!(x.blocks, sched.interp)
+    _run_fills!(x.blocks, sched.restrict)
     return x
 end
 
@@ -92,35 +279,62 @@ function _run_copies!(blocks::Vector{A}, copies::Vector{CopyDescriptor{N}}) wher
     return nothing
 end
 
+function _run_fills!(blocks::Vector{A}, fills::Vector{GhostFill{N,T}}) where {A,N,T}
+    for f in fills
+        dst = view(blocks[f.dst_block], f.dst_ranges...)
+        t1 = f.terms[1]
+        dst .= t1.weight .* view(blocks[t1.block], t1.ranges...)
+        for k in 2:length(f.terms)
+            tk = f.terms[k]
+            dst .+= tk.weight .* view(blocks[tk.block], tk.ranges...)
+        end
+    end
+    return nothing
+end
+
 """
     halo_update_adjoint!(x::BlockField, g::BlockForest) -> x
 
-Exact discrete adjoint of [`halo_update!`](@ref): scatter-add each interface-ghost
-contribution into the neighbor block's interior source cell, then zero the ghost.
-Mirrors [`fold_bc!`](@ref) across block faces — the transpose half needed for the
+Exact discrete adjoint of [`halo_update!`](@ref): the same schedule with every
+descriptor's roles transposed — each ghost region is scatter-added into its
+source cells with the forward weights, then zeroed — with the phases, and the
+descriptors within each phase, run in exact reverse order (the transpose of a
+composition is the reversed composition of transposes). Mirrors
+[`fold_bc!`](@ref) across block faces — the transpose half needed for the
 adjoint identity on a forest.
 
-Exactness relies on per-leaf adjoints leaving corner ghosts exactly zero (true for
-axis-aligned stencils, whose transposes never scatter there): face slabs span the
-full transverse extent, so a nonzero corner ghost would propagate through two
-sequential face scatters into a diagonal neighbor's interior. A future
-cross-derivative leaf needs a corner-aware exchange.
+Per-leaf stencil adjoints must leave corner ghosts exactly zero (true for
+axis-aligned stencils, whose transposes never scatter there): same-level face
+slabs span the full transverse extent, so a nonzero corner cotangent would flow
+into a diagonal neighbor's interior. A future cross-derivative leaf needs a
+corner-aware exchange.
 """
 function halo_update_adjoint!(x::BlockField, g::BlockForest)
-    _require_uniform(g)
     _require_current(x)
-    _run_copies_adjoint!(x.blocks, _exchange_schedule(g).copies)
+    sched = _exchange_schedule(g)
+    _run_fills_adjoint!(x.blocks, sched.restrict)
+    _run_fills_adjoint!(x.blocks, sched.interp)
+    _run_copies_adjoint!(x.blocks, sched.copies)
     return x
 end
 
-# Exact transpose of _run_copies!: same descriptors, roles transposed, ghost zeroed
-# after folding. Each ghost slab is a `dst` exactly once, so the fold-then-zero
-# touches every ghost region exactly once regardless of iteration order.
+# Transposed reverse-order run: fold each ghost slab into its source, zero it.
 function _run_copies_adjoint!(blocks::Vector{A}, copies::Vector{CopyDescriptor{N}}) where {A,N}
-    for c in copies
+    for c in Iterators.reverse(copies)
         ghost = view(blocks[c.dst], c.dst_ranges...)
         view(blocks[c.src], c.src_ranges...) .+= ghost
         fill!(ghost, zero(eltype(A)))
+    end
+    return nothing
+end
+
+function _run_fills_adjoint!(blocks::Vector{A}, fills::Vector{GhostFill{N,T}}) where {A,N,T}
+    for f in Iterators.reverse(fills)
+        dst = view(blocks[f.dst_block], f.dst_ranges...)
+        for tk in f.terms
+            view(blocks[tk.block], tk.ranges...) .+= tk.weight .* dst
+        end
+        fill!(dst, zero(eltype(A)))
     end
     return nothing
 end

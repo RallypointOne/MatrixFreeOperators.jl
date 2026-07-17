@@ -111,7 +111,7 @@ function prepare(L::AbstractOperator, x::BlockField)
     zero_ghosts!(xpad)
     ypad = allocate_output(L, x)
     op = _prepare_tree(L, x)
-    _exchange_schedule(x.grid)   # warm the halo-exchange cache (throws now if non-uniform)
+    _exchange_schedule(x.grid)   # warm the halo-exchange cache (build once, not on first mul!)
     return PreparedForest(
         op, x.grid, xpad, ypad, _leaf_cache(x.grid), similar(x), x.grid.forest.generation[]
     )
@@ -211,9 +211,10 @@ end
 function _forest_capply_adjoint!(
     x̄::BlockField, L::AbstractOperator, ȳ::BlockField, P::PreparedForest, α, β
 )
-    _require_uniform(P.grid)
     _require_current(x̄)
     _require_current(ȳ)
+    # isselfadjoint is grid-aware (false on a non-uniform forest, whose coarse–fine
+    # coupling breaks the halo symmetry), so this shortcut never skips a real transpose.
     isselfadjoint(L) && return _forest_capply!(x̄, L, ȳ, P, α, β)
     if iszero(β)
         _foreach_leaf(P.groups) do i, lg
