@@ -21,7 +21,7 @@ export ScalingOp, scaling, IdentityOp, identity_op
 export Advection, advection, SelfAdvection
 export Scaled, Added, Composed
 export LinearizedOp, linearize, linearize!
-export PreparedOperator, prepare, boundary_rhs
+export PreparedOperator, PreparedForest, prepare, boundary_rhs
 
 include("Grids.jl")
 include("boundaries.jl")
