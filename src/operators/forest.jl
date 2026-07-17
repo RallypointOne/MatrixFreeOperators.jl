@@ -1,8 +1,9 @@
 #--------------------------------------------------------------------------------# Operators on a BlockForest
 
 # The forest action reuses the single-grid operator path per leaf-block unchanged:
-# halo_update! fills inter-block ghosts ONCE over the whole forest, then each leaf
-# runs the ordinary apply! (whose own halo_update! is a no-op on the leaf
+# halo_update! fills inter-block ghosts ONCE over the whole forest (via the
+# per-generation exchange schedule), then each leaf runs the ordinary apply! (whose
+# own halo_update! is a no-op on the leaf
 # CartesianGrid; apply_bc! fills only physical-boundary faces, Interface faces
 # being left as halo_update! filled them). Combinators (Added, Scaled, AdjointOp)
 # recurse at the FOREST level — never per leaf — so a nested adjoint always

@@ -158,15 +158,6 @@ function face_neighbor(forest::Forest{N}, key::LeafKey{N}, dim::Int, side::Int) 
     return LeafKey(key.level, ntuple(d -> d == dim ? c : key.coords[d], Val(N)))
 end
 
-# Compile-time-dimension variant for the hot halo sweeps ([`halo_update!`](@ref)):
-# with `D` a constant the coord rebuild carries no capturing closure over a runtime
-# dimension, so it allocates nothing.
-function face_neighbor(forest::Forest{N}, key::LeafKey{N}, ::Val{D}, side::Int) where {N,D}
-    c = _neighbor_coord(forest, key, D, side)
-    c === nothing && return nothing
-    return LeafKey(key.level, ntuple(d -> d == D ? c : key.coords[d], Val(N)))
-end
-
 """
     leaf_covering(forest, key) -> LeafKey or nothing
 

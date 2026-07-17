@@ -584,7 +584,13 @@ pre-built.
     internal faces (filled by `halo_update!`, skipped by `apply_bc!`). Verified by
     bit-parity vs an equal-resolution single `CartesianGrid` and the adjoint identity
     (the same-level halo copy has a declared transpose `halo_update_adjoint!`,
-    mirroring `apply_bc!`/`fold_bc!`).
+    mirroring `apply_bc!`/`fold_bc!`). The exchange is driven by a per-generation
+    **`ExchangeSchedule`** — a flat homogeneous vector of copy descriptors
+    (`src`/`dst` block + slab ranges) built once per regrid generation and cached on
+    the `BlockForest`, so `halo_update!` is a dumb, type-stable loop of concrete
+    `view .=` copies with no per-application topology queries; the adjoint runs the
+    same descriptors transposed (scatter-add then zero). The descriptor list is also
+    the send/recv list a future distributed backend consumes.
   - **Remaining:** coarse–fine interface interpolation/restriction in `halo_update!`
     (the hard part — quadratic interp to preserve 2nd-order accuracy near
     interfaces), and a field-indicator-driven regrid/solution-transfer driver.

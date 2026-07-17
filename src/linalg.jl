@@ -30,11 +30,13 @@ Block-forest counterpart of [`PreparedOperator`](@ref): the flat `mul!`/`size`/
 scratch fields it caches, at `prepare` time, the per-leaf `(index, leaf grid)` pairs
 grouped by BC signature (`groups`) plus a scratch [`BlockField`](@ref) for
 accumulating adjoint sweeps (`adjscratch`), so steady-state `mul!` never rebuilds a
-leaf grid — which was the dominant per-application allocation. The residual cost is
-the per-leaf stencil `apply!` itself (allocation-free only when inlined into a single
-`mul!`); see the allocation-free-kernel follow-up. The cache is tied to the forest's
-regrid `generation`; a `refine!`/`coarsen!`/`balance!` after `prepare` invalidates it
-and `mul!` throws — re-run `prepare` on the new forest.
+leaf grid — which was the dominant per-application allocation. It also warms the
+grid's per-generation halo-exchange schedule (see [`halo_update!`](@ref)), so the
+inter-block ghost copies run as a flat descriptor loop with no topology queries. The
+residual cost is the per-leaf stencil `apply!` itself (allocation-free only when
+inlined into a single `mul!`); see the allocation-free-kernel follow-up. The cache is
+tied to the forest's regrid `generation`; a `refine!`/`coarsen!`/`balance!` after
+`prepare` invalidates it and `mul!` throws — re-run `prepare` on the new forest.
 """
 struct PreparedForest{
     O<:AbstractOperator,G<:BlockForest,FX<:BlockField,FY<:BlockField,C<:Tuple,S<:BlockField
@@ -109,6 +111,7 @@ function prepare(L::AbstractOperator, x::BlockField)
     zero_ghosts!(xpad)
     ypad = allocate_output(L, x)
     op = _prepare_tree(L, x)
+    _exchange_schedule(x.grid)   # warm the halo-exchange cache (throws now if non-uniform)
     return PreparedForest(
         op, x.grid, xpad, ypad, _leaf_cache(x.grid), similar(x), x.grid.forest.generation[]
     )

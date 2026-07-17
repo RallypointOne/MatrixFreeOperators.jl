@@ -37,6 +37,7 @@ struct BlockForest{N,T,BC<:Tuple,Dev} <: AbstractGrid{N}
     halo::NTuple{N,Int}
     bc::BC                         # physical domain boundary conditions
     device::Dev
+    schedule::Base.RefValue{ExchangeSchedule{N}}   # per-generation halo-exchange cache
 end
 
 function BlockForest(
@@ -56,7 +57,8 @@ function BlockForest(
     periodic = ntuple(d -> base.bc[d][1] isa Periodic, Val(N))
     forest = Forest(nroot, periodic, maxlevel)
     return BlockForest{N,T,typeof(base.bc),typeof(base.device)}(
-        forest, base.extent, base.spacing, blocksize, base.halo, base.bc, base.device
+        forest, base.extent, base.spacing, blocksize, base.halo, base.bc, base.device,
+        Ref(_empty_schedule(Val(N))),
     )
 end
 
@@ -190,7 +192,11 @@ balance!(bf::BlockForest) = (balance!(bf.forest); bf)
 
 function Adapt.adapt_structure(to, bf::BlockForest{N,T}) where {N,T}
     device = KernelAbstractions.get_backend(Adapt.adapt(to, similar(Vector{Bool}, 0)))
+    # The schedule Ref is shared deliberately, like `forest`: descriptors are
+    # device-independent index data, and sharing keeps the cache warm across
+    # adaptation.
     return BlockForest{N,T,typeof(bf.bc),typeof(device)}(
-        bf.forest, bf.extent, bf.spacing0, bf.blocksize, bf.halo, bf.bc, device
+        bf.forest, bf.extent, bf.spacing0, bf.blocksize, bf.halo, bf.bc, device,
+        bf.schedule,
     )
 end
