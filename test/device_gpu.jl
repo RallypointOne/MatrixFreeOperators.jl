@@ -113,4 +113,63 @@ CUDA.allowscalar(false)
         @test stats_gpu.solved
         @test Array(u_gpu) ≈ u_cpu rtol = 1e-6
     end
+
+    @testset "AMR regrid! driver parity" begin
+        MFO = MatrixFreeOperators
+        dirbc = ((Dirichlet(), Dirichlet()), (Dirichlet(), Dirichlet()))
+        mk() = BlockForest(
+            CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (32, 32); bc=dirbc);
+            blocksize=(8, 8), maxlevel=2,
+        )
+        c = (0.7, 0.3)
+        s = 0.005
+        bump = x -> exp(-((x[1] - c[1])^2 + (x[2] - c[2])^2) / s)
+        rhsf = x -> (4 / s - 4 * ((x[1] - c[1])^2 + (x[2] - c[2])^2) / s^2) * bump(x)
+        crit = b -> maximum(abs, interior(b)) > 0.1          # device reduction only
+
+        # Adapt shares the forest/schedule Refs and a regrid mutates them, so
+        # parity needs two independent forests; the GPU side adapts a twin whose
+        # CPU original is used only to build the initial data.
+        bf_cpu = mk()
+        u_cpu = set!(scalar_field(bf_cpu), bump)
+        u_gpu = Adapt.adapt(CuArray, set!(scalar_field(mk()), bump))
+        bf_gpu = u_gpu.grid
+        @test first(u_gpu.blocks) isa CuArray
+
+        u_cpu = regrid!(u_cpu; refine=crit)
+        u_gpu = regrid!(u_gpu; refine=crit)
+        @test !bf_cpu.forest.uniform[]
+        @test bf_gpu.forest.leaves == bf_cpu.forest.leaves   # identical marks + balance
+        for i in 1:MFO.nleaves(bf_cpu)
+            @test Array(collect(interior(MFO.block(u_gpu, i)))) ≈
+                collect(interior(MFO.block(u_cpu, i)))
+        end
+
+        # one adaptive Krylov cycle per device: solve → refine → transfer → re-prepare → solve
+        function cycle!(u, bf, rhs)
+            P = prepare(laplacian(bf), u)
+            sol, stats = Krylov.gmres(P, rhs; rtol=1e-10)    # nonsymmetric on adapted forest
+            @test stats.solved
+            flat_to_interior!(u, sol)
+            return sol
+        end
+        rhs = .-flatten(set!(scalar_field(bf_cpu), rhsf))    # identical topology ⇒ same layout
+        @test Array(cycle!(u_gpu, bf_gpu, CuArray(rhs))) ≈ cycle!(u_cpu, bf_cpu, rhs) rtol = 1e-6
+
+        crit2 = b -> maximum(abs, interior(b)) > 0.5
+        u_cpu = regrid!(u_cpu; refine=crit2)
+        u_gpu = regrid!(u_gpu; refine=crit2)                 # prolongs solved data on device
+        @test bf_gpu.forest.leaves == bf_cpu.forest.leaves
+        rhs2 = .-flatten(set!(scalar_field(bf_cpu), rhsf))
+        @test Array(cycle!(u_gpu, bf_gpu, CuArray(rhs2))) ≈ cycle!(u_cpu, bf_cpu, rhs2) rtol = 1e-6
+
+        # coarsen everything back: the conservative child-mean path on device
+        u_cpu = regrid!(u_cpu; refine=Returns(false), coarsen=Returns(true))
+        u_gpu = regrid!(u_gpu; refine=Returns(false), coarsen=Returns(true))
+        @test bf_gpu.forest.leaves == bf_cpu.forest.leaves
+        for i in 1:MFO.nleaves(bf_cpu)
+            @test Array(collect(interior(MFO.block(u_gpu, i)))) ≈
+                collect(interior(MFO.block(u_cpu, i))) rtol = 1e-6
+        end
+    end
 end

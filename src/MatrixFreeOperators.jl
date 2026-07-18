@@ -9,7 +9,7 @@ export AbstractGrid, CartesianGrid
 export dimension, spacing, local_size, halo_width, boundary_conditions
 export interior, padded_size, cell_center, coarsen, halo_update!
 export AbstractBC, Periodic, Dirichlet, Neumann, apply_bc!, fold_bc!
-export BlockForest, BlockField, refine!, coarsen!, balance!, leaves
+export BlockForest, BlockField, refine!, coarsen!, balance!, leaves, regrid!
 export AbstractField, Field, Center, scalar_field, vector_field, set!, ncomponents, component
 export flatten, flat_to_interior!, interior_to_flat!
 export AbstractOperator, apply, apply!, apply_adjoint!, AdjointOp
@@ -47,6 +47,7 @@ include("operators/diagonal.jl")
 include("operators/forest.jl")
 include("operators/linearize.jl")
 include("linalg.jl")
+include("amr.jl")
 include("multigrid.jl")
 
 end # module

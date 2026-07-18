@@ -566,7 +566,8 @@ pre-built.
   *alternative execution modes* of the same leaf — chosen per backend — not one
   `apply!` body serving both at once.
 
-- **Adaptive grids (AMR) — design locked; Phase 0/1 built.** Decided against a
+- **Adaptive grids (AMR) — built through the regrid driver (#13); packed-storage
+  GPU phase (#15) remains.** Decided against a
   cell-based octree (p4est/Trixi-style hanging nodes everywhere break the
   dense-array leaf stencils). Instead: a **forest of fixed-size leaf-blocks**
   (FLASH/PARAMESH/AMReX style). The domain is a forest of `2ᴺ`-trees of equal-cell
@@ -615,7 +616,32 @@ pre-built.
     (apply, prepared apply, adjoint, `boundary_rhs`) recurses at the forest level,
     so the intermediate gets its inter-block exchange — the per-leaf path would
     silently miss the cross-block coupling.
-  - **Remaining:** a field-indicator-driven regrid/solution-transfer driver (#13).
+  - **Built (AMR driver, #13):** a single atomic **`regrid!(u, more...; refine,
+    coarsen)`** — per-block criteria evaluated on a live field (each criterion
+    receives the leaf as a `Field`; per-block marking is the native granularity),
+    one combined topology pass (refine-marked leaves split, complete fully-marked
+    sibling families coarsen with completeness judged on the leaf set the criteria
+    saw, refine wins conflicts), a single `balance!`, then freshly allocated
+    fields returned with the solution transferred. Marking, topology edit, and
+    transfer are one indivisible transaction because a regrid instantly stales
+    every old field behind the generation guard. Varargs is load-bearing, not
+    convenience: any field needed after the regrid (coefficients, a precomputed
+    indicator) must ride the same call. **Transfer is interior-only and keyed by
+    `LeafKey`** (integer leaf indices are re-sorted every regrid): same key →
+    copy; refined leaf → per-dim linear interpolation from the old parent
+    ((3/4, 1/4), flipping to one-sided (5/4, −1/4) at parent-block edges so no
+    ghost is ever read — old ghosts are not guaranteed valid, and no BC
+    composition yields full-value inhomogeneous ghosts); coarsened leaf →
+    conservative `2⁻ᴺ` child mean. A single pass cannot move any region by more
+    than one level (marks are evaluated on a 2:1-balanced set; the balance
+    cascade is bounded) — the transfer guards that invariant with an error, never
+    a silent fallback. A no-op regrid (marks change nothing) returns the *input*
+    fields unchanged and does not bump the generation, so prepared operators
+    survive — the convergence signal for adaptive loops. The adaptive solve loop
+    itself (solve → indicator → `regrid!` → re-`prepare`) is deliberately **user
+    code** (`examples/adaptive_poisson.jl` is the canonical form; solver must be
+    a nonsymmetric Krylov method on an adapted forest) — an `adaptive_solve`
+    export would guess the interface from one use case (rule of three).
   - **Extending to other tree structures (deliberately not abstracted yet).** There is
     no pluggable "swap the tree structure" interface, and that is the design, not an
     omission. A *fundamentally different* AMR (cell-octree, patch-based) would enter as a
