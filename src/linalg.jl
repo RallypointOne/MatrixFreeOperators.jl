@@ -180,6 +180,7 @@ end
 function _forest_capply!(y::BlockField, L::AbstractOperator, x::BlockField, P::PreparedForest, α, β)
     _require_current(y)
     halo_update!(x, P.grid)
+    apply_bc!(x, P.grid)
     _foreach_leaf(P.groups) do i, lg
         apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
     end
@@ -241,12 +242,14 @@ function _forest_capply_adjoint!(
         _foreach_leaf(P.groups) do i, lg
             apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)
         end
+        fold_bc!(x̄, P.grid)
         halo_update_adjoint!(x̄, P.grid)
     else
         s = P.adjscratch
         _foreach_leaf(P.groups) do i, lg
             apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)
         end
+        fold_bc!(s, P.grid)
         halo_update_adjoint!(s, P.grid)
         _foreach_leaf(P.groups) do i, lg
             xi = interior(block(x̄, i, lg))
@@ -340,15 +343,37 @@ function boundary_rhs(L::AdjointOp, x_proto::Field)
     return b
 end
 
-# Forest lift: the inhomogeneous fill and the stencil are local to each block
-# (Interface ghosts stay zero), so the single-grid lift runs per leaf unchanged.
+# Forest lift: the forest-level inhomogeneous face pass writes the ghost offsets
+# (Interface ghosts stay zero, so the lift is local to each block), then the raw
+# stencil sweeps each leaf.
 function boundary_rhs(L::AbstractOperator, x_proto::BlockField)
-    b = allocate_output(L, x_proto)
+    if !islinear(L)
+        throw(
+            ArgumentError(
+                "boundary_rhs is the affine lift of a linear operator; $(nameof(typeof(L))) is nonlinear",
+            ),
+        )
+    end
     g = x_proto.grid
+    z = similar(x_proto)
+    for blk in z.blocks
+        fill!(blk, zero(eltype(blk)))
+    end
+    fill_bc_inhomogeneous!(z, g)
+    b = allocate_output(L, x_proto)
     for i in 1:nleaves(g)
         lg = leaf_grid(g, i)
-        bi = boundary_rhs(L, block(x_proto, i, lg))
-        block(b, i, lg).data .= bi.data
+        _apply_raw!(block(b, i, lg), L, block(z, i, lg), lg, true, false)
+    end
+    return b
+end
+
+# The adjoint action is built homogeneous (gather + fold, no ghost offsets), so
+# its lift is identically zero — mirrors the ::Field method above.
+function boundary_rhs(L::AdjointOp, x_proto::BlockField)
+    b = allocate_output(L, x_proto)
+    for blk in b.blocks
+        fill!(blk, zero(eltype(blk)))
     end
     return b
 end

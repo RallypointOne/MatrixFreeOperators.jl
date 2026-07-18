@@ -238,5 +238,11 @@
         Ls = 2.0 * laplacian(g) + derivative(g, 1; order=1)
         Lf = 2.0 * laplacian(bf) + derivative(bf, 1; order=1)
         @test reconstruct(boundary_rhs(Lf, bf), (8, 8)) == collect(interior(boundary_rhs(Ls, g)))
+        # refined forest: Neumann offsets scale with the leaf's own (halved) spacing
+        g16 = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bc)
+        bfr = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+        refine!(bfr, _ -> true)                        # uniform level 1 = 16×16
+        @test reconstruct(boundary_rhs(laplacian(bfr), bfr), (16, 16)) ==
+            collect(interior(boundary_rhs(laplacian(g16), g16)))
     end
 end

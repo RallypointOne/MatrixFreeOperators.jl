@@ -102,36 +102,21 @@ function leaf_center(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}
     )
 end
 
-# Per-leaf boundary conditions: physical BC on domain-boundary faces of a
-# non-periodic dimension, Interface() everywhere else (those ghosts are filled by
-# halo_update!).
-function leaf_bc(bf::BlockForest{N}, key::LeafKey{N}) where {N}
-    return ntuple(Val(N)) do d
-        if bf.forest.periodic[d]
-            (Interface(), Interface())
-        else
-            nblocks = bf.forest.nroot[d] << key.level
-            lo = key.coords[d] == 0 ? bf.bc[d][1] : Interface()
-            hi = key.coords[d] == nblocks - 1 ? bf.bc[d][2] : Interface()
-            (lo, hi)
-        end
-    end
-end
-
 """
     leaf_grid(bf::BlockForest, key) -> CartesianGrid
     leaf_grid(bf::BlockForest, i::Integer) -> CartesianGrid
 
 The ordinary `CartesianGrid` for one leaf block — what per-block operators run on.
-Built via the unchecked inner constructor (the forest guarantees validity) and
-cheap to recompute inside the apply loop, but type-unstable: the grid type varies
-with the leaf's interface/physical boundary mix, so each call boxes its result and
-consumers dispatch on it through a function barrier.
+Every face is [`Interface`](@ref): inter-block ghosts are filled by `halo_update!`
+and physical-boundary ghosts by the forest-level `apply_bc!` face pass, so every
+leaf shares one concrete grid type — type-stable, isbits, and free to recompute
+inside apply loops. Physical BCs live on `bf.bc`. Built via the unchecked inner
+constructor (the forest guarantees validity).
 """
 function leaf_grid(bf::BlockForest{N,T}, key::LeafKey{N}) where {N,T}
     ext = _leaf_extent(bf, key)
     sp = _leaf_spacing(bf, key.level)
-    bc = leaf_bc(bf, key)
+    bc = ntuple(_ -> (Interface(), Interface()), Val(N))
     lr = ntuple(d -> 1:bf.blocksize[d], Val(N))
     return CartesianGrid{N,T,typeof(bc),typeof(bf.device),Nothing}(
         ext, sp, bf.blocksize, bf.halo, bc, bf.device, lr, nothing

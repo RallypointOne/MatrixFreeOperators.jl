@@ -86,7 +86,7 @@
     end
 
     @testset "Interface faces are skipped (filled by halo_update!)" begin
-        Interface = MatrixFreeOperators.Interface   # internal — placed by leaf_bc, not users
+        Interface = MatrixFreeOperators.Interface   # internal — the BC of forest leaf grids
         # Low face Interface (left as-is, as if a neighbor block filled it),
         # high face Dirichlet (filled by the homogeneous mirror).
         g = CartesianGrid(((0.0, 1.0),), (4,); bc=((Interface(), Dirichlet()),))

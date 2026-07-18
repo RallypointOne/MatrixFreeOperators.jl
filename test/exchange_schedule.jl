@@ -134,6 +134,8 @@
     end
 
     @testset "forest apply_bc! matches the per-leaf physical fill" begin
+        # Reference: per-leaf single-grid apply_bc! on hand-built leaf grids carrying
+        # the physical/Interface mix leaf grids themselves no longer encode.
         rng = Random.MersenneTwister(3)
         bf = make_bf(((Dirichlet(), Dirichlet()), (Neumann(), Neumann())))
         refine!(bf, _ -> true)                          # boundary leaves above level 0
@@ -142,8 +144,19 @@
             rand!(rng, x.blocks[i])
         end
         ref = copy(x)
-        for i in 1:MFO.nleaves(bf)
-            MFO.apply_bc!(ref.blocks[i], MFO.leaf_grid(bf, i))
+        for (i, K) in enumerate(bf.forest.leaves)
+            lg = MFO.leaf_grid(bf, i)
+            mixbc = ntuple(2) do d
+                nblocks = bf.forest.nroot[d] << K.level
+                lo = K.coords[d] == 0 ? bf.bc[d][1] : MFO.Interface()
+                hi = K.coords[d] == nblocks - 1 ? bf.bc[d][2] : MFO.Interface()
+                (lo, hi)
+            end
+            mg = CartesianGrid{2,Float64,typeof(mixbc),typeof(bf.device),Nothing}(
+                lg.extent, lg.spacing, lg.size, lg.halo, mixbc, bf.device,
+                lg.local_range, nothing,
+            )
+            MFO.apply_bc!(ref.blocks[i], mg)
         end
         got = apply_bc!(copy(x), bf)
         @test all(got.blocks[i] == ref.blocks[i] for i in 1:MFO.nleaves(bf))
@@ -182,6 +195,8 @@
         bf = make_bf(((Dirichlet(), Dirichlet()), (Neumann(), Neumann())))
         @inferred MFO._exchange_schedule(bf)
         uf = set!(scalar_field(bf), x -> sinpi(x[1]) * x[2])
+        @inferred apply_bc!(uf, bf)
+        @inferred MFO.fold_bc!(uf, bf)
         function alloc_halo(f, g)
             halo_update!(f, g)
             halo_update!(f, g)

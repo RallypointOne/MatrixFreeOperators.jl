@@ -2,10 +2,10 @@
 
 # The forest action reuses the single-grid operator path per leaf-block unchanged:
 # halo_update! fills inter-block ghosts ONCE over the whole forest (via the
-# per-generation exchange schedule), then each leaf runs the ordinary apply! (whose
-# own halo_update! is a no-op on the leaf
-# CartesianGrid; apply_bc! fills only physical-boundary faces, Interface faces
-# being left as halo_update! filled them). Combinators (Added, Scaled, Composed,
+# per-generation exchange schedule), the forest-level apply_bc! face pass fills
+# physical-boundary ghosts, then each leaf runs the ordinary apply! (whose own
+# halo_update! and apply_bc! are no-ops on the all-Interface leaf
+# CartesianGrid). Combinators (Added, Scaled, Composed,
 # AdjointOp) recurse at the FOREST level — never per leaf — so a nested adjoint
 # always reaches the forest adjoint action and its cross-block fold, and a
 # Composed intermediate is a whole BlockField whose operand application performs
@@ -20,6 +20,7 @@ the per-leaf stencil on every block.
 function apply!(y::BlockField, L::AbstractOperator, x::BlockField, g::BlockForest, α, β)
     _require_current(y)
     halo_update!(x, g)                  # also checks x's generation
+    apply_bc!(x, g)                     # physical faces — leaf grids are all-Interface
     for i in 1:nleaves(g)
         lg = leaf_grid(g, i)
         apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
@@ -80,10 +81,11 @@ end
 
 Adjoint action over the forest. For a self-adjoint operator (e.g. the Laplacian on
 a uniform forest, whose same-level halo copy couples both neighbors symmetrically)
-this is the forward action. Otherwise it is the exact transpose: the per-leaf
-adjoint (stencil transpose + `fold_bc!`, leaving interface-ghost contributions in
-place) followed by [`halo_update_adjoint!`](@ref) folding those into the neighbor
-interiors.
+this is the forward action. Otherwise it is the exact transpose of
+stencil ∘ BC fill ∘ halo exchange: per-leaf stencil-transpose gathers (leaving all
+ghost cotangents in place), the forest-level [`fold_bc!`](@ref) folding physical
+ghosts, then [`halo_update_adjoint!`](@ref) folding interface ghosts into the
+neighbor interiors.
 """
 function apply_adjoint!(x̄::BlockField, L::AbstractOperator, ȳ::BlockField, g::BlockForest, α, β)
     _require_current(x̄)
@@ -97,6 +99,7 @@ function apply_adjoint!(x̄::BlockField, L::AbstractOperator, ȳ::BlockField, g:
             lg = leaf_grid(g, i)
             apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)
         end
+        fold_bc!(x̄, g)
         halo_update_adjoint!(x̄, g)
     else
         s = similar(x̄)
@@ -104,6 +107,7 @@ function apply_adjoint!(x̄::BlockField, L::AbstractOperator, ȳ::BlockField, g:
             lg = leaf_grid(g, i)
             apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)
         end
+        fold_bc!(s, g)
         halo_update_adjoint!(s, g)
         for i in 1:nleaves(g)
             lg = leaf_grid(g, i)
