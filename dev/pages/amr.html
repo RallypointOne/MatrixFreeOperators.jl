@@ -249,6 +249,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   <ul class="collapse">
   <li><a href="#parity-with-a-single-grid" id="toc-parity-with-a-single-grid" class="nav-link" data-scroll-target="#parity-with-a-single-grid">Parity with a single grid</a></li>
   </ul></li>
+  <li><a href="#indicator-driven-regridding" id="toc-indicator-driven-regridding" class="nav-link" data-scroll-target="#indicator-driven-regridding">Indicator-driven regridding</a></li>
+  <li><a href="#the-adaptive-solve-loop" id="toc-the-adaptive-solve-loop" class="nav-link" data-scroll-target="#the-adaptive-solve-loop">The adaptive solve loop</a></li>
   <li><a href="#status" id="toc-status" class="nav-link" data-scroll-target="#status">Status</a></li>
   </ul>
 </nav>
@@ -387,14 +389,45 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </section>
 </section>
+<section id="indicator-driven-regridding" class="level2">
+<h2 class="anchored" data-anchor-id="indicator-driven-regridding">Indicator-driven regridding</h2>
+<p>The center-predicate <code>refine!</code> above is geometric. To adapt to the <em>solution</em>, <code>regrid!</code> evaluates per-block criteria on a live field — each criterion receives the leaf as an ordinary <code>Field</code>, so it is typically a reduction like <code>b -&gt; maximum(abs, interior(b)) &gt; τ</code> — edits the topology in a single pass (refine-marked leaves split, complete fully-marked families coarsen, refine wins conflicts), re-establishes 2:1 balance, and returns freshly allocated fields with the data carried across:</p>
+<div id="8" class="cell" data-execution_count="1">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>bump <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(forest), x <span class="op">-&gt;</span> <span class="fu">exp</span>(<span class="fu">-</span>((x[<span class="fl">1</span>] <span class="op">-</span> <span class="fl">0.5</span>)<span class="op">^</span><span class="fl">2</span> <span class="op">+</span> (x[<span class="fl">2</span>] <span class="op">-</span> <span class="fl">0.5</span>)<span class="op">^</span><span class="fl">2</span>) <span class="op">/</span> <span class="fl">0.01</span>))</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>bump <span class="op">=</span> <span class="fu">regrid!</span>(bump; refine <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(abs, <span class="fu">interior</span>(b)) <span class="op">&gt;</span> <span class="fl">0.5</span>)</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">collect</span>(<span class="fu">leaves</span>(forest)))                  <span class="co"># resolution now follows the bump</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-display" data-execution_count="1">
+<pre><code>16</code></pre>
+</div>
+</div>
+<p>The transfer is interior-only and keyed by leaf identity: an unchanged leaf is copied, a refined leaf is filled by per-dimension linear interpolation from its old parent (one-sided at parent-block edges), and a coarsened leaf by the conservative <code>2⁻ᴺ</code> mean of its old children. Ghosts of the returned fields are scratch, refilled by <code>halo_update!</code>/<code>apply_bc!</code> on the next operator application.</p>
+<p>Because a real regrid invalidates every field allocated on the old leaf set (the generation guards throw on stale use), any field needed afterwards must ride the same call — compute indicator fields <em>before</em> regridding and pass them first:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>η <span class="op">=</span> <span class="fu">magnitude_of</span>(<span class="fu">gradient</span>(forest) <span class="op">*</span> u)           <span class="co"># indicator, pre-regrid</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>η, u <span class="op">=</span> <span class="fu">regrid!</span>(η, u; refine  <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&gt;</span> τ,</span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>                     coarsen <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&lt;</span> τ <span class="op">/</span> <span class="fl">10</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>When the marks change nothing, <code>regrid!</code> returns the <em>same</em> field objects and existing <code>prepare</code>d operators remain valid — the natural convergence signal for an adaptive loop.</p>
+</section>
+<section id="the-adaptive-solve-loop" class="level2">
+<h2 class="anchored" data-anchor-id="the-adaptive-solve-loop">The adaptive solve loop</h2>
+<p>The loop is deliberately user code — solver, tolerances, indicator, and stopping rule are all problem-specific. The canonical shape (in full in <code>examples/adaptive_poisson.jl</code>):</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb15"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> cycle <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span>ncycles</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>    P <span class="op">=</span> <span class="fu">prepare</span>(<span class="fu">laplacian</span>(forest), u)       <span class="co"># a regrid invalidates P: rebuild each cycle</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>    sol, stats <span class="op">=</span> Krylov.<span class="fu">gmres</span>(P, rhs)       <span class="co"># nonsymmetric on an adapted forest — not cg</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">flat_to_interior!</span>(u, sol)</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>    η <span class="op">=</span> <span class="fu">magnitude_of</span>(<span class="fu">gradient</span>(forest) <span class="op">*</span> u)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    η, u <span class="op">=</span> <span class="fu">regrid!</span>(η, u; refine <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&gt;</span> τ)</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Two rules keep it honest: the indicator is computed <strong>before</strong> the regrid (its field rides the transfer), and everything tied to the old leaf set — fields, <code>PreparedForest</code>s — is rebuilt after; using stale state throws rather than silently reading wrong-shaped storage.</p>
+</section>
 <section id="status" class="level2">
 <h2 class="anchored" data-anchor-id="status">Status</h2>
-<p>This PR is deliberately the <em>foundation</em>: the forest grid, field, and operator path, verified by bit-parity against a single grid and by the adjoint identity on a forest. The genuinely hard adaptive math is left for later phases.</p>
+<p>Every AMR phase through the regrid driver is built; the forest is adaptive end-to-end (solve → indicator → <code>regrid!</code> → re-<code>prepare</code>). What remains is the performance phase: packed contiguous block storage with forest-native kernels.</p>
 <pre><code>  Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
   Phase 1  ██████████  DONE   inter-block halo_update! + operator PARITY
-           ░░░░░░░░░░  next   coarse–fine INTERPOLATION (non-uniform forests)
-           ░░░░░░░░░░  next   Restriction/Prolongation + V-cycle MULTIGRID
-           ░░░░░░░░░░  next   indicator-driven REGRID driver</code></pre>
+  Phase 2  ██████████  DONE   coarse–fine INTERPOLATION (non-uniform forests)
+  Phase 3  ██████████  DONE   Restriction/Prolongation + V-cycle MULTIGRID
+  Phase 4  ██████████  DONE   indicator-driven REGRID driver (regrid!)
+           ░░░░░░░░░░  next   packed-storage forest + forest-native GPU kernels</code></pre>
 
 
 </section>
