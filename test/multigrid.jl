@@ -327,7 +327,9 @@
             mul!(z, mg, r)
             mul!(z, mg, r)
             alloc = @allocated mul!(z, mg, r)
-            @test alloc <= 512
+            # ~200 B bare, ~1.1 kB of wrapper noise under Pkg.test's
+            # --check-bounds=yes; an O(n) leak would be ≥ 32 kB (one 64² field)
+            @test alloc <= 4096
         end
     end
 
