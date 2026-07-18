@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Adaptive Mesh Refinement – MatrixFreeOperators.jl</title>
+<title>Geometric Multigrid – MatrixFreeOperators.jl</title>
 <style>
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
@@ -68,8 +68,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
-<link href="../pages/multigrid.html" rel="next">
-<link href="../index.html" rel="prev">
+<link href="../pages/api.html" rel="next">
+<link href="../pages/amr.html" rel="prev">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
@@ -150,7 +150,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/amr.html"><span class="chapter-title">Adaptive Mesh Refinement</span></a></li></ol></nav>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/multigrid.html"><span class="chapter-title">Geometric Multigrid</span></a></li></ol></nav>
         <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
         </a>
       <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
@@ -186,12 +186,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../pages/amr.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Adaptive Mesh Refinement</span></a>
+  <a href="../pages/amr.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Adaptive Mesh Refinement</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
-  <a href="../pages/multigrid.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Geometric Multigrid</span></a>
+  <a href="../pages/multigrid.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Geometric Multigrid</span></a>
   </div>
 </li>
       </ul>
@@ -238,17 +238,11 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
     <h2 id="toc-title">Table of contents</h2>
    
   <ul>
-  <li><a href="#the-motivation-stop-wasting-cells" id="toc-the-motivation-stop-wasting-cells" class="nav-link active" data-scroll-target="#the-motivation-stop-wasting-cells">The motivation: stop wasting cells</a></li>
-  <li><a href="#a-forest-of-fixed-size-leaf-blocks" id="toc-a-forest-of-fixed-size-leaf-blocks" class="nav-link" data-scroll-target="#a-forest-of-fixed-size-leaf-blocks">A forest of fixed-size leaf-blocks</a>
-  <ul class="collapse">
-  <li><a href="#fixed-size-blocks-keep-every-leaf-a-plain-array" id="toc-fixed-size-blocks-keep-every-leaf-a-plain-array" class="nav-link" data-scroll-target="#fixed-size-blocks-keep-every-leaf-a-plain-array">Fixed-size blocks keep every leaf a plain array</a></li>
-  <li><a href="#the-load-bearing-rule-21-balance" id="toc-the-load-bearing-rule-21-balance" class="nav-link" data-scroll-target="#the-load-bearing-rule-21-balance">The load-bearing rule: 2:1 balance</a></li>
-  <li><a href="#where-the-intelligence-lives" id="toc-where-the-intelligence-lives" class="nav-link" data-scroll-target="#where-the-intelligence-lives">Where the intelligence lives</a></li>
-  </ul></li>
-  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a>
-  <ul class="collapse">
-  <li><a href="#parity-with-a-single-grid" id="toc-parity-with-a-single-grid" class="nav-link" data-scroll-target="#parity-with-a-single-grid">Parity with a single grid</a></li>
-  </ul></li>
+  <li><a href="#the-motivation-cg-iterations-grow-with-the-grid" id="toc-the-motivation-cg-iterations-grow-with-the-grid" class="nav-link active" data-scroll-target="#the-motivation-cg-iterations-grow-with-the-grid">The motivation: CG iterations grow with the grid</a></li>
+  <li><a href="#transfers-are-operators-in-the-algebra" id="toc-transfers-are-operators-in-the-algebra" class="nav-link" data-scroll-target="#transfers-are-operators-in-the-algebra">Transfers are operators in the algebra</a></li>
+  <li><a href="#smoothers-come-from-the-operators-diagonal" id="toc-smoothers-come-from-the-operators-diagonal" class="nav-link" data-scroll-target="#smoothers-come-from-the-operators-diagonal">Smoothers come from the operator’s diagonal</a></li>
+  <li><a href="#coarse-operators-are-rediscretizations" id="toc-coarse-operators-are-rediscretizations" class="nav-link" data-scroll-target="#coarse-operators-are-rediscretizations">Coarse operators are rediscretizations</a></li>
+  <li><a href="#usage" id="toc-usage" class="nav-link" data-scroll-target="#usage">Usage</a></li>
   <li><a href="#status" id="toc-status" class="nav-link" data-scroll-target="#status">Status</a></li>
   </ul>
 </nav>
@@ -256,9 +250,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <!-- main -->
 <main class="content" id="quarto-document-content">
 
-<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/amr.html"><span class="chapter-title">Adaptive Mesh Refinement</span></a></li></ol></nav>
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/multigrid.html"><span class="chapter-title">Geometric Multigrid</span></a></li></ol></nav>
 <div class="quarto-title">
-<h1 class="title"><span class="chapter-title">Adaptive Mesh Refinement</span></h1>
+<h1 class="title"><span class="chapter-title">Geometric Multigrid</span></h1>
 </div>
 
 
@@ -275,126 +269,58 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </header>
 
 
-<p><code>BlockForest</code> adds adaptive resolution while keeping every existing operator working <strong>unchanged</strong>. This page tells the story of the design — the problem, the approach, and the one rule everything rests on — and shows the current capabilities.</p>
-<section id="the-motivation-stop-wasting-cells" class="level2">
-<h2 class="anchored" data-anchor-id="the-motivation-stop-wasting-cells">The motivation: stop wasting cells</h2>
-<p>A <em>uniform</em> grid wastes effort. Most of a simulation is smooth and undemanding, but a few regions — a shock front, a flame, a boundary layer — need fine cells. Adaptive Mesh Refinement (AMR) concentrates resolution only where it is needed. The hard constraint here: do that <strong>without rewriting every operator</strong>, because the whole package assumes a field is a dense rectangular array you sweep a stencil across.</p>
-<pre><code>Uniform grid — fine EVERYWHERE       Adaptive forest — fine ONLY where needed
-(most cells do nothing useful)       (resolution follows the feature ▓)
+<p>Geometric multigrid turns the operator algebra into a fast Poisson-class solver: transfer operators live in the same algebra as everything else, smoothers are built from the operator’s own diagonal, and the V-cycle composes on top. This page tells the story — why Krylov alone is not enough, how the pieces fall out of machinery that already exists, and what ships today.</p>
+<section id="the-motivation-cg-iterations-grow-with-the-grid" class="level2">
+<h2 class="anchored" data-anchor-id="the-motivation-cg-iterations-grow-with-the-grid">The motivation: CG iterations grow with the grid</h2>
+<p>An unpreconditioned Krylov solve of <code>-∇²u = f</code> needs more iterations every time the grid is refined — the condition number of the discrete Laplacian grows like <code>h⁻²</code>, so halving the spacing roughly doubles the CG iteration count. Multigrid breaks that link: smooth error components are cheap to kill on <em>coarser</em> grids, so a fixed handful of V-cycles solves the system at <strong>any</strong> resolution. Used as a preconditioner it makes the CG iteration count essentially grid-independent:</p>
+<pre><code>   iterations to rtol = 1e-8, 2-D Poisson, random RHS
 
-┌─┬─┬─┬─┬─┬─┬─┬─┐                     ┌───────┬───────┐
-├─┼─┼─┼─┼─┼─┼─┼─┤                     │       │       │
-├─┼─┼─┼─┼─┼─┼─┼─┤                     │       │       │
-├─┼─┼─┼─┼─┼─┼─┼─┤                     ├───┬───┼───────┤
-├─┼─┼─┼─┼─┼─┼─┼─┤                     │▓▓▓│   │       │
-├─┼─┼─┼─┼─┼─┼─┼─┤                     ├─┬─┼───┤       │
-├─┼─┼─┼─┼─┼─┼─┼─┤                     │▓│▓│   │       │
-└─┴─┴─┴─┴─┴─┴─┴─┘                     └─┴─┴───┴───────┘</code></pre>
+   grid        plain CG      MG-preconditioned CG
+   32×32          111                 10
+   64×64          220                 10</code></pre>
 </section>
-<section id="a-forest-of-fixed-size-leaf-blocks" class="level2">
-<h2 class="anchored" data-anchor-id="a-forest-of-fixed-size-leaf-blocks">A forest of fixed-size leaf-blocks</h2>
-<p>Rather than refine individual cells, the domain is tiled by many equal-sized small <strong>blocks</strong> — e.g.&nbsp;each block is an <code>8×8</code> (2-D) or <code>8×8×8</code> (3-D) patch of cells, an ordinary <a href="../index.html"><code>CartesianGrid</code></a> with its own halo. To add resolution somewhere, you replace one block with <code>2ᴺ</code> child blocks covering the same physical area at half the spacing, and recurse. Each root block and its descendants form a tree; the collection of trees is the <em>forest</em>. A <strong>leaf</strong> is a block nobody refined further — the leaves tile the domain with no gaps or overlaps, and that is where the solution lives.</p>
-<pre><code> Spatial view (2×2 root tiling)              Tree view
-
- Level 0        refine BL corner             root₀   root₁   root₂   root₃
- ┌────┬────┐    ┌────┬────┐                    │
- │ r0 │ r1 │    │ r0 │ r1 │              refine r0
- ├────┼────┤ ─▶ ├─┬─┬┼────┤                    │
- │ r2 │ r3 │    ├─┼─┤│    │              ┌───┬──┴─┬───┐
- │    │    │    ├─┼─┤│ r3 │             c0  c1   c2  c3   (4 leaves,
- └────┴────┘    └─┴─┴┴────┘                              half the spacing)</code></pre>
-<section id="fixed-size-blocks-keep-every-leaf-a-plain-array" class="level3">
-<h3 class="anchored" data-anchor-id="fixed-size-blocks-keep-every-leaf-a-plain-array">Fixed-size blocks keep every leaf a plain array</h3>
-<p>Every block always holds the <strong>same cell count</strong> — only the physical spacing shrinks with depth (level <code>ℓ</code> → <code>h₀ / 2^ℓ</code>). Because each leaf is still a dense rectangular array, <strong>every existing leaf operator runs unchanged per block</strong> — the same stencil sweep, broadcasts, and KernelAbstractions kernels. All of the adaptivity complexity is confined to the <em>block faces</em> (the coarse–fine interfaces).</p>
-<pre><code>   Level-0 block                 Level-1 child block
-   spacing = h                   spacing = h/2
-   ┌─┬─┬─┬─┐                     ┌┬┬┬┐
-   ├─┼─┼─┼─┤                     ├┼┼┼┤    same 4×4 cells,
-   ├─┼─┼─┼─┤                     ├┼┼┼┤    HALF the physical footprint
-   ├─┼─┼─┼─┤                     ├┼┼┼┤    ⇒ twice the resolution
-   └─┴─┴─┴─┘                     └┴┴┴┘
-   4×4 dense array               4×4 dense array   ← still a plain array!</code></pre>
-<p>This is why the design picks the block-structured school (FLASH / PARAMESH / AMReX) and rejects a cell-based octree (p4est / Trixi style): the octree puts a hanging node at nearly every cell, which would break the dense-array stencil sweeps the whole package is built on. The block-structured choice trades a little redundant memory at block boundaries for keeping the interior of every block a plain array.</p>
+<section id="transfers-are-operators-in-the-algebra" class="level2">
+<h2 class="anchored" data-anchor-id="transfers-are-operators-in-the-algebra">Transfers are operators in the algebra</h2>
+<p>The two grid-transfer maps are ordinary operators — the same rank-changer template as <a href="../pages/api.html"><code>Gradient</code></a>/<code>Divergence</code>, just with <strong>two grids</strong> instead of two tensor ranks:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>gf <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">64</span>, <span class="fl">64</span>))</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>gc <span class="op">=</span> <span class="fu">coarsen</span>(gf)                  <span class="co"># half the cells, double the spacing</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prolongation</span>(gc, gf)          <span class="co"># coarse -&gt; fine   (size 4096 × 1024)</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>R <span class="op">=</span> <span class="fu">restriction</span>(gf, gc)           <span class="co"># fine  -&gt; coarse  (size 1024 × 4096)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>prolongation</code> is per-dimension linear interpolation on the cell-centered 2:1 pair: each fine cell sits a quarter coarse-cell off its parent’s center, so it blends parent (3/4) and neighbor (1/4). Boundary children read the coarse grid’s homogeneous ghost fill, which keeps the interpolant consistent with the boundary conditions. <code>restriction</code> <strong>is defined as</strong> the scaled transpose <code>R = 2⁻ᴺ·Pᵀ</code> (full weighting) and shares P’s kernels, so the adjoint identity <code>⟨P·x, y⟩ = ⟨x, Pᵀ·y⟩</code> holds to machine precision by construction — <code>adjoint(R)</code> and <code>adjoint(P)</code> return each other, scaled. They compose like any operator: <code>R * laplacian(gf) * P</code> is the Galerkin coarse operator, ready for <code>prepare</code>/<code>materialize</code>.</p>
 </section>
-<section id="the-load-bearing-rule-21-balance" class="level3">
-<h3 class="anchored" data-anchor-id="the-load-bearing-rule-21-balance">The load-bearing rule: 2:1 balance</h3>
-<p>The invariant everything rests on is <strong>2:1 balance</strong>: any two neighboring leaves stay within one refinement level of each other. This reduces every coarse–fine interface to just three cases — same level / one-coarser / one-finer — which is what makes interface interpolation tractable. <code>refine!</code> and <code>coarsen!</code> re-establish balance automatically (you can also call <code>balance!</code> directly).</p>
-<pre><code>   LEGAL  (neighbors ≤ 1 level apart)     ILLEGAL (2 levels apart)
-   ┌─────────┬────┬────┐                  ┌─────────┬──┬──┐
-   │         │ L1 │ L1 │                  │         ├──┼──┤
-   │   L0    ├────┼────┤                  │   L0    ├──┼──┤   L2 directly
-   │         │ L1 │ L1 │                  │         ├──┼──┤   touching L0
-   └─────────┴────┴────┘                  └─────────┴──┴──┘   → forbidden</code></pre>
+<section id="smoothers-come-from-the-operators-diagonal" class="level2">
+<h2 class="anchored" data-anchor-id="smoothers-come-from-the-operators-diagonal">Smoothers come from the operator’s diagonal</h2>
+<p>A multigrid smoother only needs the diagonal of the operator. <a href="../pages/api.html"><code>operator_diagonal</code></a> extracts it <em>exactly</em> — a <code>Number</code> when uniform (all-periodic Laplacian), a <code>Field</code> otherwise, with the Dirichlet/Neumann mirror fills’ contribution to boundary cells included. There is deliberately no generic fallback: an operator without a declared diagonal errors instead of silently smoothing with a wrong one.</p>
+<p>Two smoother configurations ship:</p>
+<ul>
+<li><a href="../pages/api.html"><code>Jacobi</code></a><code>(ω=2/3, sweeps=2)</code> — weighted Jacobi, <code>x ← x + ω·D⁻¹·(b - A·x)</code>.</li>
+<li><a href="../pages/api.html"><code>Chebyshev</code></a><code>(degree=3)</code> — a fixed Chebyshev polynomial in <code>D⁻¹·A</code> targeting the upper spectrum <code>[λmax/4, λmax]</code>, with <code>λmax</code> estimated by power iteration at construction. Stronger than Jacobi per operator application, still just repeated <code>apply!</code>.</li>
+</ul>
+<p>Both are applied identically before and after each coarse-grid correction, so the whole V-cycle stays a <strong>symmetric</strong> linear map — that is what makes it a legal CG preconditioner.</p>
 </section>
-<section id="where-the-intelligence-lives" class="level3">
-<h3 class="anchored" data-anchor-id="where-the-intelligence-lives">Where the intelligence lives</h3>
-<p>Operators barely change. The forest does a single <code>halo_update!</code> over the whole forest to fill each block’s ghost cells from its neighbors; then each leaf fills only its <em>physical</em> domain-boundary faces and runs its ordinary stencil. So the only genuinely new operator code is that inter-block exchange — plus its declared transpose <code>halo_update_adjoint!</code>, which keeps the adjoint identity <code>⟨Lx,y⟩ = ⟨x,Lᵀy⟩</code> exact on a forest so Krylov solvers stay correct.</p>
-<pre><code>  forest
-    │
-    ▼
-  ┌───────────────────────────────────────────────┐
-  │ 1.  halo_update!(forest)                       │   ONCE, whole forest —
-  │     fill each block's INTERFACE ghosts from    │   the only genuinely
-  │     its neighbors                              │   new operator code
-  └───────────────────────────────────────────────┘
-    │
-    ├───────────────┬───────────────┐
-    ▼               ▼               ▼
-  ┌───────────┐   ┌───────────┐   ┌───────────┐
-  │per leaf:  │   │per leaf:  │   │per leaf:  │
-  │2 apply_bc!│   │2 apply_bc!│   │2 apply_bc!│  ← physical faces only
-  │3 stencil  │   │3 stencil  │   │3 stencil  │  ← EXISTING single-grid code
-  └───────────┘   └───────────┘   └───────────┘</code></pre>
-<p>Internal faces carry the <code>Interface</code> boundary and are skipped by <code>apply_bc!</code> — <code>halo_update!</code> already filled them; physical faces keep the base grid’s BCs.</p>
-</section>
+<section id="coarse-operators-are-rediscretizations" class="level2">
+<h2 class="anchored" data-anchor-id="coarse-operators-are-rediscretizations">Coarse operators are rediscretizations</h2>
+<p>Each level’s operator is the same expression rebuilt on the coarser grid — <code>laplacian(coarsen(g))</code>, not a matrix product. A tree walk rediscretizes any supported operator expression (<code>Laplacian</code>, <code>Derivative</code>, <code>Gradient</code>, <code>Divergence</code>, <code>ScalingOp</code>, <code>IdentityOp</code>, and their <code>+</code>/<code>*</code>/scalar combinations); a <code>ScalingOp</code>’s coefficient field is child-averaged onto the coarse grid. The same boundary-condition objects apply verbatim — coarse levels solve the homogeneous correction equation, which is exactly what <code>apply_bc!</code> enforces.</p>
+<p>An honest note: for cell-centered transfers the Galerkin product <code>R·A·P</code> is a <em>different</em> consistent coarse operator than the rediscretization — even in the periodic interior their stencils differ, while both are second-order approximations of the same PDE. The test suite checks exactly that (shared nullspace, symmetry, O(h²) agreement of actions) rather than pretending they are equal. The coarsest level is solved exactly with a dense LU factored once at construction, which keeps the whole cycle a fixed linear operator.</p>
 </section>
 <section id="usage" class="level2">
 <h2 class="anchored" data-anchor-id="usage">Usage</h2>
-<p>A <code>BlockForest</code> wraps a base <code>CartesianGrid</code> (the root tiling). Operators and fields are built on it exactly as on a single grid:</p>
-<div id="2" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">MatrixFreeOperators</span>, <span class="bu">LinearAlgebra</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>base   <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">8</span>, <span class="fl">8</span>))</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>forest <span class="op">=</span> <span class="fu">BlockForest</span>(base; blocksize <span class="op">=</span> (<span class="fl">4</span>, <span class="fl">4</span>), maxlevel <span class="op">=</span> <span class="fl">4</span>)   <span class="co"># 2×2 root tiling</span></span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">collect</span>(<span class="fu">leaves</span>(forest)))      <span class="co"># 4 leaf blocks at level 0</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>4</code></pre>
-</div>
-</div>
-<p>Refine a region with a predicate on each block’s center; balance is restored automatically:</p>
-<div id="4" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">refine!</span>(forest, x <span class="op">-&gt;</span> x[<span class="fl">1</span>] <span class="op">&lt;</span> <span class="fl">0.3</span> <span class="op">&amp;&amp;</span> x[<span class="fl">2</span>] <span class="op">&lt;</span> <span class="fl">0.3</span>)   <span class="co"># refine near the origin corner</span></span>
-<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">collect</span>(<span class="fu">leaves</span>(forest)))                  <span class="co"># grew, still 2:1 balanced</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>7</code></pre>
-</div>
-</div>
-<section id="parity-with-a-single-grid" class="level3">
-<h3 class="anchored" data-anchor-id="parity-with-a-single-grid">Parity with a single grid</h3>
-<p>On a uniformly-refined forest, the operators reproduce a single <code>CartesianGrid</code> of the same resolution exactly. The interior values are identical (just stored in a different, block-by-block order), so any order-independent reduction matches:</p>
-<div id="6" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>g  <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">8</span>, <span class="fl">8</span>))</span>
-<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>bf <span class="op">=</span> <span class="fu">BlockForest</span>(g; blocksize <span class="op">=</span> (<span class="fl">4</span>, <span class="fl">4</span>), maxlevel <span class="op">=</span> <span class="fl">3</span>)   <span class="co"># level 0 ⇒ same 8×8</span></span>
-<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>u  <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g),  x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))</span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>uf <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(bf), x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))</span>
-<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="fu">norm</span>(<span class="fu">flatten</span>(<span class="fu">laplacian</span>(g) <span class="op">*</span> u)) <span class="op">≈</span> <span class="fu">norm</span>(<span class="fu">flatten</span>(<span class="fu">laplacian</span>(bf) <span class="op">*</span> uf))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>true</code></pre>
-</div>
-</div>
-</section>
+<p>As a Krylov preconditioner — <code>mul!(z, M, r)</code> runs one V-cycle, so <code>M</code> acts as an approximate inverse, which is exactly the Krylov.jl <code>M</code> convention:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb3"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a>g  <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">256</span>, <span class="fl">256</span>))</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>L  <span class="op">=</span> <span class="op">-</span><span class="fl">1</span> <span class="op">*</span> <span class="fu">laplacian</span>(g)                       <span class="co"># SPD under Dirichlet</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>A  <span class="op">=</span> <span class="fu">prepare</span>(L)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>b  <span class="op">=</span> <span class="fu">flatten</span>(f) <span class="op">.-</span> <span class="fu">flatten</span>(<span class="fu">boundary_rhs</span>(L, g))</span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>mg <span class="op">=</span> <span class="fu">MultigridPreconditioner</span>(L; smoother<span class="op">=</span><span class="fu">Jacobi</span>(<span class="fl">2</span><span class="op">/</span><span class="fl">3</span>), cycle<span class="op">=:</span>V, levels<span class="op">=:</span>auto)</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>u, stats <span class="op">=</span> Krylov.<span class="fu">cg</span>(A, b; M<span class="op">=</span>mg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Or as a standalone solver — the stationary iteration <code>u ← u + M·(b - A·u)</code>:</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>u <span class="op">=</span> <span class="fu">solve</span>(<span class="fu">MultigridSolver</span>(L), b; rtol<span class="op">=</span><span class="fl">1e-8</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><code>levels=:auto</code> coarsens while the cell counts stay even (down to ≤ 64 DOFs); pass <code>levels=n</code> to force a depth. Construction does all allocation — level grids, rediscretized operators, smoother state, the coarsest LU — so the steady-state <code>mul!</code> is allocation-free, like a <code>prepare</code>d operator. It is also stateful and single-threaded the same way: one preconditioner per concurrent solve.</p>
 </section>
 <section id="status" class="level2">
 <h2 class="anchored" data-anchor-id="status">Status</h2>
-<p>This PR is deliberately the <em>foundation</em>: the forest grid, field, and operator path, verified by bit-parity against a single grid and by the adjoint identity on a forest. The genuinely hard adaptive math is left for later phases.</p>
-<pre><code>  Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
-  Phase 1  ██████████  DONE   inter-block halo_update! + operator PARITY
-           ░░░░░░░░░░  next   coarse–fine INTERPOLATION (non-uniform forests)
-           ░░░░░░░░░░  next   Restriction/Prolongation + V-cycle MULTIGRID
-           ░░░░░░░░░░  next   indicator-driven REGRID driver</code></pre>
+<p>Ships today: uniform <code>CartesianGrid</code>, scalar fields, <code>:V</code> cycle, <code>Jacobi</code> and <code>Chebyshev</code> smoothers, dense-LU coarsest solve, exact <code>operator_diagonal</code> for the supported leaves. Deliberately deferred: <code>:W</code>/<code>:F</code> cycles, multigrid on a <code>BlockForest</code> (the AMR hierarchy is the natural level structure — see <a href="../pages/amr.html">AMR</a>), <code>Advection</code> rediscretization, and GPU-resident coarsest solves. Unsupported configurations throw an <code>ArgumentError</code> up front rather than degrade.</p>
 
 
 </section>
@@ -802,13 +728,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../index.html" class="pagination-link" aria-label="MatrixFreeOperators.jl">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">MatrixFreeOperators.jl</span></span>
+      <a href="../pages/amr.html" class="pagination-link" aria-label="Adaptive Mesh Refinement">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Adaptive Mesh Refinement</span></span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../pages/multigrid.html" class="pagination-link" aria-label="Geometric Multigrid">
-        <span class="nav-page-text"><span class="chapter-title">Geometric Multigrid</span></span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../pages/api.html" class="pagination-link" aria-label="API">
+        <span class="nav-page-text"><span class="chapter-title">API</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>

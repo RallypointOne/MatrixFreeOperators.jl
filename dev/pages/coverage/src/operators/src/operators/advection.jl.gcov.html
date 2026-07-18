@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-17 23:04:49</td>
+            <td class="headerValue">2026-07-18 17:14:27</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -68,7 +68,7 @@
 <span id="L6"><span class="lineNum">       6</span>              : Velocity marker for [`advection`](@ref) selecting self-advection `u·∇u`: the</span>
 <span id="L7"><span class="lineNum">       7</span>              : velocity is the advected state itself, making the operator nonlinear.</span>
 <span id="L8"><span class="lineNum">       8</span>              : &quot;&quot;&quot;</span>
-<span id="L9"><span class="lineNum">       9</span> <span class="tlaGNC tlaBgGNC">           8 : struct SelfAdvection end</span></span>
+<span id="L9"><span class="lineNum">       9</span> <span class="tlaGNC tlaBgGNC">           9 : struct SelfAdvection end</span></span>
 <span id="L10"><span class="lineNum">      10</span>              : </span>
 <span id="L11"><span class="lineNum">      11</span>              : @inline function _adv_at(</span>
 <span id="L12"><span class="lineNum">      12</span>              :     u::AbstractArray{&lt;:Any,N}, v::AbstractArray{&lt;:Any,N}, I::CartesianIndex{N}, inv_h::NTuple{N}</span>
@@ -89,7 +89,7 @@
 <span id="L27"><span class="lineNum">      27</span>              : (`u·∇u`). Construct with [`advection`](@ref).</span>
 <span id="L28"><span class="lineNum">      28</span>              : &quot;&quot;&quot;</span>
 <span id="L29"><span class="lineNum">      29</span>              : struct Advection{G&lt;:AbstractGrid,V} &lt;: AbstractOperator</span>
-<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">          19 :     grid::G</span></span>
+<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">          20 :     grid::G</span></span>
 <span id="L31"><span class="lineNum">      31</span>              :     velocity::V</span>
 <span id="L32"><span class="lineNum">      32</span>              : end</span>
 <span id="L33"><span class="lineNum">      33</span>              : </span>
@@ -127,7 +127,7 @@
 <span id="L65"><span class="lineNum">      65</span>              :     )</span>
 <span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">           8 :     return Advection(g, velocity)</span></span>
 <span id="L67"><span class="lineNum">      67</span>              : end</span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">           8 : advection(g::AbstractGrid, velocity::SelfAdvection) = Advection(g, velocity)</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">           9 : advection(g::AbstractGrid, velocity::SelfAdvection) = Advection(g, velocity)</span></span>
 <span id="L69"><span class="lineNum">      69</span>              : </span>
 <span id="L70"><span class="lineNum">      70</span> <span class="tlaUNC tlaBgUNC">           0 : islinear(::Advection{&lt;:AbstractGrid,&lt;:Field}) = true</span></span>
 <span id="L71"><span class="lineNum">      71</span> <span class="tlaUNC">           0 : islinear(::Advection{&lt;:AbstractGrid,SelfAdvection}) = false</span></span>
