@@ -44,6 +44,34 @@
         @test isbits(g)
     end
 
+    @testset "coarsen" begin
+        g = CartesianGrid(
+            ((0.0, 1.0), (0.0, 2.0)),
+            (4, 8);
+            bc=((Periodic(), Periodic()), (Dirichlet(1.5), Neumann())),
+        )
+        gc = coarsen(g)
+        @test local_size(gc) == (2, 4)
+        @test spacing(gc) == 2 .* spacing(g)
+        @test gc.extent == g.extent
+        @test boundary_conditions(gc) === boundary_conditions(g)
+        @test halo_width(gc) == halo_width(g)
+        @test KernelAbstractions.get_backend(gc) == KernelAbstractions.get_backend(g)
+
+        # a coarse cell center is the midpoint of its 2^N children's centers
+        for c in interior(gc)
+            children = [
+                cell_center(g, CartesianIndex(ntuple(d -> 2 * (c[d] - 1) - 1 + t[d] + 1, 2)))
+                for t in Iterators.product(0:1, 0:1)
+            ]
+            @test cell_center(gc, c) ≈ sum(children) / 4
+        end
+
+        @test_throws ArgumentError coarsen(CartesianGrid(((0.0, 1.0),), (5,)))
+        @test_throws ArgumentError coarsen(CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (4, 5)))
+        @test spacing(coarsen(CartesianGrid(((0.0f0, 1.0f0),), (10,)))) === (0.2f0,)
+    end
+
     @testset "halo_update! no-op seam" begin
         g = CartesianGrid(((0.0, 1.0),), (4,))
         x = rand(6)

@@ -145,9 +145,11 @@ struct PreparedComposed{A<:AbstractOperator,B<:AbstractOperator,F<:AbstractField
     tmp::F
 end
 
+# The inner factor sees the grid of the intermediate it consumes (transfer
+# chains compose factors living on different grids).
 function apply!(y::Field, L::PreparedComposed, x::Field, g::AbstractGrid, α, β)
     apply!(L.tmp, L.b, x, g)
-    apply!(y, L.a, L.tmp, g, α, β)
+    apply!(y, L.a, L.tmp, L.tmp.grid, α, β)
     return y
 end
 
