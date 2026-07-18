@@ -2,8 +2,9 @@
     MFO = MatrixFreeOperators
     fun = x -> sinpi(x[1]) * cospi(2x[2]) + 0.3 * x[1]
 
-    # A 4×4 tiling has interior (all-Interface), edge, and corner blocks, so the leaf
-    # cache spans several BC-signature groups — the case a type-unstable sweep breaks on.
+    # A 4×4 tiling has interior, edge, and corner blocks; physical BCs live on the
+    # forest and are applied by the face passes, so every leaf grid is one concrete
+    # all-Interface type and the prepared sweep is type-stable by construction.
     bc = ((Dirichlet(), Dirichlet()), (Neumann(), Neumann()))
     g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bc)
     bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)   # 16 leaves
@@ -19,11 +20,11 @@
         return @allocated mul!(out, P, v)
     end
 
-    # The leaf-grid cache removes the per-application leaf-grid rebuild (the dominant
-    # allocation, once ~3000 B/leaf); the residual is the per-leaf stencil apply, which
-    # is allocation-free only when inlined into one mul! (tracked as the alloc-free-kernel
-    # follow-up). This loose bound guards against the type-instability regressing; the
-    # exact type-stability guard is the @inferred test below.
+    # Leaf grids are isbits and type-stable, so the sweep rebuilds them for free; the
+    # residual is the per-leaf stencil apply, which is allocation-free only when
+    # inlined into one mul! (tracked as the alloc-free-kernel follow-up). This loose
+    # bound guards against a type-instability regressing; the exact type-stability
+    # guard is the @inferred test below.
     alloc_bound(nl) = 1000 * nl
 
     @testset "forward mul! is correct" begin

@@ -27,25 +27,24 @@ end
 
 Block-forest counterpart of [`PreparedOperator`](@ref): the flat `mul!`/`size`/
 `eltype` boundary for an operator over a [`BlockForest`](@ref). Beyond the padded
-scratch fields it caches, at `prepare` time, the per-leaf `(index, leaf grid)` pairs
-grouped by BC signature (`groups`) plus a scratch [`BlockField`](@ref) for
-accumulating adjoint sweeps (`adjscratch`), so steady-state `mul!` never rebuilds a
-leaf grid — which was the dominant per-application allocation. It also warms the
-grid's per-generation halo-exchange schedule (see [`halo_update!`](@ref)), so the
-inter-block ghost copies run as a flat descriptor loop with no topology queries. The
-residual cost is the per-leaf stencil `apply!` itself (allocation-free only when
-inlined into a single `mul!`); see the allocation-free-kernel follow-up. The cache is
-tied to the forest's regrid `generation`; a `refine!`/`coarsen!`/`balance!` after
+scratch fields it carries a scratch [`BlockField`](@ref) for accumulating adjoint
+sweeps (`adjscratch`), and `prepare` warms the grid's per-generation halo-exchange
+schedule (see [`halo_update!`](@ref)), so the inter-block ghost copies and the
+physical-BC face passes run as flat descriptor loops with no topology queries.
+Every leaf grid is one concrete all-`Interface` type, so the leaf sweep is
+type-stable and rebuilding a leaf grid allocates nothing; the residual cost is the
+per-leaf stencil `apply!` itself (allocation-free only when inlined into a single
+`mul!`); see the allocation-free-kernel follow-up. The prepared operator is tied
+to the forest's regrid `generation`; a `refine!`/`coarsen!`/`balance!` after
 `prepare` invalidates it and `mul!` throws — re-run `prepare` on the new forest.
 """
 struct PreparedForest{
-    O<:AbstractOperator,G<:BlockForest,FX<:BlockField,FY<:BlockField,C<:Tuple,S<:BlockField
+    O<:AbstractOperator,G<:BlockForest,FX<:BlockField,FY<:BlockField,S<:BlockField
 }
     op::O
     grid::G
     xpad::FX
     ypad::FY
-    groups::C
     adjscratch::S
     generation::Int
 end
@@ -95,9 +94,9 @@ function prepare(L::AbstractOperator, x::AbstractField)
 end
 prepare(L::AbstractOperator) = prepare(L, scalar_field(_require_grid(L)))
 
-# Forest prepare: same tree walk (Composed still errors via _prepare_tree), plus a
-# per-leaf grid cache so mul! never rebuilds a leaf grid. adjscratch backs the
-# accumulating adjoint sweep the un-prepared path allocates per call.
+# Forest prepare: same tree walk (Composed still errors via _prepare_tree).
+# adjscratch backs the accumulating adjoint sweep the un-prepared path allocates
+# per call.
 function prepare(L::AbstractOperator, x::BlockField)
     if !islinear(L)
         throw(
@@ -112,9 +111,7 @@ function prepare(L::AbstractOperator, x::BlockField)
     ypad = allocate_output(L, x)
     op = _prepare_tree(L, x)
     _exchange_schedule(x.grid)   # warm the halo-exchange cache (build once, not on first mul!)
-    return PreparedForest(
-        op, x.grid, xpad, ypad, _leaf_cache(x.grid), similar(x), x.grid.forest.generation[]
-    )
+    return PreparedForest(op, x.grid, xpad, ypad, similar(x), x.grid.forest.generation[])
 end
 
 # Tree-walking buffer allocation: leaves pass through unchanged; Composed and
@@ -169,9 +166,9 @@ end
 
 #--------------------------------------------------------------------------------# Cached forest apply (the PreparedForest hot path)
 
-# Cached counterpart of the un-prepared forest apply in operators/forest.jl: iterate
-# the prepare-time leaf-grid cache (behind a function barrier, P.groups) instead of
-# rebuilding each leaf grid — the dominant per-application allocation. The combinator
+# Cached counterpart of the un-prepared forest apply in operators/forest.jl, using
+# the prepared scratch fields (leaf grids are one concrete all-Interface type, so
+# rebuilding them in the sweep is type-stable and free). The combinator
 # structure mirrors forest.jl exactly — Added/Scaled/AdjointOp recurse at the forest
 # level so a nested adjoint still reaches halo_update_adjoint!'s cross-block fold —
 # and additionally handles the PreparedAdjoint nodes _prepare_tree introduces. (The
@@ -181,7 +178,8 @@ function _forest_capply!(y::BlockField, L::AbstractOperator, x::BlockField, P::P
     _require_current(y)
     halo_update!(x, P.grid)
     apply_bc!(x, P.grid)
-    _foreach_leaf(P.groups) do i, lg
+    for i in 1:nleaves(P.grid)
+        lg = leaf_grid(P.grid, i)
         apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
     end
     return y
@@ -221,7 +219,8 @@ function _forest_capply!(y::BlockField, L::PreparedAdjoint, x::BlockField, P::Pr
     iszero(β) && return _forest_capply_adjoint!(y, L.op, x, P, α, β)
     _forest_capply_adjoint!(L.scratch, L.op, x, P, true, false)
     s = L.scratch
-    _foreach_leaf(P.groups) do i, lg
+    for i in 1:nleaves(P.grid)
+        lg = leaf_grid(P.grid, i)
         yi = interior(block(y, i, lg))
         yi .= α .* interior(block(s, i, lg)) .+ β .* yi
     end
@@ -239,19 +238,22 @@ function _forest_capply_adjoint!(
     # coupling breaks the halo symmetry), so this shortcut never skips a real transpose.
     isselfadjoint(L) && return _forest_capply!(x̄, L, ȳ, P, α, β)
     if iszero(β)
-        _foreach_leaf(P.groups) do i, lg
+        for i in 1:nleaves(P.grid)
+            lg = leaf_grid(P.grid, i)
             apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)
         end
         fold_bc!(x̄, P.grid)
         halo_update_adjoint!(x̄, P.grid)
     else
         s = P.adjscratch
-        _foreach_leaf(P.groups) do i, lg
+        for i in 1:nleaves(P.grid)
+            lg = leaf_grid(P.grid, i)
             apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)
         end
         fold_bc!(s, P.grid)
         halo_update_adjoint!(s, P.grid)
-        _foreach_leaf(P.groups) do i, lg
+        for i in 1:nleaves(P.grid)
+            lg = leaf_grid(P.grid, i)
             xi = interior(block(x̄, i, lg))
             xi .= α .* interior(block(s, i, lg)) .+ β .* xi
         end
@@ -436,12 +438,13 @@ function LinearAlgebra.mul!(
         ),
     )
     xpad = P.xpad
-    _foreach_leaf(P.groups) do i, lg
-        flat_to_interior!(block(xpad, i, lg), view(x, _block_range(xpad, i)))
+    for i in 1:nleaves(P.grid)
+        flat_to_interior!(block(xpad, i, leaf_grid(P.grid, i)), view(x, _block_range(xpad, i)))
     end
     _forest_capply!(P.ypad, P.op, xpad, P, true, false)
     ypad = P.ypad
-    _foreach_leaf(P.groups) do i, lg
+    for i in 1:nleaves(P.grid)
+        lg = leaf_grid(P.grid, i)
         interior_to_flat!(view(y, _block_range(ypad, i)), block(ypad, i, lg), α, β)
     end
     return y
