@@ -51,6 +51,10 @@ function BlockForest(
                 "(dimension $d)",
             ),
         )
+        if !(base.bc[d][1] isa Periodic)
+            _require_face_bc(base.bc[d][1])
+            _require_face_bc(base.bc[d][2])
+        end
     end
     maxlevel >= 0 || throw(ArgumentError("maxlevel must be ≥ 0, got $maxlevel"))
     nroot = ntuple(d -> base.size[d] ÷ blocksize[d], Val(N))

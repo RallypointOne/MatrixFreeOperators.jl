@@ -73,6 +73,21 @@ _source_low(::AbstractBC, h::Int, n::Int, k::Int) = h + k
 _source_high(::Periodic, h::Int, n::Int, k::Int) = h + k
 _source_high(::AbstractBC, h::Int, n::Int, k::Int) = h + n + 1 - k
 
+# Forest face-pass capability gate: a physical BC must implement the fill/fold/lift
+# primitives before it can back a BlockForest boundary — erroring at construction
+# beats silently unfilled ghosts.
+_require_face_bc(::Dirichlet) = nothing
+_require_face_bc(::Neumann) = nothing
+function _require_face_bc(bc::AbstractBC)
+    throw(
+        ArgumentError(
+            "$(nameof(typeof(bc))) has no forest face-pass implementation; define " *
+            "_bc_sign, _offset_ghost!, and _require_face_bc methods to support it " *
+            "on a BlockForest",
+        ),
+    )
+end
+
 # Type-stable slab view along compile-time dimension D (selectdim with a runtime
 # dimension boxes the view type, which would allocate inside hot mul! loops).
 @inline function _dimslice(data::AbstractArray{<:Any,N}, ::Val{D}, r) where {N,D}

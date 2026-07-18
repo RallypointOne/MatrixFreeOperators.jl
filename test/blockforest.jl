@@ -1,3 +1,6 @@
+# Top level (not in a @testset): struct definitions need global scope.
+struct UnsupportedBC <: MatrixFreeOperators.AbstractBC end
+
 @testset "BlockForest grid" begin
     MFO = MatrixFreeOperators
     Interface = MFO.Interface
@@ -12,6 +15,14 @@
         @test MFO.nleaves(bf) == 4                 # nroot = (2, 2)
         @test dimension(bf) == 2
         @test_throws ArgumentError BlockForest(base; blocksize=(5, 8), maxlevel=2)
+        # physical BCs without a face-pass implementation are rejected at construction
+        for bad in (
+            ((UnsupportedBC(), UnsupportedBC()), (Dirichlet(), Dirichlet())),
+            ((Dirichlet(), Dirichlet()), (Interface(), Interface())),
+        )
+            badbase = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bad)
+            @test_throws ArgumentError BlockForest(badbase; blocksize=(8, 8), maxlevel=2)
+        end
     end
 
     @testset "leaf geometry tiles the base at level 0" begin

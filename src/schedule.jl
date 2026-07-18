@@ -58,7 +58,11 @@ The adjoint runs the phases, and each phase's descriptors, in exact reverse
 order, making it the exact transpose of the forward composition. Each ghost
 region is the dst of exactly one descriptor across all three vectors. The
 descriptor list is also the send/recv list a future distributed backend
-consumes.
+consumes. `bcfaces` lists, per dimension and (low, high) side, the leaves whose
+face lies on the physical domain boundary — the input of the forest-level
+physical-BC passes ([`apply_bc!`](@ref)/[`fold_bc!`](@ref)/
+`fill_bc_inhomogeneous!` on a [`BlockField`](@ref)); periodic dimensions stay
+empty, their wrap being halo-exchange territory.
 
 Built by `_build_exchange_schedule` and cached on the grid per regrid generation
 by `_exchange_schedule`; a stale schedule is unusable by construction because the
@@ -68,13 +72,16 @@ struct ExchangeSchedule{N,T}
     copies::Vector{CopyDescriptor{N}}
     interp::Vector{GhostFill{N,T}}
     restrict::Vector{GhostFill{N,T}}
+    bcfaces::NTuple{N,NTuple{2,Vector{Int}}}
     generation::Int
 end
 
 # Sentinel: generation -1 never matches a live forest generation (construction
 # already bumps it to ≥ 1), so the first _exchange_schedule fetch always builds.
-_empty_schedule(::Val{N}, ::Type{T}) where {N,T} =
-    ExchangeSchedule{N,T}(CopyDescriptor{N}[], GhostFill{N,T}[], GhostFill{N,T}[], -1)
+_empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(
+    CopyDescriptor{N}[], GhostFill{N,T}[], GhostFill{N,T}[],
+    ntuple(_ -> (Int[], Int[]), Val(N)), -1,
+)
 
 #--------------------------------------------------------------------------------# Coarse–fine transfer weights
 
