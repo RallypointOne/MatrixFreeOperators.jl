@@ -166,16 +166,74 @@ uf = set!(scalar_field(bf), x -> sinpi(x[1]) * sinpi(x[2]))
 norm(flatten(laplacian(g) * u)) ≈ norm(flatten(laplacian(bf) * uf))
 ```
 
+## Indicator-driven regridding
+
+The center-predicate `refine!` above is geometric. To adapt to the *solution*,
+`regrid!` evaluates per-block criteria on a live field — each criterion receives
+the leaf as an ordinary `Field`, so it is typically a reduction like
+`b -> maximum(abs, interior(b)) > τ` — edits the topology in a single pass
+(refine-marked leaves split, complete fully-marked families coarsen, refine wins
+conflicts), re-establishes 2:1 balance, and returns freshly allocated fields with
+the data carried across:
+
+```{julia}
+bump = set!(scalar_field(forest), x -> exp(-((x[1] - 0.5)^2 + (x[2] - 0.5)^2) / 0.01))
+bump = regrid!(bump; refine = b -> maximum(abs, interior(b)) > 0.5)
+length(collect(leaves(forest)))                  # resolution now follows the bump
+```
+
+The transfer is interior-only and keyed by leaf identity: an unchanged leaf is
+copied, a refined leaf is filled by per-dimension linear interpolation from its
+old parent (one-sided at parent-block edges), and a coarsened leaf by the
+conservative `2⁻ᴺ` mean of its old children. Ghosts of the returned fields are
+scratch, refilled by `halo_update!`/`apply_bc!` on the next operator application.
+
+Because a real regrid invalidates every field allocated on the old leaf set (the
+generation guards throw on stale use), any field needed afterwards must ride the
+same call — compute indicator fields *before* regridding and pass them first:
+
+```julia
+η = magnitude_of(gradient(forest) * u)           # indicator, pre-regrid
+η, u = regrid!(η, u; refine  = b -> maximum(interior(b)) > τ,
+                     coarsen = b -> maximum(interior(b)) < τ / 10)
+```
+
+When the marks change nothing, `regrid!` returns the *same* field objects and
+existing `prepare`d operators remain valid — the natural convergence signal for
+an adaptive loop.
+
+## The adaptive solve loop
+
+The loop is deliberately user code — solver, tolerances, indicator, and stopping
+rule are all problem-specific. The canonical shape (in full in
+`examples/adaptive_poisson.jl`):
+
+```julia
+for cycle in 1:ncycles
+    P = prepare(laplacian(forest), u)       # a regrid invalidates P: rebuild each cycle
+    sol, stats = Krylov.gmres(P, rhs)       # nonsymmetric on an adapted forest — not cg
+    flat_to_interior!(u, sol)
+    η = magnitude_of(gradient(forest) * u)
+    η, u = regrid!(η, u; refine = b -> maximum(interior(b)) > τ)
+end
+```
+
+Two rules keep it honest: the indicator is computed **before** the regrid (its
+field rides the transfer), and everything tied to the old leaf set — fields,
+`PreparedForest`s — is rebuilt after; using stale state throws rather than
+silently reading wrong-shaped storage.
+
 ## Status
 
-This PR is deliberately the *foundation*: the forest grid, field, and operator
-path, verified by bit-parity against a single grid and by the adjoint identity on a
-forest. The genuinely hard adaptive math is left for later phases.
+Every AMR phase through the regrid driver is built; the forest is adaptive
+end-to-end (solve → indicator → `regrid!` → re-`prepare`). What remains is the
+performance phase: packed contiguous block storage with forest-native kernels.
 
 ```
   Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
   Phase 1  ██████████  DONE   inter-block halo_update! + operator PARITY
-           ░░░░░░░░░░  next   coarse–fine INTERPOLATION (non-uniform forests)
-           ░░░░░░░░░░  next   Restriction/Prolongation + V-cycle MULTIGRID
-           ░░░░░░░░░░  next   indicator-driven REGRID driver
+  Phase 2  ██████████  DONE   coarse–fine INTERPOLATION (non-uniform forests)
+  Phase 3  ██████████  DONE   Restriction/Prolongation + V-cycle MULTIGRID
+  Phase 4  ██████████  DONE   indicator-driven REGRID driver (regrid!)
+           ░░░░░░░░░░  next   packed-storage forest + forest-native GPU kernels
 ```
