@@ -262,7 +262,7 @@ Fill each leaf block's interface ghosts from its neighbors, in three phases over
 the precomputed per-generation [`ExchangeSchedule`](@ref): same-level slab copies,
 then coarse→fine quadratic interpolation, then fine→coarse flux-matching
 restriction (which reads the interpolation-filled fine ghosts). Domain-boundary
-faces are left to the per-leaf `apply_bc!`. Must run once over the whole forest
+faces are left to the forest-level `apply_bc!` face pass. Must run once over the whole forest
 before any stencil sweep.
 """
 function halo_update!(x::BlockField, g::BlockForest)

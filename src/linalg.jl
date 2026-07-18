@@ -58,8 +58,8 @@ const _AnyPrepared = Union{PreparedOperator,PreparedForest}
 Walk the operator tree once, allocating the scratch buffers every node needs, and
 return a [`PreparedOperator`](@ref) — or a [`PreparedForest`](@ref) for a
 [`BlockField`](@ref) prototype. `mul!` is then allocation-free in steady state on a
-single grid; on a block forest it rebuilds no leaf grid (its residual cost is the
-per-leaf stencil apply). `x` is a prototype of the input field (contents are
+single grid; on a block forest the residual cost is the per-leaf stencil
+apply. `x` is a prototype of the input field (contents are
 ignored); the one-argument form assumes a scalar field on the operator's grid.
 
 The prepared operator is stateful and single-threaded — prepare once per
@@ -282,8 +282,8 @@ Boundary lift of the affine split `L_full(x) = L(x) + b`: the contribution of
 Assemble once per solve and fold into the right-hand side: the discrete problem
 `L_full(u) = f` becomes `L·u = f - b`. The grid form assumes a scalar input
 field; pass a prototype field for vector inputs. On a [`BlockForest`](@ref) the
-lift assembles per leaf block — only physical domain faces contribute
-([`Interface`](@ref) faces are homogeneous by construction).
+lift is assembled by the forest-level inhomogeneous face pass — only physical
+domain faces contribute; [`Interface`](@ref) faces stay homogeneous.
 
 ### Examples
 

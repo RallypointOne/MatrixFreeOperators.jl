@@ -122,9 +122,10 @@ convention-based interface so foreign grid types can opt in):
   stencil that reads neighbors.
 - (AMR) `BlockForest` implements this same interface per leaf and adds
   `refine!(g, predicate)`, `coarsen!(g, predicate)`, `balance!(g)`, and `leaves(g)`
-  (see §9 AMR). Each leaf is an ordinary `CartesianGrid`; `halo_update!` does the
-  inter-block coupling — same-level copies plus quadratic coarse–fine
-  interpolation/restriction at refinement interfaces (see §9).
+  (see §9 AMR). Each leaf is an ordinary all-`Interface` `CartesianGrid`;
+  `halo_update!` does the inter-block coupling — same-level copies plus quadratic
+  coarse–fine interpolation/restriction at refinement interfaces — and a
+  forest-level `apply_bc!` face pass fills physical domain faces (see §9).
 
 **Field:** keep it minimal — a device array plus a reference to its grid and a
 *location* tag (so staggered grids are additive later):
@@ -580,19 +581,27 @@ pre-built.
   distributed/`P4estTopology` backends sit behind the `topology` + `halo_update!`
   seams. Storage is **vector-of-blocks** first (`BlockField`), designed so a packed
   contiguous GPU buffer drops in later without touching operators.
-  - **Built (Phase 0/1):** `BlockForest` + topology + `BlockField` + the flat
-    boundary; the forest action = `halo_update!` (inter-block exchange, once over the
-    forest) → per-leaf `apply_bc!` → per-leaf stencil. A new `Interface` BC marks
-    internal faces (filled by `halo_update!`, skipped by `apply_bc!`). Verified by
+  - **Built (Phase 0/1, reworked by #14):** `BlockForest` + topology + `BlockField`
+    + the flat boundary; the forest action = `halo_update!` (inter-block exchange,
+    once over the forest) → forest-level `apply_bc!` face pass (physical domain
+    faces, from per-(dim, side) leaf-index lists on the per-generation schedule) →
+    per-leaf stencil. Every leaf grid is the *same* concrete all-`Interface` type
+    (`Interface` faces are skipped by the per-leaf BC sweeps), so `leaf_grid` is
+    type-stable and isbits and the PR #8 BC-signature group cache is deleted (#14).
+    The adjoint is Hᵀ∘Bᵀ∘Sᵀ: per-leaf stencil-transpose gathers, forest-level
+    `fold_bc!`, then `halo_update_adjoint!` last. A BC type without a face-pass
+    implementation is rejected at `BlockForest` construction — a missing capability
+    degrades to an error, never a wrong result. Verified by
     bit-parity vs an equal-resolution single `CartesianGrid` and the adjoint identity
     (the same-level halo copy has a declared transpose `halo_update_adjoint!`,
     mirroring `apply_bc!`/`fold_bc!`). The exchange is driven by a per-generation
-    **`ExchangeSchedule`** — a flat homogeneous vector of copy descriptors
-    (`src`/`dst` block + slab ranges) built once per regrid generation and cached on
-    the `BlockForest`, so `halo_update!` is a dumb, type-stable loop of concrete
-    `view .=` copies with no per-application topology queries; the adjoint runs the
-    same descriptors transposed (scatter-add then zero). The descriptor list is also
-    the send/recv list a future distributed backend consumes.
+    **`ExchangeSchedule`** — flat homogeneous vectors of copy descriptors
+    (`src`/`dst` block + slab ranges) plus the physical-face lists, built once per
+    regrid generation and cached on the `BlockForest`, so `halo_update!` and the BC
+    passes are dumb, type-stable loops of concrete
+    `view .=` broadcasts with no per-application topology queries; the adjoint runs
+    the same descriptors transposed (scatter-add then zero). The descriptor list is
+    also the send/recv list a future distributed backend consumes.
   - **Built (coarse–fine phase):** operators apply across refinement levels. The
     schedule carries two more homogeneous descriptor vectors: coarse→fine ghost
     interpolation (Martin–Cartwright quadratic — normal parabola (5/21, 5/6, −1/14)

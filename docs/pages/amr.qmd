@@ -100,11 +100,13 @@ balance automatically (you can also call `balance!` directly).
 ### Where the intelligence lives
 
 Operators barely change. The forest does a single `halo_update!` over the whole
-forest to fill each block's ghost cells from its neighbors; then each leaf fills
-only its *physical* domain-boundary faces and runs its ordinary stencil. So the
-only genuinely new operator code is that inter-block exchange — plus its declared
-transpose `halo_update_adjoint!`, which keeps the adjoint identity
-`⟨Lx,y⟩ = ⟨x,Lᵀy⟩` exact on a forest so Krylov solvers stay correct.
+forest to fill each block's interface ghosts from its neighbors, then a single
+forest-level `apply_bc!` pass fills the *physical* domain-boundary ghosts from
+precomputed face lists; each leaf then runs its ordinary stencil. So the only
+genuinely new operator code is those two forest-level passes — plus their
+declared transposes (`halo_update_adjoint!` and the forest-level `fold_bc!`),
+which keep the adjoint identity `⟨Lx,y⟩ = ⟨x,Lᵀy⟩` exact on a forest so Krylov
+solvers stay correct.
 
 ```
   forest
@@ -112,21 +114,30 @@ transpose `halo_update_adjoint!`, which keeps the adjoint identity
     ▼
   ┌───────────────────────────────────────────────┐
   │ 1.  halo_update!(forest)                       │   ONCE, whole forest —
-  │     fill each block's INTERFACE ghosts from    │   the only genuinely
-  │     its neighbors                              │   new operator code
+  │     fill each block's INTERFACE ghosts from    │   flat descriptor loop,
+  │     its neighbors                              │   no topology queries
+  └───────────────────────────────────────────────┘
+    │
+    ▼
+  ┌───────────────────────────────────────────────┐
+  │ 2.  apply_bc!(forest)                          │   ONCE, whole forest —
+  │     fill each boundary block's PHYSICAL ghosts │   per-(dim, side)
+  │     from precomputed face lists                │   leaf-index lists
   └───────────────────────────────────────────────┘
     │
     ├───────────────┬───────────────┐
     ▼               ▼               ▼
   ┌───────────┐   ┌───────────┐   ┌───────────┐
   │per leaf:  │   │per leaf:  │   │per leaf:  │
-  │2 apply_bc!│   │2 apply_bc!│   │2 apply_bc!│  ← physical faces only
   │3 stencil  │   │3 stencil  │   │3 stencil  │  ← EXISTING single-grid code
   └───────────┘   └───────────┘   └───────────┘
 ```
 
-Internal faces carry the `Interface` boundary and are skipped by `apply_bc!` —
-`halo_update!` already filled them; physical faces keep the base grid's BCs.
+Every leaf grid carries the `Interface` boundary on all faces, so per-leaf BC
+sweeps are no-ops and every leaf shares one concrete grid type — the physical
+BCs live on the forest, applied by the face pass above. This is the
+homogeneous-blocks structure production AMR codes (AMReX, p4est) use: boundary
+operators are separate passes over face lists, never per-block special cases.
 
 ## Usage
 

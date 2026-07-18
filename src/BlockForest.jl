@@ -6,9 +6,10 @@
 Block-structured adaptive grid: a [`Forest`](@ref) of fixed-size leaf-blocks laid
 over the physical domain of `base`. Each leaf is an ordinary [`CartesianGrid`](@ref)
 of `blocksize` cells with the same halo as `base`; refining a block replaces it
-with `2ᴺ` children at half the spacing. Internal block faces carry the
-[`Interface`](@ref) boundary (filled by [`halo_update!`](@ref)); physical
-domain faces carry `base`'s boundary conditions.
+with `2ᴺ` children at half the spacing. Leaf grids carry the
+[`Interface`](@ref) boundary on every face; inter-block ghosts are filled by
+[`halo_update!`](@ref) and physical domain faces by the forest-level
+`apply_bc!` face pass from `base`'s boundary conditions (kept on the forest).
 
 `base` ncells must be divisible by `blocksize` (the quotient is the root tiling).
 Operators built on a `BlockForest` run the existing per-`CartesianGrid` stencil
@@ -129,6 +130,7 @@ leaf_grid(bf::BlockForest, i::Integer) = leaf_grid(bf, bf.forest.leaves[i])
 
 Iterator over `(key, leaf_grid)` pairs for every leaf, in Morton (storage) order.
 Block storage in a [`BlockField`](@ref) over `bf` is indexed in the same order.
+Leaf grids are all-[`Interface`](@ref); physical BCs live on `bf.bc`.
 """
 leaves(bf::BlockForest) = ((key, leaf_grid(bf, key)) for key in bf.forest.leaves)
 
