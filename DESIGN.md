@@ -402,7 +402,17 @@ wrap any `AbstractOperator` exposing `mul!`/`size`/`eltype`.)
   kernels reusing the `_*_adjoint_gather` stencils plus the existing
   `fold_bc!`/`halo_update_adjoint!` transposes, verified by the dot-product
   identity — never AD-through-kernel. `BlockField` remains the correctness
-  reference and the AD (Enzyme/Mooncake) + Reactant path. Kernelizing the exchange
+  reference and the AD (Enzyme/Mooncake) + Reactant path. Coefficient fields
+  follow the storage layout: an operator's auxiliary per-cell data (`ScalingOp`
+  coefficients, `Advection` velocities) must live in the same layout as the
+  field it is applied to for the kernel override to engage — packed × packed
+  dispatches to the single-launch kernel; any mismatch degrades to the per-leaf
+  reference sweep, never a wrong result. `prepare` normalizes the mismatch away:
+  a `BlockField` coefficient under a packed prototype is `pack`ed once at
+  prepare time (sound because these leaves declare `isconstant`), so the hot
+  path cannot silently stay on the fallback; staleness after a regrid is caught
+  by the existing generation guards on both the prepared and un-prepared paths.
+  Kernelizing the exchange
   itself (batched `CopyDescriptor` kernel; CSR-flattening the nested
   `GhostFill.terms`) is an explicit follow-up, not part of the storage swap.
 
