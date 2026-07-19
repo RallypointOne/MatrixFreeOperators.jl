@@ -95,6 +95,46 @@ CUDA.allowscalar(false)
         @test Array(outg) ≈ out
     end
 
+    @testset "PackedBlockField single-launch kernel parity" begin
+        MFO = MatrixFreeOperators
+        base = CartesianGrid(
+            ((0.0, 2π), (0.0, 1.0)), (16, 16);
+            bc=((Periodic(), Periodic()), (Dirichlet(), Dirichlet())),
+        )
+        bf = BlockForest(base; blocksize=(8, 8), maxlevel=2)
+        uf = set!(scalar_field(bf), x -> sin(x[1]) * x[2])
+        p = pack(uf)
+        pg = Adapt.adapt(CuArray, p)
+        @test pg.data isa CuArray
+        @test pg.levels isa CuArray
+
+        # un-prepared apply: halo/BC view sweeps + the forest-native kernel launch
+        Lg = Adapt.adapt(CuArray, laplacian(bf))
+        yg = apply(Lg, copy(pg))
+        y = apply(laplacian(bf), copy(p))
+        @test Array(yg.data) ≈ y.data
+
+        # prepared flat path: kernel launch ordered before the flat copy-out
+        v = flatten(p)
+        A = prepare(laplacian(bf), p)
+        out = similar(v)
+        mul!(out, A, v)
+        vg2 = flatten(Adapt.adapt(CuArray, pack(uf)))
+        Ag = prepare(Lg, Adapt.adapt(CuArray, pack(uf)))
+        outg = similar(vg2)
+        mul!(outg, Ag, vg2)
+        @test Array(outg) ≈ out
+
+        # refined forest: per-leaf levels SoA feeds the kernel on device
+        refine!(bf, x -> x[1] < π)
+        ur = set!(scalar_field(bf), x -> sin(x[1]) * x[2])
+        pr = pack(ur)
+        yr = apply(laplacian(bf), copy(pr))
+        prg = Adapt.adapt(CuArray, pr)
+        yrg = apply(Adapt.adapt(CuArray, laplacian(bf)), copy(prg))
+        @test Array(yrg.data) ≈ yr.data
+    end
+
     @testset "Krylov cg parity" begin
         σ = set!(scalar_field(g), x -> 1 + x[2])
         K = scaling(σ) - laplacian(g)

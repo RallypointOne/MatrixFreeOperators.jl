@@ -89,6 +89,17 @@ function regrid!(
     return isempty(more) ? out[1] : out
 end
 
+# Solution transfer is vector-of-blocks only; a packed field anywhere in the call
+# degrades to an error, never a wrong result.
+function regrid!(::AbstractBlockField, ::AbstractBlockField...; kwargs...)
+    throw(
+        ArgumentError(
+            "regrid! operates on the reference BlockField layout; unpack packed " *
+            "fields, regrid, then re-pack",
+        ),
+    )
+end
+
 # Evaluate the per-leaf criteria on the current leaf set. Coarsen evaluation is
 # skipped for refine-marked leaves (refine wins) and for level-0 leaves (nothing
 # to coarsen into), so the two mark sets are disjoint by construction.

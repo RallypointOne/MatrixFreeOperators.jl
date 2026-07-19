@@ -12,15 +12,34 @@
 # its own inter-block exchange.
 
 """
-    apply!(y::BlockField, L::AbstractOperator, x::BlockField, g::BlockForest, α=true, β=false) -> y
+    apply!(y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α=true, β=false) -> y
 
 Apply `L` over a block-structured forest: exchange inter-block halos once, then run
-the per-leaf stencil on every block.
+the stencil sweep over every block.
 """
-function apply!(y::BlockField, L::AbstractOperator, x::BlockField, g::BlockForest, α, β)
+function apply!(
+    y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β
+)
     _require_current(y)
     halo_update!(x, g)                  # also checks x's generation
     apply_bc!(x, g)                     # physical faces — leaf grids are all-Interface
+    return _forest_sweep!(y, L, x, g, α, β)
+end
+
+# The stencil sweep behind the halo/BC fills — the dispatch seam forest-native
+# kernels override per (operator, packed layout). The reference sweep runs the
+# ordinary single-grid apply! per leaf; packed fields hit it too, via block views,
+# and kernel overrides fall back to it on non-GPU backends (broadcast fusion beats
+# KA CPU codegen).
+function _forest_sweep!(
+    y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β
+)
+    return _forest_sweep_leaves!(y, L, x, g, α, β)
+end
+
+function _forest_sweep_leaves!(
+    y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β
+)
     for i in 1:nleaves(g)
         lg = leaf_grid(g, i)
         apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
@@ -33,18 +52,18 @@ end
 # AdjointOp through the per-leaf adjoint, silently dropping its interface-ghost
 # fold. Each operand re-exchanges halos — idempotent, since exchanges read only
 # interiors, which the operand applications never mutate.
-function apply!(y::BlockField, L::Added, x::BlockField, g::BlockForest, α, β)
+function apply!(y::AbstractBlockField, L::Added, x::AbstractBlockField, g::BlockForest, α, β)
     apply!(y, L.a, x, g, α, β)
     apply!(y, L.b, x, g, α, true)
     return y
 end
-function apply!(y::BlockField, L::Scaled, x::BlockField, g::BlockForest, α, β)
+function apply!(y::AbstractBlockField, L::Scaled, x::AbstractBlockField, g::BlockForest, α, β)
     return apply!(y, L.op, x, g, α * L.α, β)
 end
 # The intermediate is a whole BlockField (allocated per call, like the single-grid
 # pure path): the outer operand's forest apply! performs its own inter-block
 # exchange on it, which is what a per-leaf Composed application would miss.
-function apply!(y::BlockField, L::Composed, x::BlockField, g::BlockForest, α, β)
+function apply!(y::AbstractBlockField, L::Composed, x::AbstractBlockField, g::BlockForest, α, β)
     tmp = allocate_output(L.b, x)
     apply!(tmp, L.b, x, g)
     apply!(y, L.a, tmp, g, α, β)
@@ -54,22 +73,30 @@ end
 # Lazy adjoint wrappers route through the forest adjoint action so interface-ghost
 # contributions are folded across blocks by halo_update_adjoint! (the per-leaf
 # AdjointOp path would silently drop them).
-function apply!(y::BlockField, L::AdjointOp, x::BlockField, g::BlockForest, α, β)
+function apply!(y::AbstractBlockField, L::AdjointOp, x::AbstractBlockField, g::BlockForest, α, β)
     return apply_adjoint!(y, L.op, x, g, α, β)
 end
-function apply_adjoint!(x̄::BlockField, L::AdjointOp, ȳ::BlockField, g::BlockForest, α, β)
+function apply_adjoint!(
+    x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, g::BlockForest, α, β
+)
     return apply!(x̄, L.op, ȳ, g, α, β)
 end
 
-function apply_adjoint!(x̄::BlockField, L::Added, ȳ::BlockField, g::BlockForest, α, β)
+function apply_adjoint!(
+    x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, g::BlockForest, α, β
+)
     apply_adjoint!(x̄, L.a, ȳ, g, α, β)
     apply_adjoint!(x̄, L.b, ȳ, g, α, true)
     return x̄
 end
-function apply_adjoint!(x̄::BlockField, L::Scaled, ȳ::BlockField, g::BlockForest, α, β)
+function apply_adjoint!(
+    x̄::AbstractBlockField, L::Scaled, ȳ::AbstractBlockField, g::BlockForest, α, β
+)
     return apply_adjoint!(x̄, L.op, ȳ, g, α * conj(L.α), β)
 end
-function apply_adjoint!(x̄::BlockField, L::Composed, ȳ::BlockField, g::BlockForest, α, β)
+function apply_adjoint!(
+    x̄::AbstractBlockField, L::Composed, ȳ::AbstractBlockField, g::BlockForest, α, β
+)
     tmp = allocate_input(L.a, ȳ)
     apply_adjoint!(tmp, L.a, ȳ, g)
     apply_adjoint!(x̄, L.b, tmp, g, α, β)
@@ -77,7 +104,7 @@ function apply_adjoint!(x̄::BlockField, L::Composed, ȳ::BlockField, g::BlockFo
 end
 
 """
-    apply_adjoint!(x̄::BlockField, L, ȳ::BlockField, g::BlockForest, α=true, β=false) -> x̄
+    apply_adjoint!(x̄::AbstractBlockField, L, ȳ::AbstractBlockField, g::BlockForest, α=true, β=false) -> x̄
 
 Adjoint action over the forest. For a self-adjoint operator (e.g. the Laplacian on
 a uniform forest, whose same-level halo copy couples both neighbors symmetrically)
@@ -87,7 +114,9 @@ ghost cotangents in place), the forest-level [`fold_bc!`](@ref) folding physical
 ghosts, then [`halo_update_adjoint!`](@ref) folding interface ghosts into the
 neighbor interiors.
 """
-function apply_adjoint!(x̄::BlockField, L::AbstractOperator, ȳ::BlockField, g::BlockForest, α, β)
+function apply_adjoint!(
+    x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, g::BlockForest, α, β
+)
     _require_current(x̄)
     _require_current(ȳ)
     # Sound on a non-uniform forest too: isselfadjoint is grid-aware (false once

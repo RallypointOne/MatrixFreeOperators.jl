@@ -57,6 +57,18 @@
         y2 = reduce(vcat, collect(interior(MFO.block(apply(L2, copy(uf2)), i))) for i in 1:MFO.nleaves(bf))
         y1 = reduce(vcat, collect(interior(MFO.block(apply(L, copy(uf)), i))) for i in 1:MFO.nleaves(bf))
         @test y2 ≈ y1
+
+        p = pack(uf)
+        p2 = Adapt.adapt(Array, p)
+        @test p2 isa PackedBlockField
+        @test p2.data == p.data
+        @test collect(p2.levels) == collect(p.levels)
+        @test KernelAbstractions.get_backend(p2.grid) == KernelAbstractions.CPU()
+        yp = apply(Adapt.adapt(Array, L), copy(p2))
+        @test all(
+            i -> collect(interior(MFO.block(yp, i))) ≈ collect(interior(MFO.block(apply(L, copy(uf)), i))),
+            1:MFO.nleaves(bf),
+        )
     end
 
     @testset "GPU parity" begin

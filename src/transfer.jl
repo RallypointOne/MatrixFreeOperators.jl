@@ -256,7 +256,7 @@ end
 #--------------------------------------------------------------------------------# Halo sweeps
 
 """
-    halo_update!(x::BlockField, g::BlockForest) -> x
+    halo_update!(x::AbstractBlockField, g::BlockForest) -> x
 
 Fill each leaf block's interface ghosts from its neighbors, in three phases over
 the precomputed per-generation [`ExchangeSchedule`](@ref): same-level slab copies,
@@ -265,40 +265,40 @@ restriction (which reads the interpolation-filled fine ghosts). Domain-boundary
 faces are left to the forest-level `apply_bc!` face pass. Must run once over the whole forest
 before any stencil sweep.
 """
-function halo_update!(x::BlockField, g::BlockForest)
+function halo_update!(x::AbstractBlockField, g::BlockForest)
     _require_current(x)
     sched = _exchange_schedule(g)
-    _run_copies!(x.blocks, sched.copies)
-    _run_fills!(x.blocks, sched.interp)
-    _run_fills!(x.blocks, sched.restrict)
+    _run_copies!(x, sched.copies)
+    _run_fills!(x, sched.interp)
+    _run_fills!(x, sched.restrict)
     return x
 end
 
-# Function barrier: specializing on the concrete block-array type `A` makes each view
+# Function barrier: specializing on the concrete field type makes each `_block_view`
 # one concrete SubArray, so the loop is dispatch- and allocation-free. `view .= view`
 # broadcasts on GPU arrays without scalar indexing.
-function _run_copies!(blocks::Vector{A}, copies::Vector{CopyDescriptor{N}}) where {A,N}
+function _run_copies!(x::AbstractBlockField, copies::Vector{CopyDescriptor{N}}) where {N}
     for c in copies
-        view(blocks[c.dst], c.dst_ranges...) .= view(blocks[c.src], c.src_ranges...)
+        _block_view(x, c.dst, c.dst_ranges) .= _block_view(x, c.src, c.src_ranges)
     end
     return nothing
 end
 
-function _run_fills!(blocks::Vector{A}, fills::Vector{GhostFill{N,T}}) where {A,N,T}
+function _run_fills!(x::AbstractBlockField, fills::Vector{GhostFill{N,T}}) where {N,T}
     for f in fills
-        dst = view(blocks[f.dst_block], f.dst_ranges...)
+        dst = _block_view(x, f.dst_block, f.dst_ranges)
         t1 = f.terms[1]
-        dst .= t1.weight .* view(blocks[t1.block], t1.ranges...)
+        dst .= t1.weight .* _block_view(x, t1.block, t1.ranges)
         for k in 2:length(f.terms)
             tk = f.terms[k]
-            dst .+= tk.weight .* view(blocks[tk.block], tk.ranges...)
+            dst .+= tk.weight .* _block_view(x, tk.block, tk.ranges)
         end
     end
     return nothing
 end
 
 """
-    halo_update_adjoint!(x::BlockField, g::BlockForest) -> x
+    halo_update_adjoint!(x::AbstractBlockField, g::BlockForest) -> x
 
 Exact discrete adjoint of [`halo_update!`](@ref): the same schedule with every
 descriptor's roles transposed — each ghost region is scatter-added into its
@@ -314,32 +314,32 @@ slabs span the full transverse extent, so a nonzero corner cotangent would flow
 into a diagonal neighbor's interior. A future cross-derivative leaf needs a
 corner-aware exchange.
 """
-function halo_update_adjoint!(x::BlockField, g::BlockForest)
+function halo_update_adjoint!(x::AbstractBlockField, g::BlockForest)
     _require_current(x)
     sched = _exchange_schedule(g)
-    _run_fills_adjoint!(x.blocks, sched.restrict)
-    _run_fills_adjoint!(x.blocks, sched.interp)
-    _run_copies_adjoint!(x.blocks, sched.copies)
+    _run_fills_adjoint!(x, sched.restrict)
+    _run_fills_adjoint!(x, sched.interp)
+    _run_copies_adjoint!(x, sched.copies)
     return x
 end
 
 # Transposed reverse-order run: fold each ghost slab into its source, zero it.
-function _run_copies_adjoint!(blocks::Vector{A}, copies::Vector{CopyDescriptor{N}}) where {A,N}
+function _run_copies_adjoint!(x::AbstractBlockField, copies::Vector{CopyDescriptor{N}}) where {N}
     for c in Iterators.reverse(copies)
-        ghost = view(blocks[c.dst], c.dst_ranges...)
-        view(blocks[c.src], c.src_ranges...) .+= ghost
-        fill!(ghost, zero(eltype(A)))
+        ghost = _block_view(x, c.dst, c.dst_ranges)
+        _block_view(x, c.src, c.src_ranges) .+= ghost
+        fill!(ghost, zero(eltype(x)))
     end
     return nothing
 end
 
-function _run_fills_adjoint!(blocks::Vector{A}, fills::Vector{GhostFill{N,T}}) where {A,N,T}
+function _run_fills_adjoint!(x::AbstractBlockField, fills::Vector{GhostFill{N,T}}) where {N,T}
     for f in Iterators.reverse(fills)
-        dst = view(blocks[f.dst_block], f.dst_ranges...)
+        dst = _block_view(x, f.dst_block, f.dst_ranges)
         for tk in f.terms
-            view(blocks[tk.block], tk.ranges...) .+= tk.weight .* dst
+            _block_view(x, tk.block, tk.ranges) .+= tk.weight .* dst
         end
-        fill!(dst, zero(eltype(A)))
+        fill!(dst, zero(eltype(x)))
     end
     return nothing
 end
@@ -352,7 +352,7 @@ end
 # layer indexing, corner ordering, and signs identical to the single-grid sweeps.
 
 """
-    apply_bc!(x::BlockField, g::BlockForest) -> x
+    apply_bc!(x::AbstractBlockField, g::BlockForest) -> x
 
 Fill the physical domain-boundary ghosts of every boundary-touching leaf from the
 per-generation face lists (see [`ExchangeSchedule`](@ref)) — the forest
@@ -360,83 +360,85 @@ counterpart of the single-grid homogeneous [`apply_bc!`](@ref). Dimensions fill
 in order `1:N`, so corner ghosts are consistent ghost-of-ghost values. Runs after
 [`halo_update!`](@ref) and before the per-leaf stencils.
 """
-function apply_bc!(x::BlockField, g::BlockForest)
+function apply_bc!(x::AbstractBlockField, g::BlockForest)
     _require_current(x)
     sched = _exchange_schedule(g)
-    _fill_bcfaces_dims!(x.blocks, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
+    _fill_bcfaces_dims!(x, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
     return x
 end
 
 function _fill_bcfaces_dims!(
-    blocks::Vector{A}, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
-) where {A,D}
+    x::AbstractBlockField, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
+) where {D}
     lo, hi = first(bcs)
     flo, fhi = first(faces)
     h, n = first(halo), first(sz)
     for k in 1:h
         for i in flo
-            _fill_ghost!(blocks[i], Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
+            _fill_ghost!(_block_array(x, i), Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
         end
         for i in fhi
-            _fill_ghost!(blocks[i], Val(D), h + n + k, hi, _source_high(hi, h, n, k))
+            _fill_ghost!(_block_array(x, i), Val(D), h + n + k, hi, _source_high(hi, h, n, k))
         end
     end
     return _fill_bcfaces_dims!(
-        blocks, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
+        x, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
     )
 end
-_fill_bcfaces_dims!(::Vector, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) = nothing
+_fill_bcfaces_dims!(::AbstractBlockField, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =
+    nothing
 
 """
-    fold_bc!(x̄::BlockField, g::BlockForest) -> x̄
+    fold_bc!(x̄::AbstractBlockField, g::BlockForest) -> x̄
 
 Exact discrete adjoint of the forest-level [`apply_bc!`](@ref): fold each physical
 ghost back into its mirror source with the same sign, then zero it — dimensions in
 reverse order `N:1`, transposing the fill. Runs after the per-leaf adjoint gathers
 (which leave ghost cotangents in place) and before [`halo_update_adjoint!`](@ref).
 """
-function fold_bc!(x̄::BlockField, g::BlockForest)
+function fold_bc!(x̄::AbstractBlockField, g::BlockForest)
     _require_current(x̄)
     sched = _exchange_schedule(g)
-    _fold_bcfaces_dims!(x̄.blocks, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
+    _fold_bcfaces_dims!(x̄, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
     return x̄
 end
 
 function _fold_bcfaces_dims!(
-    blocks::Vector{A}, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
-) where {A,D}
+    x̄::AbstractBlockField, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
+) where {D}
     _fold_bcfaces_dims!(
-        blocks, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
+        x̄, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
     )
     lo, hi = first(bcs)
     flo, fhi = first(faces)
     h, n = first(halo), first(sz)
     for k in 1:h
         for i in flo
-            _fold_ghost!(blocks[i], Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
+            _fold_ghost!(_block_array(x̄, i), Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
         end
         for i in fhi
-            _fold_ghost!(blocks[i], Val(D), h + n + k, hi, _source_high(hi, h, n, k))
+            _fold_ghost!(_block_array(x̄, i), Val(D), h + n + k, hi, _source_high(hi, h, n, k))
         end
     end
     return nothing
 end
-_fold_bcfaces_dims!(::Vector, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) = nothing
+_fold_bcfaces_dims!(::AbstractBlockField, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =
+    nothing
 
 # Forest counterpart of the single-grid fill_bc_inhomogeneous!: write the affine
 # ghost offsets of every physical boundary face into a ZEROED BlockField. Δ is the
 # leaf's own spacing — a refined boundary leaf has halved Δ in the Neumann
 # (2k-1)·Δ·flux offsets.
-function fill_bc_inhomogeneous!(z::BlockField, g::BlockForest)
+function fill_bc_inhomogeneous!(z::AbstractBlockField, g::BlockForest)
     _require_current(z)
     sched = _exchange_schedule(g)
-    _offset_bcfaces_dims!(z.blocks, g, g.bc, sched.bcfaces, Val(1))
+    _offset_bcfaces_dims!(z, g, g.bc, sched.bcfaces, Val(1))
     return z
 end
 
 function _offset_bcfaces_dims!(
-    blocks::Vector{A}, bf::BlockForest, bcs::Tuple, faces::Tuple, ::Val{D}
-) where {A,D}
+    z::AbstractBlockField, bf::BlockForest, bcs::Tuple, faces::Tuple, ::Val{D}
+) where {D}
     lo, hi = first(bcs)
     flo, fhi = first(faces)
     h, n = bf.halo[D], bf.blocksize[D]
@@ -444,13 +446,13 @@ function _offset_bcfaces_dims!(
     for k in 1:h
         for i in flo
             Δ = _leaf_spacing(bf, keys[i].level)[D]
-            _offset_ghost!(blocks[i], Val(D), h + 1 - k, lo, Δ, k)
+            _offset_ghost!(_block_array(z, i), Val(D), h + 1 - k, lo, Δ, k)
         end
         for i in fhi
             Δ = _leaf_spacing(bf, keys[i].level)[D]
-            _offset_ghost!(blocks[i], Val(D), h + n + k, hi, Δ, k)
+            _offset_ghost!(_block_array(z, i), Val(D), h + n + k, hi, Δ, k)
         end
     end
-    return _offset_bcfaces_dims!(blocks, bf, Base.tail(bcs), Base.tail(faces), Val(D + 1))
+    return _offset_bcfaces_dims!(z, bf, Base.tail(bcs), Base.tail(faces), Val(D + 1))
 end
-_offset_bcfaces_dims!(::Vector, ::BlockForest, ::Tuple{}, ::Tuple{}, ::Val) = nothing
+_offset_bcfaces_dims!(::AbstractBlockField, ::BlockForest, ::Tuple{}, ::Tuple{}, ::Val) = nothing
