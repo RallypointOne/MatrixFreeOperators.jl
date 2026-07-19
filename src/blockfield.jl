@@ -143,22 +143,24 @@ function flatten(f::AbstractBlockField)
     # Allocate on the field's device (matching the single-grid flatten) so the
     # flat/Krylov path stays device-generic.
     v = _flat_similar(f, _scalar_eltype(eltype(f)), flat_length(f))
-    for i in 1:nleaves(f.grid)
-        interior_to_flat!(view(v, _block_range(f, i)), block(f, i))
-    end
-    return v
+    return interior_to_flat!(v, f)
 end
 
-function flat_to_interior!(f::AbstractBlockField, v::AbstractVector)
+flat_to_interior!(f::AbstractBlockField, v::AbstractVector) = _flat_to_interior_leaves!(f, v)
+
+interior_to_flat!(v::AbstractVector, f::AbstractBlockField, α::Number=true, β::Number=false) =
+    _interior_to_flat_leaves!(v, f, α, β)
+
+# Per-leaf reference bodies — shared by the AbstractBlockField methods above and
+# the non-GPU branch of the packed overrides (packedfield.jl).
+function _flat_to_interior_leaves!(f::AbstractBlockField, v::AbstractVector)
     for i in 1:nleaves(f.grid)
         flat_to_interior!(block(f, i), view(v, _block_range(f, i)))
     end
     return f
 end
 
-function interior_to_flat!(
-    v::AbstractVector, f::AbstractBlockField, α::Number=true, β::Number=false
-)
+function _interior_to_flat_leaves!(v::AbstractVector, f::AbstractBlockField, α::Number, β::Number)
     for i in 1:nleaves(f.grid)
         interior_to_flat!(view(v, _block_range(f, i)), block(f, i), α, β)
     end
