@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryHi">99.1&nbsp;%</td>
-            <td class="headerCovTableEntry">116</td>
-            <td class="headerCovTableEntry">115</td>
+            <td class="headerCovTableEntryHi">99.2&nbsp;%</td>
+            <td class="headerCovTableEntry">118</td>
+            <td class="headerCovTableEntry">117</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-19 13:11:05</td>
+            <td class="headerValue">2026-07-19 17:52:24</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -151,181 +151,192 @@
 <span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">          28 :     return isempty(more) ? out[1] : out</span></span>
 <span id="L90"><span class="lineNum">      90</span>              : end</span>
 <span id="L91"><span class="lineNum">      91</span>              : </span>
-<span id="L92"><span class="lineNum">      92</span>              : # Evaluate the per-leaf criteria on the current leaf set. Coarsen evaluation is</span>
-<span id="L93"><span class="lineNum">      93</span>              : # skipped for refine-marked leaves (refine wins) and for level-0 leaves (nothing</span>
-<span id="L94"><span class="lineNum">      94</span>              : # to coarsen into), so the two mark sets are disjoint by construction.</span>
-<span id="L95"><span class="lineNum">      95</span> <span class="tlaGNC">          31 : function _regrid_marks(</span></span>
-<span id="L96"><span class="lineNum">      96</span>              :     u::BlockField, bf::BlockForest{N}, refine::FR, coarsen::FC</span>
-<span id="L97"><span class="lineNum">      97</span>              : ) where {N,FR,FC}</span>
-<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">          31 :     forest = bf.forest</span></span>
-<span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">          31 :     refine_marks = Set{LeafKey{N}}()</span></span>
-<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC">          31 :     coarsen_marks = Set{LeafKey{N}}()</span></span>
-<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">          31 :     for (i, key) in enumerate(forest.leaves)</span></span>
-<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">        1724 :         b = block(u, i, leaf_grid(bf, i))</span></span>
-<span id="L103"><span class="lineNum">     103</span> <span class="tlaGNC">         862 :         if refine(b)</span></span>
-<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">         176 :             push!(refine_marks, key)</span></span>
-<span id="L105"><span class="lineNum">     105</span> <span class="tlaGNC">         686 :         elseif key.level &gt; 0 &amp;&amp; coarsen(b)</span></span>
-<span id="L106"><span class="lineNum">     106</span> <span class="tlaGNC">         203 :             push!(coarsen_marks, key)</span></span>
-<span id="L107"><span class="lineNum">     107</span>              :         end</span>
-<span id="L108"><span class="lineNum">     108</span> <span class="tlaGNC">        1693 :     end</span></span>
-<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">          31 :     return refine_marks, coarsen_marks</span></span>
-<span id="L110"><span class="lineNum">     110</span>              : end</span>
-<span id="L111"><span class="lineNum">     111</span>              : </span>
-<span id="L112"><span class="lineNum">     112</span>              : # One combined topology pass: split refine-marked leaves, collapse complete</span>
-<span id="L113"><span class="lineNum">     113</span>              : # fully-coarsen-marked sibling families — completeness judged against the same</span>
-<span id="L114"><span class="lineNum">     114</span>              : # leaf set the criteria saw — then a single `_set_leaves!` commit and one</span>
-<span id="L115"><span class="lineNum">     115</span>              : # `balance!`. Mirrors the bodies of `refine!`/`coarsen!` but avoids the two</span>
-<span id="L116"><span class="lineNum">     116</span>              : # intermediate regrids (and generation bumps) sequential calls would cost.</span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          31 : function _regrid_topology!(</span></span>
-<span id="L118"><span class="lineNum">     118</span>              :     forest::Forest{N}, refine_marks::Set{LeafKey{N}}, coarsen_marks::Set{LeafKey{N}}</span>
-<span id="L119"><span class="lineNum">     119</span>              : ) where {N}</span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">          31 :     keys = Set(forest.leaves)</span></span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">          31 :     for key in forest.leaves</span></span>
-<span id="L122"><span class="lineNum">     122</span> <span class="tlaGNC">         862 :         if key in refine_marks &amp;&amp; key.level &lt; forest.maxlevel</span></span>
-<span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC">         212 :             delete!(keys, key)</span></span>
-<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">         160 :             for c in children(key)</span></span>
-<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">         640 :                 push!(keys, c)</span></span>
-<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">         640 :             end</span></span>
-<span id="L127"><span class="lineNum">     127</span>              :         end</span>
-<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">         862 :     end</span></span>
-<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">          31 :     families = Dict{LeafKey{N},Vector{LeafKey{N}}}()</span></span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">          31 :     for key in forest.leaves</span></span>
-<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">         862 :         key in coarsen_marks || continue</span></span>
-<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">         203 :         push!(get!(families, parent_key(key), LeafKey{N}[]), key)</span></span>
-<span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">         862 :     end</span></span>
-<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">          39 :     for (p, sibs) in families</span></span>
-<span id="L135"><span class="lineNum">     135</span>              :         # A refine-marked sibling is never coarsen-marked, so an incomplete count</span>
-<span id="L136"><span class="lineNum">     136</span>              :         # already covers the refine-wins conflict rule.</span>
-<span id="L137"><span class="lineNum">     137</span> <span class="tlaGNC">          53 :         length(sibs) == 1 &lt;&lt; N || continue</span></span>
-<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">          48 :         for s in sibs</span></span>
-<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">         299 :             delete!(keys, s)</span></span>
-<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">         192 :         end</span></span>
-<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">          48 :         push!(keys, p)</span></span>
-<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">          98 :     end</span></span>
-<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">          31 :     _set_leaves!(forest, keys)</span></span>
-<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">          31 :     balance!(forest)</span></span>
-<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">          31 :     return forest</span></span>
-<span id="L146"><span class="lineNum">     146</span>              : end</span>
-<span id="L147"><span class="lineNum">     147</span>              : </span>
-<span id="L148"><span class="lineNum">     148</span>              : # A zeroed field matching `f`'s location, eltype, and device on the current leaf</span>
-<span id="L149"><span class="lineNum">     149</span>              : # set; the BlockField constructor stamps the post-regrid generation.</span>
-<span id="L150"><span class="lineNum">     150</span>              : function _fresh_field(f::BlockField{L}, bf::BlockForest) where {L}</span>
-<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">          31 :     backend = KernelAbstractions.get_backend(bf)</span></span>
-<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">          31 :     psize = bf.blocksize .+ 2 .* bf.halo</span></span>
-<span id="L153"><span class="lineNum">     153</span> <span class="tlaGNC">          31 :     blocks = [KernelAbstractions.zeros(backend, eltype(f), psize...) for _ in 1:nleaves(bf)]</span></span>
-<span id="L154"><span class="lineNum">     154</span> <span class="tlaGNC">          31 :     return BlockField{L}(blocks, bf)</span></span>
-<span id="L155"><span class="lineNum">     155</span>              : end</span>
-<span id="L156"><span class="lineNum">     156</span>              : </span>
-<span id="L157"><span class="lineNum">     157</span>              : # Fill every new leaf from the snapshot by key relation: same key → copy, old</span>
-<span id="L158"><span class="lineNum">     158</span>              : # parent → prolong, old children → average. Marks never enter here — `balance!`</span>
-<span id="L159"><span class="lineNum">     159</span>              : # refines leaves that were never marked, and can undo a coarsen (same-key copy).</span>
-<span id="L160"><span class="lineNum">     160</span>              : # A single regrid! pass cannot move any region by more than one level: the marks</span>
-<span id="L161"><span class="lineNum">     161</span>              : # were evaluated on a 2:1-balanced leaf set, marked leaves move exactly one</span>
-<span id="L162"><span class="lineNum">     162</span>              : # level, and the balance fixpoint only refines a leaf whose neighborhood already</span>
-<span id="L163"><span class="lineNum">     163</span>              : # changed by one level, so no leaf ends more than one level from the leaf that</span>
-<span id="L164"><span class="lineNum">     164</span>              : # covered its region. The fallthrough guards that argument.</span>
-<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">          31 : function _transfer!(</span></span>
-<span id="L166"><span class="lineNum">     166</span>              :     new::BlockField, old_blocks::Vector{A}, old_index::Dict{LeafKey{N},Int},</span>
-<span id="L167"><span class="lineNum">     167</span>              :     bf::BlockForest{N},</span>
-<span id="L168"><span class="lineNum">     168</span>              : ) where {A&lt;:AbstractArray,N}</span>
-<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">          31 :     n, h = bf.blocksize, bf.halo</span></span>
-<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">          31 :     for (i, K) in enumerate(bf.forest.leaves)</span></span>
-<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">        1303 :         dst = new.blocks[i]</span></span>
-<span id="L172"><span class="lineNum">     172</span> <span class="tlaGNC">        1794 :         oi = get(old_index, K, 0)</span></span>
-<span id="L173"><span class="lineNum">     173</span> <span class="tlaGNC">        1303 :         if oi &gt; 0</span></span>
-<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">         491 :             _transfer_copy!(dst, old_blocks[oi], h, n)</span></span>
-<span id="L175"><span class="lineNum">     175</span> <span class="tlaGNC">         491 :             continue</span></span>
-<span id="L176"><span class="lineNum">     176</span>              :         end</span>
-<span id="L177"><span class="lineNum">     177</span> <span class="tlaGNC">        1576 :         pi = K.level &gt; 0 ? get(old_index, parent_key(K), 0) : 0</span></span>
-<span id="L178"><span class="lineNum">     178</span> <span class="tlaGNC">         812 :         if pi &gt; 0</span></span>
-<span id="L179"><span class="lineNum">     179</span> <span class="tlaGNC">        1528 :             q = ntuple(d -&gt; K.coords[d] &amp; 1, Val(N))</span></span>
-<span id="L180"><span class="lineNum">     180</span> <span class="tlaGNC">         764 :             _transfer_prolong!(dst, old_blocks[pi], q, h, n)</span></span>
-<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">         764 :             continue</span></span>
-<span id="L182"><span class="lineNum">     182</span>              :         end</span>
-<span id="L183"><span class="lineNum">     183</span> <span class="tlaGNC">         192 :         kids = children(K)</span></span>
-<span id="L184"><span class="lineNum">     184</span> <span class="tlaGNC">         240 :         if all(c -&gt; haskey(old_index, c), kids)</span></span>
-<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">          48 :             for c in kids</span></span>
-<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">         384 :                 q = ntuple(d -&gt; c.coords[d] &amp; 1, Val(N))</span></span>
-<span id="L187"><span class="lineNum">     187</span> <span class="tlaGNC">         192 :                 _transfer_average!(dst, old_blocks[old_index[c]], q, h, n)</span></span>
-<span id="L188"><span class="lineNum">     188</span> <span class="tlaGNC">         192 :             end</span></span>
-<span id="L189"><span class="lineNum">     189</span> <span class="tlaGNC">          48 :             continue</span></span>
-<span id="L190"><span class="lineNum">     190</span>              :         end</span>
-<span id="L191"><span class="lineNum">     191</span> <span class="tlaUNC tlaBgUNC">           0 :         error(</span></span>
-<span id="L192"><span class="lineNum">     192</span>              :             &quot;regrid! transfer found no pre-regrid leaf within one level of $K; &quot; *</span>
-<span id="L193"><span class="lineNum">     193</span>              :             &quot;a single regrid cannot change any region by more than one level — &quot; *</span>
-<span id="L194"><span class="lineNum">     194</span>              :             &quot;this is a bug in the regrid driver&quot;,</span>
-<span id="L195"><span class="lineNum">     195</span>              :         )</span>
-<span id="L196"><span class="lineNum">     196</span> <span class="tlaGNC tlaBgGNC">        2575 :     end</span></span>
-<span id="L197"><span class="lineNum">     197</span> <span class="tlaGNC">          31 :     return new</span></span>
-<span id="L198"><span class="lineNum">     198</span>              : end</span>
-<span id="L199"><span class="lineNum">     199</span>              : </span>
-<span id="L200"><span class="lineNum">     200</span> <span class="tlaGNC">         491 : function _transfer_copy!(</span></span>
-<span id="L201"><span class="lineNum">     201</span>              :     dst::AbstractArray{T,N}, src::AbstractArray{T,N}, h::NTuple{N,Int}, n::NTuple{N,Int}</span>
-<span id="L202"><span class="lineNum">     202</span>              : ) where {T,N}</span>
-<span id="L203"><span class="lineNum">     203</span> <span class="tlaGNC">         982 :     ir = ntuple(d -&gt; (h[d] + 1):(h[d] + n[d]), Val(N))</span></span>
-<span id="L204"><span class="lineNum">     204</span> <span class="tlaGNC">         491 :     view(dst, ir...) .= view(src, ir...)</span></span>
-<span id="L205"><span class="lineNum">     205</span> <span class="tlaGNC">         491 :     return nothing</span></span>
-<span id="L206"><span class="lineNum">     206</span>              : end</span>
-<span id="L207"><span class="lineNum">     207</span>              : </span>
-<span id="L208"><span class="lineNum">     208</span>              : # Value of the per-dimension linear interpolant of the old parent block at one</span>
-<span id="L209"><span class="lineNum">     209</span>              : # fine destination cell. `F` is the fine index in the parent's doubled child</span>
-<span id="L210"><span class="lineNum">     210</span>              : # space, so the covering parent cell and the ξ = ∓1/4 side follow from its</span>
-<span id="L211"><span class="lineNum">     211</span>              : # parity for either octant. Where the (1/4)-neighbor tap would leave the parent</span>
-<span id="L212"><span class="lineNum">     212</span>              : # interior — destination cells on the parent-block edge — the tap flips to</span>
-<span id="L213"><span class="lineNum">     213</span>              : # one-sided extrapolation (5/4, −1/4) from the inside neighbor, exact on</span>
-<span id="L214"><span class="lineNum">     214</span>              : # linears, keeping the transfer interior-only (old ghosts are never valid).</span>
-<span id="L215"><span class="lineNum">     215</span>              : @inline function _transfer_prolong_at(</span>
-<span id="L216"><span class="lineNum">     216</span>              :     u::AbstractArray{T,N}, I::CartesianIndex{N}, q::NTuple{N,Int}, h::NTuple{N,Int},</span>
-<span id="L217"><span class="lineNum">     217</span>              :     n::NTuple{N,Int}, w::NTuple{2,W},</span>
-<span id="L218"><span class="lineNum">     218</span>              : ) where {T,N,W}</span>
-<span id="L219"><span class="lineNum">     219</span> <span class="tlaGNC">       22352 :     taps = ntuple(Val(N)) do d</span></span>
-<span id="L220"><span class="lineNum">     220</span> <span class="tlaGNC">       37504 :         F = q[d] * n[d] + (I[d] - h[d])</span></span>
-<span id="L221"><span class="lineNum">     221</span> <span class="tlaGNC">       37504 :         c = (F + 1) &gt;&gt; 1</span></span>
-<span id="L222"><span class="lineNum">     222</span> <span class="tlaGNC">       37504 :         s = isodd(F) ? -1 : 1</span></span>
-<span id="L223"><span class="lineNum">     223</span> <span class="tlaGNC">       37504 :         cn = c + s</span></span>
-<span id="L224"><span class="lineNum">     224</span> <span class="tlaGNC">       41104 :         1 &lt;= cn &lt;= n[d] ? (c, cn, w[1], w[2]) : (c, c - s, one(W) + w[2], -w[2])</span></span>
-<span id="L225"><span class="lineNum">     225</span>              :     end</span>
-<span id="L226"><span class="lineNum">     226</span> <span class="tlaGNC">       18752 :     acc = zero(W) * zero(T)</span></span>
-<span id="L227"><span class="lineNum">     227</span> <span class="tlaGNC">       37504 :     @inbounds for t in CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
-<span id="L228"><span class="lineNum">     228</span> <span class="tlaGNC">      225024 :         wt = prod(ntuple(d -&gt; t[d] == 0 ? taps[d][3] : taps[d][4], Val(N)))</span></span>
-<span id="L229"><span class="lineNum">     229</span> <span class="tlaGNC">      150016 :         J = CartesianIndex(ntuple(d -&gt; h[d] + (t[d] == 0 ? taps[d][1] : taps[d][2]), Val(N)))</span></span>
-<span id="L230"><span class="lineNum">     230</span> <span class="tlaGNC">       75008 :         acc += wt * u[J]</span></span>
-<span id="L231"><span class="lineNum">     231</span> <span class="tlaGNC">       93760 :     end</span></span>
-<span id="L232"><span class="lineNum">     232</span> <span class="tlaGNC">       18752 :     return acc</span></span>
-<span id="L233"><span class="lineNum">     233</span>              : end</span>
-<span id="L234"><span class="lineNum">     234</span>              : </span>
-<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC">         764 : function _transfer_prolong!(</span></span>
-<span id="L236"><span class="lineNum">     236</span>              :     dst::AbstractArray{T,N}, src::AbstractArray{T,N}, q::NTuple{N,Int}, h::NTuple{N,Int},</span>
-<span id="L237"><span class="lineNum">     237</span>              :     n::NTuple{N,Int},</span>
-<span id="L238"><span class="lineNum">     238</span>              : ) where {T,N}</span>
-<span id="L239"><span class="lineNum">     239</span> <span class="tlaGNC">         764 :     w = _prolong_weights(_scalar_eltype(T))</span></span>
-<span id="L240"><span class="lineNum">     240</span> <span class="tlaGNC">        1528 :     ir = CartesianIndices(ntuple(d -&gt; (h[d] + 1):(h[d] + n[d]), Val(N)))</span></span>
-<span id="L241"><span class="lineNum">     241</span> <span class="tlaGNC">        1528 :     view(dst, ir) .= _transfer_prolong_at.(Ref(src), ir, Ref(q), Ref(h), Ref(n), Ref(w))</span></span>
-<span id="L242"><span class="lineNum">     242</span> <span class="tlaGNC">         764 :     return nothing</span></span>
-<span id="L243"><span class="lineNum">     243</span>              : end</span>
-<span id="L244"><span class="lineNum">     244</span>              : </span>
-<span id="L245"><span class="lineNum">     245</span>              : # Conservative coarsening of one old child block into its octant `q` of the new</span>
-<span id="L246"><span class="lineNum">     246</span>              : # parent: each destination cell is the 2⁻ᴺ mean of the 2ᴺ fine cells it covers,</span>
-<span id="L247"><span class="lineNum">     247</span>              : # accumulated as one strided-view broadcast per fine parity.</span>
-<span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC">         192 : function _transfer_average!(</span></span>
-<span id="L249"><span class="lineNum">     249</span>              :     dst::AbstractArray{T,N}, src::AbstractArray{T,N}, q::NTuple{N,Int}, h::NTuple{N,Int},</span>
-<span id="L250"><span class="lineNum">     250</span>              :     n::NTuple{N,Int},</span>
-<span id="L251"><span class="lineNum">     251</span>              : ) where {T,N}</span>
-<span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">         384 :     half = ntuple(d -&gt; n[d] &gt;&gt; 1, Val(N))</span></span>
-<span id="L253"><span class="lineNum">     253</span> <span class="tlaGNC">         192 :     dstv = view(</span></span>
-<span id="L254"><span class="lineNum">     254</span>              :         dst,</span>
-<span id="L255"><span class="lineNum">     255</span> <span class="tlaGNC">         192 :         ntuple(d -&gt; (h[d] + q[d] * half[d] + 1):(h[d] + q[d] * half[d] + half[d]), Val(N))...,</span></span>
-<span id="L256"><span class="lineNum">     256</span>              :     )</span>
-<span id="L257"><span class="lineNum">     257</span> <span class="tlaGNC">         192 :     w = _scalar_eltype(T)(1) / (1 &lt;&lt; N)</span></span>
-<span id="L258"><span class="lineNum">     258</span> <span class="tlaGNC">         384 :     fill!(dstv, zero(T))</span></span>
-<span id="L259"><span class="lineNum">     259</span> <span class="tlaGNC">         384 :     for p in CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
-<span id="L260"><span class="lineNum">     260</span> <span class="tlaGNC">         768 :         srcv = view(</span></span>
-<span id="L261"><span class="lineNum">     261</span> <span class="tlaGNC">        1536 :             src, ntuple(d -&gt; (h[d] + 1 + p[d]):2:(h[d] + n[d] - 1 + p[d]), Val(N))...</span></span>
-<span id="L262"><span class="lineNum">     262</span>              :         )</span>
-<span id="L263"><span class="lineNum">     263</span> <span class="tlaGNC">        1536 :         dstv .+= w .* srcv</span></span>
-<span id="L264"><span class="lineNum">     264</span> <span class="tlaGNC">         960 :     end</span></span>
-<span id="L265"><span class="lineNum">     265</span> <span class="tlaGNC">         192 :     return nothing</span></span>
-<span id="L266"><span class="lineNum">     266</span>              : end</span>
+<span id="L92"><span class="lineNum">      92</span>              : # Solution transfer is vector-of-blocks only; a packed field anywhere in the call</span>
+<span id="L93"><span class="lineNum">      93</span>              : # degrades to an error, never a wrong result.</span>
+<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC">           4 : function regrid!(::AbstractBlockField, ::AbstractBlockField...; kwargs...)</span></span>
+<span id="L95"><span class="lineNum">      95</span> <span class="tlaGNC">           2 :     throw(</span></span>
+<span id="L96"><span class="lineNum">      96</span>              :         ArgumentError(</span>
+<span id="L97"><span class="lineNum">      97</span>              :             &quot;regrid! operates on the reference BlockField layout; unpack packed &quot; *</span>
+<span id="L98"><span class="lineNum">      98</span>              :             &quot;fields, regrid, then re-pack&quot;,</span>
+<span id="L99"><span class="lineNum">      99</span>              :         ),</span>
+<span id="L100"><span class="lineNum">     100</span>              :     )</span>
+<span id="L101"><span class="lineNum">     101</span>              : end</span>
+<span id="L102"><span class="lineNum">     102</span>              : </span>
+<span id="L103"><span class="lineNum">     103</span>              : # Evaluate the per-leaf criteria on the current leaf set. Coarsen evaluation is</span>
+<span id="L104"><span class="lineNum">     104</span>              : # skipped for refine-marked leaves (refine wins) and for level-0 leaves (nothing</span>
+<span id="L105"><span class="lineNum">     105</span>              : # to coarsen into), so the two mark sets are disjoint by construction.</span>
+<span id="L106"><span class="lineNum">     106</span> <span class="tlaGNC">          31 : function _regrid_marks(</span></span>
+<span id="L107"><span class="lineNum">     107</span>              :     u::BlockField, bf::BlockForest{N}, refine::FR, coarsen::FC</span>
+<span id="L108"><span class="lineNum">     108</span>              : ) where {N,FR,FC}</span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">          31 :     forest = bf.forest</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">          31 :     refine_marks = Set{LeafKey{N}}()</span></span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">          31 :     coarsen_marks = Set{LeafKey{N}}()</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">          31 :     for (i, key) in enumerate(forest.leaves)</span></span>
+<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC">        1724 :         b = block(u, i, leaf_grid(bf, i))</span></span>
+<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">         862 :         if refine(b)</span></span>
+<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">         176 :             push!(refine_marks, key)</span></span>
+<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">         686 :         elseif key.level &gt; 0 &amp;&amp; coarsen(b)</span></span>
+<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">         203 :             push!(coarsen_marks, key)</span></span>
+<span id="L118"><span class="lineNum">     118</span>              :         end</span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">        1693 :     end</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">          31 :     return refine_marks, coarsen_marks</span></span>
+<span id="L121"><span class="lineNum">     121</span>              : end</span>
+<span id="L122"><span class="lineNum">     122</span>              : </span>
+<span id="L123"><span class="lineNum">     123</span>              : # One combined topology pass: split refine-marked leaves, collapse complete</span>
+<span id="L124"><span class="lineNum">     124</span>              : # fully-coarsen-marked sibling families — completeness judged against the same</span>
+<span id="L125"><span class="lineNum">     125</span>              : # leaf set the criteria saw — then a single `_set_leaves!` commit and one</span>
+<span id="L126"><span class="lineNum">     126</span>              : # `balance!`. Mirrors the bodies of `refine!`/`coarsen!` but avoids the two</span>
+<span id="L127"><span class="lineNum">     127</span>              : # intermediate regrids (and generation bumps) sequential calls would cost.</span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">          31 : function _regrid_topology!(</span></span>
+<span id="L129"><span class="lineNum">     129</span>              :     forest::Forest{N}, refine_marks::Set{LeafKey{N}}, coarsen_marks::Set{LeafKey{N}}</span>
+<span id="L130"><span class="lineNum">     130</span>              : ) where {N}</span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">          31 :     keys = Set(forest.leaves)</span></span>
+<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">          31 :     for key in forest.leaves</span></span>
+<span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">         862 :         if key in refine_marks &amp;&amp; key.level &lt; forest.maxlevel</span></span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">         226 :             delete!(keys, key)</span></span>
+<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">         160 :             for c in children(key)</span></span>
+<span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC">         640 :                 push!(keys, c)</span></span>
+<span id="L137"><span class="lineNum">     137</span> <span class="tlaGNC">         640 :             end</span></span>
+<span id="L138"><span class="lineNum">     138</span>              :         end</span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">         862 :     end</span></span>
+<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">          31 :     families = Dict{LeafKey{N},Vector{LeafKey{N}}}()</span></span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">          31 :     for key in forest.leaves</span></span>
+<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">         862 :         key in coarsen_marks || continue</span></span>
+<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">         203 :         push!(get!(families, parent_key(key), LeafKey{N}[]), key)</span></span>
+<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">         862 :     end</span></span>
+<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">          39 :     for (p, sibs) in families</span></span>
+<span id="L146"><span class="lineNum">     146</span>              :         # A refine-marked sibling is never coarsen-marked, so an incomplete count</span>
+<span id="L147"><span class="lineNum">     147</span>              :         # already covers the refine-wins conflict rule.</span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">          53 :         length(sibs) == 1 &lt;&lt; N || continue</span></span>
+<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">          48 :         for s in sibs</span></span>
+<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">         315 :             delete!(keys, s)</span></span>
+<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">         192 :         end</span></span>
+<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">          48 :         push!(keys, p)</span></span>
+<span id="L153"><span class="lineNum">     153</span> <span class="tlaGNC">          98 :     end</span></span>
+<span id="L154"><span class="lineNum">     154</span> <span class="tlaGNC">          31 :     _set_leaves!(forest, keys)</span></span>
+<span id="L155"><span class="lineNum">     155</span> <span class="tlaGNC">          31 :     balance!(forest)</span></span>
+<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">          31 :     return forest</span></span>
+<span id="L157"><span class="lineNum">     157</span>              : end</span>
+<span id="L158"><span class="lineNum">     158</span>              : </span>
+<span id="L159"><span class="lineNum">     159</span>              : # A zeroed field matching `f`'s location, eltype, and device on the current leaf</span>
+<span id="L160"><span class="lineNum">     160</span>              : # set; the BlockField constructor stamps the post-regrid generation.</span>
+<span id="L161"><span class="lineNum">     161</span>              : function _fresh_field(f::BlockField{L}, bf::BlockForest) where {L}</span>
+<span id="L162"><span class="lineNum">     162</span> <span class="tlaGNC">          31 :     backend = KernelAbstractions.get_backend(bf)</span></span>
+<span id="L163"><span class="lineNum">     163</span> <span class="tlaGNC">          31 :     psize = bf.blocksize .+ 2 .* bf.halo</span></span>
+<span id="L164"><span class="lineNum">     164</span> <span class="tlaGNC">          31 :     blocks = [KernelAbstractions.zeros(backend, eltype(f), psize...) for _ in 1:nleaves(bf)]</span></span>
+<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">          31 :     return BlockField{L}(blocks, bf)</span></span>
+<span id="L166"><span class="lineNum">     166</span>              : end</span>
+<span id="L167"><span class="lineNum">     167</span>              : </span>
+<span id="L168"><span class="lineNum">     168</span>              : # Fill every new leaf from the snapshot by key relation: same key → copy, old</span>
+<span id="L169"><span class="lineNum">     169</span>              : # parent → prolong, old children → average. Marks never enter here — `balance!`</span>
+<span id="L170"><span class="lineNum">     170</span>              : # refines leaves that were never marked, and can undo a coarsen (same-key copy).</span>
+<span id="L171"><span class="lineNum">     171</span>              : # A single regrid! pass cannot move any region by more than one level: the marks</span>
+<span id="L172"><span class="lineNum">     172</span>              : # were evaluated on a 2:1-balanced leaf set, marked leaves move exactly one</span>
+<span id="L173"><span class="lineNum">     173</span>              : # level, and the balance fixpoint only refines a leaf whose neighborhood already</span>
+<span id="L174"><span class="lineNum">     174</span>              : # changed by one level, so no leaf ends more than one level from the leaf that</span>
+<span id="L175"><span class="lineNum">     175</span>              : # covered its region. The fallthrough guards that argument.</span>
+<span id="L176"><span class="lineNum">     176</span> <span class="tlaGNC">          31 : function _transfer!(</span></span>
+<span id="L177"><span class="lineNum">     177</span>              :     new::BlockField, old_blocks::Vector{A}, old_index::Dict{LeafKey{N},Int},</span>
+<span id="L178"><span class="lineNum">     178</span>              :     bf::BlockForest{N},</span>
+<span id="L179"><span class="lineNum">     179</span>              : ) where {A&lt;:AbstractArray,N}</span>
+<span id="L180"><span class="lineNum">     180</span> <span class="tlaGNC">          31 :     n, h = bf.blocksize, bf.halo</span></span>
+<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">          31 :     for (i, K) in enumerate(bf.forest.leaves)</span></span>
+<span id="L182"><span class="lineNum">     182</span> <span class="tlaGNC">        1303 :         dst = new.blocks[i]</span></span>
+<span id="L183"><span class="lineNum">     183</span> <span class="tlaGNC">        1794 :         oi = get(old_index, K, 0)</span></span>
+<span id="L184"><span class="lineNum">     184</span> <span class="tlaGNC">        1303 :         if oi &gt; 0</span></span>
+<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">         491 :             _transfer_copy!(dst, old_blocks[oi], h, n)</span></span>
+<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">         491 :             continue</span></span>
+<span id="L187"><span class="lineNum">     187</span>              :         end</span>
+<span id="L188"><span class="lineNum">     188</span> <span class="tlaGNC">        1576 :         pi = K.level &gt; 0 ? get(old_index, parent_key(K), 0) : 0</span></span>
+<span id="L189"><span class="lineNum">     189</span> <span class="tlaGNC">         812 :         if pi &gt; 0</span></span>
+<span id="L190"><span class="lineNum">     190</span> <span class="tlaGNC">        1528 :             q = ntuple(d -&gt; K.coords[d] &amp; 1, Val(N))</span></span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">         764 :             _transfer_prolong!(dst, old_blocks[pi], q, h, n)</span></span>
+<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">         764 :             continue</span></span>
+<span id="L193"><span class="lineNum">     193</span>              :         end</span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         192 :         kids = children(K)</span></span>
+<span id="L195"><span class="lineNum">     195</span> <span class="tlaGNC">         240 :         if all(c -&gt; haskey(old_index, c), kids)</span></span>
+<span id="L196"><span class="lineNum">     196</span> <span class="tlaGNC">          48 :             for c in kids</span></span>
+<span id="L197"><span class="lineNum">     197</span> <span class="tlaGNC">         384 :                 q = ntuple(d -&gt; c.coords[d] &amp; 1, Val(N))</span></span>
+<span id="L198"><span class="lineNum">     198</span> <span class="tlaGNC">         192 :                 _transfer_average!(dst, old_blocks[old_index[c]], q, h, n)</span></span>
+<span id="L199"><span class="lineNum">     199</span> <span class="tlaGNC">         192 :             end</span></span>
+<span id="L200"><span class="lineNum">     200</span> <span class="tlaGNC">          48 :             continue</span></span>
+<span id="L201"><span class="lineNum">     201</span>              :         end</span>
+<span id="L202"><span class="lineNum">     202</span> <span class="tlaUNC tlaBgUNC">           0 :         error(</span></span>
+<span id="L203"><span class="lineNum">     203</span>              :             &quot;regrid! transfer found no pre-regrid leaf within one level of $K; &quot; *</span>
+<span id="L204"><span class="lineNum">     204</span>              :             &quot;a single regrid cannot change any region by more than one level — &quot; *</span>
+<span id="L205"><span class="lineNum">     205</span>              :             &quot;this is a bug in the regrid driver&quot;,</span>
+<span id="L206"><span class="lineNum">     206</span>              :         )</span>
+<span id="L207"><span class="lineNum">     207</span> <span class="tlaGNC tlaBgGNC">        2575 :     end</span></span>
+<span id="L208"><span class="lineNum">     208</span> <span class="tlaGNC">          31 :     return new</span></span>
+<span id="L209"><span class="lineNum">     209</span>              : end</span>
+<span id="L210"><span class="lineNum">     210</span>              : </span>
+<span id="L211"><span class="lineNum">     211</span> <span class="tlaGNC">         491 : function _transfer_copy!(</span></span>
+<span id="L212"><span class="lineNum">     212</span>              :     dst::AbstractArray{T,N}, src::AbstractArray{T,N}, h::NTuple{N,Int}, n::NTuple{N,Int}</span>
+<span id="L213"><span class="lineNum">     213</span>              : ) where {T,N}</span>
+<span id="L214"><span class="lineNum">     214</span> <span class="tlaGNC">         982 :     ir = ntuple(d -&gt; (h[d] + 1):(h[d] + n[d]), Val(N))</span></span>
+<span id="L215"><span class="lineNum">     215</span> <span class="tlaGNC">         491 :     view(dst, ir...) .= view(src, ir...)</span></span>
+<span id="L216"><span class="lineNum">     216</span> <span class="tlaGNC">         491 :     return nothing</span></span>
+<span id="L217"><span class="lineNum">     217</span>              : end</span>
+<span id="L218"><span class="lineNum">     218</span>              : </span>
+<span id="L219"><span class="lineNum">     219</span>              : # Value of the per-dimension linear interpolant of the old parent block at one</span>
+<span id="L220"><span class="lineNum">     220</span>              : # fine destination cell. `F` is the fine index in the parent's doubled child</span>
+<span id="L221"><span class="lineNum">     221</span>              : # space, so the covering parent cell and the ξ = ∓1/4 side follow from its</span>
+<span id="L222"><span class="lineNum">     222</span>              : # parity for either octant. Where the (1/4)-neighbor tap would leave the parent</span>
+<span id="L223"><span class="lineNum">     223</span>              : # interior — destination cells on the parent-block edge — the tap flips to</span>
+<span id="L224"><span class="lineNum">     224</span>              : # one-sided extrapolation (5/4, −1/4) from the inside neighbor, exact on</span>
+<span id="L225"><span class="lineNum">     225</span>              : # linears, keeping the transfer interior-only (old ghosts are never valid).</span>
+<span id="L226"><span class="lineNum">     226</span>              : @inline function _transfer_prolong_at(</span>
+<span id="L227"><span class="lineNum">     227</span>              :     u::AbstractArray{T,N}, I::CartesianIndex{N}, q::NTuple{N,Int}, h::NTuple{N,Int},</span>
+<span id="L228"><span class="lineNum">     228</span>              :     n::NTuple{N,Int}, w::NTuple{2,W},</span>
+<span id="L229"><span class="lineNum">     229</span>              : ) where {T,N,W}</span>
+<span id="L230"><span class="lineNum">     230</span> <span class="tlaGNC">       22352 :     taps = ntuple(Val(N)) do d</span></span>
+<span id="L231"><span class="lineNum">     231</span> <span class="tlaGNC">       37504 :         F = q[d] * n[d] + (I[d] - h[d])</span></span>
+<span id="L232"><span class="lineNum">     232</span> <span class="tlaGNC">       37504 :         c = (F + 1) &gt;&gt; 1</span></span>
+<span id="L233"><span class="lineNum">     233</span> <span class="tlaGNC">       37504 :         s = isodd(F) ? -1 : 1</span></span>
+<span id="L234"><span class="lineNum">     234</span> <span class="tlaGNC">       37504 :         cn = c + s</span></span>
+<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC">       41104 :         1 &lt;= cn &lt;= n[d] ? (c, cn, w[1], w[2]) : (c, c - s, one(W) + w[2], -w[2])</span></span>
+<span id="L236"><span class="lineNum">     236</span>              :     end</span>
+<span id="L237"><span class="lineNum">     237</span> <span class="tlaGNC">       18752 :     acc = zero(W) * zero(T)</span></span>
+<span id="L238"><span class="lineNum">     238</span> <span class="tlaGNC">       37504 :     @inbounds for t in CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
+<span id="L239"><span class="lineNum">     239</span> <span class="tlaGNC">      225024 :         wt = prod(ntuple(d -&gt; t[d] == 0 ? taps[d][3] : taps[d][4], Val(N)))</span></span>
+<span id="L240"><span class="lineNum">     240</span> <span class="tlaGNC">      150016 :         J = CartesianIndex(ntuple(d -&gt; h[d] + (t[d] == 0 ? taps[d][1] : taps[d][2]), Val(N)))</span></span>
+<span id="L241"><span class="lineNum">     241</span> <span class="tlaGNC">       75008 :         acc += wt * u[J]</span></span>
+<span id="L242"><span class="lineNum">     242</span> <span class="tlaGNC">       93760 :     end</span></span>
+<span id="L243"><span class="lineNum">     243</span> <span class="tlaGNC">       18752 :     return acc</span></span>
+<span id="L244"><span class="lineNum">     244</span>              : end</span>
+<span id="L245"><span class="lineNum">     245</span>              : </span>
+<span id="L246"><span class="lineNum">     246</span> <span class="tlaGNC">         764 : function _transfer_prolong!(</span></span>
+<span id="L247"><span class="lineNum">     247</span>              :     dst::AbstractArray{T,N}, src::AbstractArray{T,N}, q::NTuple{N,Int}, h::NTuple{N,Int},</span>
+<span id="L248"><span class="lineNum">     248</span>              :     n::NTuple{N,Int},</span>
+<span id="L249"><span class="lineNum">     249</span>              : ) where {T,N}</span>
+<span id="L250"><span class="lineNum">     250</span> <span class="tlaGNC">         764 :     w = _prolong_weights(_scalar_eltype(T))</span></span>
+<span id="L251"><span class="lineNum">     251</span> <span class="tlaGNC">        1528 :     ir = CartesianIndices(ntuple(d -&gt; (h[d] + 1):(h[d] + n[d]), Val(N)))</span></span>
+<span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">        1528 :     view(dst, ir) .= _transfer_prolong_at.(Ref(src), ir, Ref(q), Ref(h), Ref(n), Ref(w))</span></span>
+<span id="L253"><span class="lineNum">     253</span> <span class="tlaGNC">         764 :     return nothing</span></span>
+<span id="L254"><span class="lineNum">     254</span>              : end</span>
+<span id="L255"><span class="lineNum">     255</span>              : </span>
+<span id="L256"><span class="lineNum">     256</span>              : # Conservative coarsening of one old child block into its octant `q` of the new</span>
+<span id="L257"><span class="lineNum">     257</span>              : # parent: each destination cell is the 2⁻ᴺ mean of the 2ᴺ fine cells it covers,</span>
+<span id="L258"><span class="lineNum">     258</span>              : # accumulated as one strided-view broadcast per fine parity.</span>
+<span id="L259"><span class="lineNum">     259</span> <span class="tlaGNC">         192 : function _transfer_average!(</span></span>
+<span id="L260"><span class="lineNum">     260</span>              :     dst::AbstractArray{T,N}, src::AbstractArray{T,N}, q::NTuple{N,Int}, h::NTuple{N,Int},</span>
+<span id="L261"><span class="lineNum">     261</span>              :     n::NTuple{N,Int},</span>
+<span id="L262"><span class="lineNum">     262</span>              : ) where {T,N}</span>
+<span id="L263"><span class="lineNum">     263</span> <span class="tlaGNC">         384 :     half = ntuple(d -&gt; n[d] &gt;&gt; 1, Val(N))</span></span>
+<span id="L264"><span class="lineNum">     264</span> <span class="tlaGNC">         192 :     dstv = view(</span></span>
+<span id="L265"><span class="lineNum">     265</span>              :         dst,</span>
+<span id="L266"><span class="lineNum">     266</span> <span class="tlaGNC">         192 :         ntuple(d -&gt; (h[d] + q[d] * half[d] + 1):(h[d] + q[d] * half[d] + half[d]), Val(N))...,</span></span>
+<span id="L267"><span class="lineNum">     267</span>              :     )</span>
+<span id="L268"><span class="lineNum">     268</span> <span class="tlaGNC">         192 :     w = _scalar_eltype(T)(1) / (1 &lt;&lt; N)</span></span>
+<span id="L269"><span class="lineNum">     269</span> <span class="tlaGNC">         384 :     fill!(dstv, zero(T))</span></span>
+<span id="L270"><span class="lineNum">     270</span> <span class="tlaGNC">         384 :     for p in CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
+<span id="L271"><span class="lineNum">     271</span> <span class="tlaGNC">         768 :         srcv = view(</span></span>
+<span id="L272"><span class="lineNum">     272</span> <span class="tlaGNC">        1536 :             src, ntuple(d -&gt; (h[d] + 1 + p[d]):2:(h[d] + n[d] - 1 + p[d]), Val(N))...</span></span>
+<span id="L273"><span class="lineNum">     273</span>              :         )</span>
+<span id="L274"><span class="lineNum">     274</span> <span class="tlaGNC">        1536 :         dstv .+= w .* srcv</span></span>
+<span id="L275"><span class="lineNum">     275</span> <span class="tlaGNC">         960 :     end</span></span>
+<span id="L276"><span class="lineNum">     276</span> <span class="tlaGNC">         192 :     return nothing</span></span>
+<span id="L277"><span class="lineNum">     277</span>              : end</span>
         </pre>
               </td>
             </tr>
