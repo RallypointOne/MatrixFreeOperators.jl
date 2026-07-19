@@ -16,7 +16,10 @@ end
     scaling(κ) -> ScalingOp
 
 Build a pointwise scaling operator `x ↦ κ ⊙ x` from a `Number` or a scalar-eltype
-coefficient [`Field`](@ref). Diagonal and (for real coefficients) self-adjoint —
+coefficient field ([`Field`](@ref) on a single grid, [`BlockField`](@ref)/
+[`PackedBlockField`](@ref) on a forest — the coefficient's layout should match
+the field the operator is applied to for the forest-native kernel to engage).
+Diagonal and (for real coefficients) self-adjoint —
 the natural Jacobi-smoother target. Variable-coefficient diffusion composes as
 `divergence(g) * scaling(κ) * gradient(g)`.
 
@@ -39,15 +42,25 @@ function scaling(κ::Field)
     )
     return ScalingOp(κ)
 end
+function scaling(κ::AbstractBlockField)
+    eltype(κ) <: Number || throw(
+        ArgumentError(
+            "scaling coefficient must be a Number or a scalar-eltype field, got eltype $(eltype(κ))",
+        ),
+    )
+    return ScalingOp(κ)
+end
 
 islinear(::ScalingOp) = true
 isconstant(::ScalingOp) = true
 isdiagonal(::ScalingOp) = true
 isselfadjoint(S::ScalingOp{<:Number}) = isreal(S.coeff)
 isselfadjoint(S::ScalingOp{<:Field}) = eltype(S.coeff.data) <: Real
+# Sound on refined forests too: a diagonal operator has no cross-block coupling.
+isselfadjoint(S::ScalingOp{<:AbstractBlockField}) = eltype(S.coeff) <: Real
 
 operator_grid(::ScalingOp{<:Number}) = nothing
-operator_grid(S::ScalingOp{<:Field}) = S.coeff.grid
+operator_grid(S::ScalingOp{<:AbstractField}) = S.coeff.grid
 
 adjoint_operator(S::ScalingOp{<:Real}) = S
 adjoint_operator(S::ScalingOp{<:Number}) = ScalingOp(conj(S.coeff))
@@ -55,6 +68,15 @@ function adjoint_operator(S::ScalingOp{<:Field})
     eltype(S.coeff.data) <: Real && return S
     κ = S.coeff
     return ScalingOp(Field(conj.(κ.data), κ.grid))
+end
+function adjoint_operator(S::ScalingOp{<:AbstractBlockField})
+    eltype(S.coeff) <: Real && return S
+    κ = S.coeff
+    c = similar(κ)
+    for i in 1:nleaves(κ.grid)
+        _block_array(c, i) .= conj.(_block_array(κ, i))
+    end
+    return ScalingOp(c)
 end
 
 _coeff_values(c::Number) = c

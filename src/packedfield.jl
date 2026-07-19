@@ -46,6 +46,15 @@ end
 
 Base.eltype(::PackedBlockField{L,A}) where {L,A} = eltype(A)
 
+function component(f::PackedBlockField{L}, d::Integer) where {L}
+    1 <= d <= ncomponents(f) ||
+        throw(ArgumentError("component $d out of range for $(ncomponents(f)) components"))
+    data = getindex.(f.data, d)
+    return PackedBlockField{L,typeof(data),typeof(f.levels),typeof(f.grid)}(
+        data, f.levels, f.grid, f.generation
+    )
+end
+
 # Derived fields inherit the source's generation (same rule as BlockField).
 Base.similar(f::PackedBlockField{L,A,V,G}) where {L,A,V,G} =
     PackedBlockField{L,A,V,G}(similar(f.data), f.levels, f.grid, f.generation)

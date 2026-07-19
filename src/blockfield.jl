@@ -84,6 +84,13 @@ block(f::AbstractBlockField, i::Integer) = block(f, i, leaf_grid(f.grid, i))
 Base.eltype(::BlockField{L,A}) where {L,A} = eltype(A)
 ncomponents(f::AbstractBlockField) = _ncomponents(eltype(f))
 
+function component(f::BlockField{L}, d::Integer) where {L}
+    1 <= d <= ncomponents(f) ||
+        throw(ArgumentError("component $d out of range for $(ncomponents(f)) components"))
+    blocks = [getindex.(b, d) for b in f.blocks]
+    return BlockField{L,eltype(blocks),typeof(f.grid)}(blocks, f.grid, f.generation)
+end
+
 # Derived fields inherit the source's generation: a copy of a stale field is
 # equally stale — stamping the current generation would bless wrong-size storage.
 Base.similar(f::BlockField{L,A,G}) where {L,A,G} =
