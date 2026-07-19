@@ -412,9 +412,20 @@ wrap any `AbstractOperator` exposing `mul!`/`size`/`eltype`.)
   prepare time (sound because these leaves declare `isconstant`), so the hot
   path cannot silently stay on the fallback; staleness after a regrid is caught
   by the existing generation guards on both the prepared and un-prepared paths.
-  Kernelizing the exchange
-  itself (batched `CopyDescriptor` kernel; CSR-flattening the nested
-  `GhostFill.terms`) is an explicit follow-up, not part of the storage swap.
+  The exchange itself is kernelized for packed fields on GPU backends: the
+  per-generation schedule flattens into a device-resident descriptor SoA
+  (`_DeviceSchedule` — copies bucketed by normal dim, the nested
+  `GhostFill.terms` CSR-flattened per phase, bcfaces as device leaf lists,
+  cached keyed on generation and backend), executed as a constant number of
+  launches whose arithmetic is bit-identical to the host loops except
+  copy-phase corner ghosts (last dim wins; no axis-aligned stencil reads them).
+  Flat transfers collapse to one broadcast per direction against the
+  whole-forest interior view. The **adjoint** exchange, `fold_bc!`, and the
+  setup-only inhomogeneous pass stay on the host descriptor loops on all
+  backends: adjoint scatter-adds collide on shared source cells, so
+  kernelizing them needs atomics (bit-nondeterministic) or a transposed
+  source-centric CSR — the sanctioned future path if it is ever needed; they
+  run only off the `mul!` hot path.
 
 > **API to verify at implementation:** exact `KernelAbstractions.get_backend`,
 > `allocate`, `@index`/`@kernel` signatures (KA ≈ v0.9.x); Reactant
@@ -701,7 +712,8 @@ pre-built.
     end-to-end (built), (2) the remaining operator kernels + adjoint
     transpose-gather kernels + the coefficient-field layout policy (built),
     (3) kernelized exchange/BC/flat passes (incl. `GhostFill.terms` CSR
-    flattening), (4) packed regrid. The per-leaf fallback guarantee holds
+    flattening) (built; adjoint exchange deliberately stays on the host
+    descriptor loops — see §5), (4) packed regrid. The per-leaf fallback guarantee holds
     throughout: every operator works on packed storage from day one via
     `_forest_sweep!`'s reference loop. `regrid!` of a packed field errors — regrid the
     reference field and re-`pack` (a missing capability degrades to an error,
