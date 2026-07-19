@@ -238,7 +238,9 @@ silently reading wrong-shaped storage.
 
 Every AMR phase through the regrid driver is built; the forest is adaptive
 end-to-end (solve → indicator → `regrid!` → re-`prepare`). What remains is the
-performance phase: packed contiguous block storage with forest-native kernels.
+performance phase — packed contiguous block storage with forest-native kernels —
+staged as packed storage plus a Laplacian kernel first, then the remaining
+operator kernels and a kernelized exchange.
 
 ```
   Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
@@ -246,5 +248,16 @@ performance phase: packed contiguous block storage with forest-native kernels.
   Phase 2  ██████████  DONE   coarse–fine INTERPOLATION (non-uniform forests)
   Phase 3  ██████████  DONE   Restriction/Prolongation + V-cycle MULTIGRID
   Phase 4  ██████████  DONE   indicator-driven REGRID driver (regrid!)
-           ░░░░░░░░░░  next   packed-storage forest + forest-native GPU kernels
+  Phase 5  ░░░░░░░░░░  next   packed storage (PackedBlockField) + Laplacian kernel
+           ░░░░░░░░░░  then   per-operator forest kernels + kernelized exchange
 ```
+
+Once the packed phase lands, `pack(u)` will convert a `BlockField` into a
+`PackedBlockField` — every leaf in one contiguous buffer — and
+`prepare(L, pack(u))` selects the packed path by dispatch (`unpack` converts
+back). On GPU backends the packed sweep is a single kernel launch over all
+leaves (instead of one per leaf); on CPU it runs the same per-leaf fused
+broadcasts as the reference layout, so packed storage costs nothing extra
+there. The reference `BlockField` remains the path for AD, Reactant, and
+regrid-heavy workflows, since a packed field must be re-packed after each
+regrid.

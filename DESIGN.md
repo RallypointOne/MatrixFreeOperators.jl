@@ -45,7 +45,7 @@ meet requirements 2–5. We sit one layer above it.
 
 | # | Decision | Consequence |
 |---|----------|-------------|
-| **A. Authoring model** | **Array-level (broadcast/slicing) leaves by default; KernelAbstractions `@kernel` as a per-operator escape hatch.** | This is the only default that simultaneously delivers device-agnosticism, Reactant-traceability, and automatic AD (incl. parameter gradients). Hand-written kernels are reserved for hot stencils that need shared-memory tiling. |
+| **A. Authoring model** | **Array-level (broadcast/slicing) leaves by default; KernelAbstractions `@kernel` as a per-operator escape hatch.** | This is the only default that simultaneously delivers device-agnosticism, Reactant-traceability, and automatic AD (incl. parameter gradients). Hand-written kernels are reserved for hot stencils that need shared-memory tiling. On the forest hot path the escape hatch graduates into a forest-native kernel layer — one launch sweeping all leaves over packed storage (§5) — while array-level per-leaf leaves remain the authoring default and the permanent correctness/AD reference. |
 | **B. AD scope** | **Gradients w.r.t. both the solution field AND operator parameters** (material coefficients, geometry). | Custom adjoint rules become an *optimization* for linear leaves, not the whole AD story. Parameter gradients must flow through real AD — which array-level leaves provide for free. |
 | **C. Solver API** | **Own lean lazy operator algebra exposing `mul!`/`size`/`eltype`. Drop SciMLOperators as the core.** Target Krylov.jl + MDLA + OrdinaryDiffEq.jl. | No `(u,p,t)` convention or `cache_operator` ceremony. A thin *optional* SciML `jac_prototype` adapter is provided only for matrix-free **implicit** OrdinaryDiffEq stepping (see §7). |
 
@@ -378,6 +378,33 @@ wrap any `AbstractOperator` exposing `mul!`/`size`/`eltype`.)
   array-level, Reactant can `@compile` whole operator applications later for XLA
   fusion + sharding + MLIR-AD with no operator rewrite. We do **not** build v1 on
   Reactant (youngest/riskiest; sharp edges on scalar code, dynamic shapes).
+- **Forest-native kernels (packed phase, #15):** the forest hot path adds a third
+  execution mode. `PackedBlockField` is a twin of `BlockField` behind a shared
+  `AbstractBlockField` interface: all leaves in one contiguous
+  `(blocksize .+ 2halo ..., nleaves)` array plus a per-leaf `levels` vector — the
+  geometry SoA; per-leaf spacing/inv-h² are *recomputed in-kernel* from `spacing0`
+  and the level, bit-identical to `leaf_grid` + `_inv_spacing2` (recompute > store;
+  the workload is bandwidth-bound). Packed **storage** is a drop-in: `block(f, i)`
+  is a trailing-dim view, so the descriptor loops, BC face passes, flat transfers,
+  and the per-leaf fallback sweep run unchanged — every operator works on packed
+  storage with no kernel written. The single-launch **sweep** is per-operator: a
+  KernelAbstractions kernel over `ndrange = (blocksize..., nleaves)` (leaf = trailing
+  index) whose body calls the *same* per-cell stencil function the broadcast path
+  uses (`_lap_at`, `_deriv_at`, …) on a per-leaf view, so the numerical definition
+  never forks. Migration is layered behind the `_forest_sweep!` dispatch seam:
+  storage first, then one kernel override per operator. Kernel overrides engage on
+  **GPU backends only** — per-leaf launch overhead is the problem they solve; on
+  CPU backends fused broadcasts beat KA CPU codegen (~1.6× measured on the
+  Laplacian), so packed fields route to the per-leaf reference sweep there — the
+  same execution-mode-per-backend principle as the halo bullet above. Kernel AD
+  policy follows
+  the escape-hatch rule above: forest kernels get declared adjoints — transpose-gather
+  kernels reusing the `_*_adjoint_gather` stencils plus the existing
+  `fold_bc!`/`halo_update_adjoint!` transposes, verified by the dot-product
+  identity — never AD-through-kernel. `BlockField` remains the correctness
+  reference and the AD (Enzyme/Mooncake) + Reactant path. Kernelizing the exchange
+  itself (batched `CopyDescriptor` kernel; CSR-flattening the nested
+  `GhostFill.terms`) is an explicit follow-up, not part of the storage swap.
 
 > **API to verify at implementation:** exact `KernelAbstractions.get_backend`,
 > `allocate`, `@index`/`@kernel` signatures (KA ≈ v0.9.x); Reactant
@@ -406,7 +433,8 @@ complement, and it loses on the two decisions that define the package:
 *Worth borrowing as lessons, not as a dependency:* (1) JACC's documented
 small-kernel **launch overhead** vs Kokkos (LULESH) is empirical support for Open
 Decision 7 — composed matrix-free operators launch one kernel **per leaf**, so
-whole-tree fusion (Reactant) is the fix, not a micro-optimization; (2) its two-tier
+whole-tree fusion (Reactant) and, on forests, the packed single-launch sweep (#15)
+are the fixes, not micro-optimizations; (2) its two-tier
 API (simple productivity default + low-level escape hatch) independently converges
 on Decision A's split; (3) its benchmark suite (XSBench / miniBUDE / LULESH vs
 Kokkos/native) is a methodology reference for *later* checking array-level leaves
@@ -579,8 +607,15 @@ pre-built.
   interface to three cases. The topology is a pure-Julia serial `Forest` (Morton
   keys, `refine!`/`coarsen!`/`balance!`, neighbor queries — no new deps);
   distributed/`P4estTopology` backends sit behind the `topology` + `halo_update!`
-  seams. Storage is **vector-of-blocks** first (`BlockField`), designed so a packed
-  contiguous GPU buffer drops in later without touching operators.
+  seams. Storage is **vector-of-blocks** first (`BlockField`), with a packed twin
+  (**`PackedBlockField`**: one contiguous `(blocksize .+ 2halo ..., nleaves)` buffer
+  behind a shared `AbstractBlockField` interface, selected by dispatch via explicit
+  `pack`/`unpack` — no flags, no implicit switching) as the GPU phase (#15). The
+  original "packed drops in later without touching operators" claim splits into a
+  two-level truth: packed *storage* is a drop-in — per-leaf trailing-dim views feed
+  the unchanged descriptor/BC/flat machinery and the per-leaf fallback sweep — while
+  the single-launch *sweep* is a per-operator forest-native kernel that reuses the
+  factored per-cell stencil functions (§5, forest-native kernels).
   - **Built (Phase 0/1, reworked by #14):** `BlockForest` + topology + `BlockField`
     + the flat boundary; the forest action = `halo_update!` (inter-block exchange,
     once over the forest) → forest-level `apply_bc!` face pass (physical domain
@@ -651,6 +686,20 @@ pre-built.
     code** (`examples/adaptive_poisson.jl` is the canonical form; solver must be
     a nonsymmetric Krylov method on an adapted forest) — an `adaptive_solve`
     export would guess the interface from one use case (rule of three).
+  - **Planned (packed phase, #15):** staged like #10 — (1) `AbstractBlockField` +
+    `PackedBlockField` + `pack`/`unpack` with the Laplacian forest kernel
+    end-to-end, (2) the remaining operator kernels + adjoint transpose-gather
+    kernels, (3) kernelized exchange/BC/flat passes (incl. `GhostFill.terms` CSR
+    flattening), (4) packed regrid. The per-leaf fallback guarantee holds
+    throughout: every operator works on packed storage from day one via
+    `_forest_sweep!`'s reference loop, and non-uniform adjoints ride the fallback
+    until the gather kernels land. `regrid!` of a packed field errors — regrid the
+    reference field and re-`pack` (a missing capability degrades to an error,
+    never a wrong result). The closing metric is the #7 residual: prepared forest
+    `mul!` allocations independent of `nleaves` (the per-leaf stencil-apply call
+    boundary is what allocates today, ~384 B/leaf — its `interior(...)` views
+    escape once the call is not inlined into `mul!`), plus the packed-vs-per-leaf
+    benchmark delta at equal DOFs.
   - **Extending to other tree structures (deliberately not abstracted yet).** There is
     no pluggable "swap the tree structure" interface, and that is the design, not an
     omission. A *fundamentally different* AMR (cell-octree, patch-based) would enter as a
@@ -778,9 +827,11 @@ Presented one at a time with a recommendation; none block writing v1's spine.
      Krylov's `x` (which Enzyme would otherwise observe as an input mutation). *Caveat to note in the doc:*
      composed matrix-free operators incur one kernel launch per leaf; whole-tree
      fusion is exactly what Reactant buys you — a point in its favor for
-     composition-heavy operators. The other escape from per-leaf launches is to
+     composition-heavy operators. The other escapes from per-leaf launches are to
      hand-author a **custom fused leaf** (§4a) for the hot operator — the manual
-     counterpart to Reactant's automatic tree fusion.
+     counterpart to Reactant's automatic tree fusion — or, on forests, the
+     packed-storage single-launch sweep (#15), which replaces the per-leaf loop
+     with one forest-native kernel (§5).
 
 8. **Linear vs. nonlinear operators, and where the Krylov Jacobian comes from.**
    `adjoint(L)` and "use `L` as a linear map in Krylov" are meaningful **only for
