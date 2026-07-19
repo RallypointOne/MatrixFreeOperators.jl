@@ -427,13 +427,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="status" class="level2">
 <h2 class="anchored" data-anchor-id="status">Status</h2>
-<p>Every AMR phase through the regrid driver is built; the forest is adaptive end-to-end (solve → indicator → <code>regrid!</code> → re-<code>prepare</code>). What remains is the performance phase: packed contiguous block storage with forest-native kernels.</p>
+<p>Every AMR phase through the regrid driver is built; the forest is adaptive end-to-end (solve → indicator → <code>regrid!</code> → re-<code>prepare</code>). What remains is the performance phase — packed contiguous block storage with forest-native kernels — staged as packed storage plus a Laplacian kernel first, then the remaining operator kernels and a kernelized exchange.</p>
 <pre><code>  Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
   Phase 1  ██████████  DONE   inter-block halo_update! + operator PARITY
   Phase 2  ██████████  DONE   coarse–fine INTERPOLATION (non-uniform forests)
   Phase 3  ██████████  DONE   Restriction/Prolongation + V-cycle MULTIGRID
   Phase 4  ██████████  DONE   indicator-driven REGRID driver (regrid!)
-           ░░░░░░░░░░  next   packed-storage forest + forest-native GPU kernels</code></pre>
+  Phase 5  ░░░░░░░░░░  next   packed storage (PackedBlockField) + Laplacian kernel
+           ░░░░░░░░░░  then   per-operator forest kernels + kernelized exchange</code></pre>
+<p>Once the packed phase lands, <code>pack(u)</code> will convert a <code>BlockField</code> into a <code>PackedBlockField</code> — every leaf in one contiguous buffer — and <code>prepare(L, pack(u))</code> selects the packed path by dispatch (<code>unpack</code> converts back). On GPU backends the packed sweep is a single kernel launch over all leaves (instead of one per leaf); on CPU it runs the same per-leaf fused broadcasts as the reference layout, so packed storage costs nothing extra there. The reference <code>BlockField</code> remains the path for AD, Reactant, and regrid-heavy workflows, since a packed field must be re-packed after each regrid.</p>
 
 
 </section>
