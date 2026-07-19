@@ -60,3 +60,11 @@ yf = similar(xf)
 SUITE["forest"]["2D 64×32²"]["halo_update!"] = @benchmarkable halo_update!($xb, $bf)
 SUITE["forest"]["2D 64×32²"]["prepare"] = @benchmarkable prepare($Lf, $(scalar_field(bf)))
 SUITE["forest"]["2D 64×32²"]["laplacian mul!"] = @benchmarkable mul!($yf, $Pf, $xf)
+
+# Packed single-launch sweep at the same DOFs — the third leg of the single-grid /
+# per-leaf-forest / packed-forest comparison. Guarded: base revisions predate pack.
+if isdefined(MatrixFreeOperators, :pack)
+    Pp = prepare(Lf, pack(scalar_field(bf)))
+    yp = similar(yf)
+    SUITE["forest"]["2D 64×32²"]["laplacian mul! (packed)"] = @benchmarkable mul!($yp, $Pp, $xf)
+end
