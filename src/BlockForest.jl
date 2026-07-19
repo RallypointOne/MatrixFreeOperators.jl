@@ -39,6 +39,7 @@ struct BlockForest{N,T,BC<:Tuple,Dev} <: AbstractGrid{N}
     bc::BC                         # physical domain boundary conditions
     device::Dev
     schedule::Base.RefValue{ExchangeSchedule{N,T}}   # per-generation halo-exchange cache
+    schedule_device::Base.RefValue{_AbstractDeviceSchedule}  # flattened twin, keyed on generation + backend
 end
 
 function BlockForest(
@@ -64,6 +65,7 @@ function BlockForest(
     return BlockForest{N,T,typeof(base.bc),typeof(base.device)}(
         forest, base.extent, base.spacing, blocksize, base.halo, base.bc, base.device,
         Ref(_empty_schedule(Val(N), T)),
+        Ref{_AbstractDeviceSchedule}(_NoDeviceSchedule()),
     )
 end
 
@@ -168,11 +170,12 @@ balance!(bf::BlockForest) = (balance!(bf.forest); bf)
 
 function Adapt.adapt_structure(to, bf::BlockForest{N,T}) where {N,T}
     device = KernelAbstractions.get_backend(Adapt.adapt(to, similar(Vector{Bool}, 0)))
-    # The schedule Ref is shared deliberately, like `forest`: descriptors are
-    # device-independent index data, and sharing keeps the cache warm across
-    # adaptation.
+    # The schedule Refs are shared deliberately, like `forest`: descriptors are
+    # device-independent index data, and sharing keeps the caches warm across
+    # adaptation (the device twin additionally keys on its own backend, so a
+    # shared Ref can never serve the wrong device).
     return BlockForest{N,T,typeof(bf.bc),typeof(device)}(
         bf.forest, bf.extent, bf.spacing0, bf.blocksize, bf.halo, bf.bc, device,
-        bf.schedule,
+        bf.schedule, bf.schedule_device,
     )
 end

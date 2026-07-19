@@ -83,6 +83,57 @@ _empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(
     ntuple(_ -> (Int[], Int[]), Val(N)), -1,
 )
 
+#--------------------------------------------------------------------------------# Device schedule (flattened descriptor SoA)
+
+# Flattened, device-resident twin of an ExchangeSchedule for the batched
+# single-launch exchange of packed fields on GPU backends (transfer_kernels.jl).
+# Isbits AoS records in device vectors — Int32 indices (descriptor metadata is
+# bandwidth), ranges flattened to first/step/len scalars, and the ragged
+# GhostFill.terms concatenated per phase in host fill order with each fill
+# carrying its embedded CSR row [tfirst, tlast]. Copy boxes need no shape
+# fields: for normal dim d the box is h[d] × the full padded transverse extent,
+# recomputed at launch. Built lazily by _device_schedule, cached on the forest
+# keyed on generation AND backend; _NoDeviceSchedule is the unbuilt sentinel
+# behind the abstract-eltype Ref (only GPU paths ever touch it).
+abstract type _AbstractDeviceSchedule end
+struct _NoDeviceSchedule <: _AbstractDeviceSchedule end
+
+struct _DevCopy{N}
+    src::Int32
+    dst::Int32
+    src_first::NTuple{N,Int32}
+    dst_first::NTuple{N,Int32}
+end
+
+struct _DevFill{N}
+    dst::Int32
+    first::NTuple{N,Int32}
+    step::NTuple{N,Int32}
+    len::NTuple{N,Int32}
+    tfirst::Int32
+    tlast::Int32
+end
+
+struct _DevTerm{N,T}
+    block::Int32
+    first::NTuple{N,Int32}
+    step::NTuple{N,Int32}
+    weight::T
+end
+
+struct _DeviceSchedule{N,T,VC,VF,VT,VI} <: _AbstractDeviceSchedule
+    copies::VC                       # sorted by normal dim, host order within a dim
+    copy_offsets::Vector{Int}        # host, length N+1: dim d = offsets[d]+1:offsets[d+1]
+    interp::VF
+    interp_terms::VT
+    interp_maxcells::Int             # host: bounds-mask ndrange for the fill kernel
+    restrict::VF
+    restrict_terms::VT
+    restrict_maxcells::Int
+    bcfaces::NTuple{N,NTuple{2,VI}}  # device Int32 leaf lists per (dim, side)
+    generation::Int
+end
+
 #--------------------------------------------------------------------------------# Coarse–fine transfer weights
 
 # Quadratic Lagrange weights on nodes (a, b, c) evaluated at ξ. Quadratic
