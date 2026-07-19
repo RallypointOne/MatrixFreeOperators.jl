@@ -39,7 +39,11 @@ to the forest's regrid `generation`; a `refine!`/`coarsen!`/`balance!` after
 `prepare` invalidates it and `mul!` throws — re-run `prepare` on the new forest.
 """
 struct PreparedForest{
-    O<:AbstractOperator,G<:BlockForest,FX<:BlockField,FY<:BlockField,S<:BlockField
+    O<:AbstractOperator,
+    G<:BlockForest,
+    FX<:AbstractBlockField,
+    FY<:AbstractBlockField,
+    S<:AbstractBlockField,
 }
     op::O
     grid::G
@@ -94,10 +98,10 @@ function prepare(L::AbstractOperator, x::AbstractField)
 end
 prepare(L::AbstractOperator) = prepare(L, scalar_field(_require_grid(L)))
 
-# Forest prepare: same tree walk (Composed still errors via _prepare_tree).
-# adjscratch backs the accumulating adjoint sweep the un-prepared path allocates
-# per call.
-function prepare(L::AbstractOperator, x::BlockField)
+# Forest prepare: same tree walk. adjscratch backs the accumulating adjoint sweep
+# the un-prepared path allocates per call. A PackedBlockField prototype yields
+# packed scratch (via similar), routing mul! to the forest-native kernel sweeps.
+function prepare(L::AbstractOperator, x::AbstractBlockField)
     if !islinear(L)
         throw(
             ArgumentError(
@@ -174,39 +178,40 @@ end
 # and additionally handles the PreparedAdjoint nodes _prepare_tree introduces. (The
 # residual per-leaf cost is the stencil apply! itself; see the alloc-free-kernel note
 # on PreparedForest.)
-function _forest_capply!(y::BlockField, L::AbstractOperator, x::BlockField, P::PreparedForest, α, β)
+function _forest_capply!(
+    y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, P::PreparedForest, α, β
+)
     _require_current(y)
     halo_update!(x, P.grid)
     apply_bc!(x, P.grid)
-    for i in 1:nleaves(P.grid)
-        lg = leaf_grid(P.grid, i)
-        apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
-    end
-    return y
+    return _forest_sweep!(y, L, x, P.grid, α, β)
 end
-function _forest_capply!(y::BlockField, L::Added, x::BlockField, P::PreparedForest, α, β)
+function _forest_capply!(
+    y::AbstractBlockField, L::Added, x::AbstractBlockField, P::PreparedForest, α, β
+)
     _forest_capply!(y, L.a, x, P, α, β)
     _forest_capply!(y, L.b, x, P, α, true)
     return y
 end
-_forest_capply!(y::BlockField, L::Scaled, x::BlockField, P::PreparedForest, α, β) =
+_forest_capply!(y::AbstractBlockField, L::Scaled, x::AbstractBlockField, P::PreparedForest, α, β) =
     _forest_capply!(y, L.op, x, P, α * L.α, β)
-_forest_capply!(y::BlockField, L::AdjointOp, x::BlockField, P::PreparedForest, α, β) =
-    _forest_capply_adjoint!(y, L.op, x, P, α, β)
+_forest_capply!(
+    y::AbstractBlockField, L::AdjointOp, x::AbstractBlockField, P::PreparedForest, α, β
+) = _forest_capply_adjoint!(y, L.op, x, P, α, β)
 
 # PreparedComposed: the held tmp is a BlockField; recursing at the forest level
 # gives the intermediate its inter-block exchange. The adjoint of a∘b is bᵀ∘aᵀ,
 # and tmp doubles as the cotangent intermediate (aᵀȳ has tmp's shape, and tmp is
 # dead between applications).
 function _forest_capply!(
-    y::BlockField, L::PreparedComposed, x::BlockField, P::PreparedForest, α, β
+    y::AbstractBlockField, L::PreparedComposed, x::AbstractBlockField, P::PreparedForest, α, β
 )
     _forest_capply!(L.tmp, L.b, x, P, true, false)
     _forest_capply!(y, L.a, L.tmp, P, α, β)
     return y
 end
 function _forest_capply_adjoint!(
-    x̄::BlockField, L::PreparedComposed, ȳ::BlockField, P::PreparedForest, α, β
+    x̄::AbstractBlockField, L::PreparedComposed, ȳ::AbstractBlockField, P::PreparedForest, α, β
 )
     _forest_capply_adjoint!(L.tmp, L.a, ȳ, P, true, false)
     _forest_capply_adjoint!(x̄, L.b, L.tmp, P, α, β)
@@ -215,7 +220,9 @@ end
 
 # PreparedAdjoint: the leaf adjoint gather is allocation-free only for β = 0, so the
 # accumulating form gathers into the node's own scratch, then blends per leaf.
-function _forest_capply!(y::BlockField, L::PreparedAdjoint, x::BlockField, P::PreparedForest, α, β)
+function _forest_capply!(
+    y::AbstractBlockField, L::PreparedAdjoint, x::AbstractBlockField, P::PreparedForest, α, β
+)
     iszero(β) && return _forest_capply_adjoint!(y, L.op, x, P, α, β)
     _forest_capply_adjoint!(L.scratch, L.op, x, P, true, false)
     s = L.scratch
@@ -230,7 +237,7 @@ end
 # Cached forest adjoint action, mirroring apply_adjoint! in operators/forest.jl. The
 # accumulating (β ≠ 0) branch uses the prepared adjscratch in place of similar(x̄).
 function _forest_capply_adjoint!(
-    x̄::BlockField, L::AbstractOperator, ȳ::BlockField, P::PreparedForest, α, β
+    x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, P::PreparedForest, α, β
 )
     _require_current(x̄)
     _require_current(ȳ)
@@ -260,15 +267,19 @@ function _forest_capply_adjoint!(
     end
     return x̄
 end
-function _forest_capply_adjoint!(x̄::BlockField, L::Added, ȳ::BlockField, P::PreparedForest, α, β)
+function _forest_capply_adjoint!(
+    x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, P::PreparedForest, α, β
+)
     _forest_capply_adjoint!(x̄, L.a, ȳ, P, α, β)
     _forest_capply_adjoint!(x̄, L.b, ȳ, P, α, true)
     return x̄
 end
-_forest_capply_adjoint!(x̄::BlockField, L::Scaled, ȳ::BlockField, P::PreparedForest, α, β) =
-    _forest_capply_adjoint!(x̄, L.op, ȳ, P, α * conj(L.α), β)
-_forest_capply_adjoint!(x̄::BlockField, L::AdjointOp, ȳ::BlockField, P::PreparedForest, α, β) =
-    _forest_capply!(x̄, L.op, ȳ, P, α, β)
+_forest_capply_adjoint!(
+    x̄::AbstractBlockField, L::Scaled, ȳ::AbstractBlockField, P::PreparedForest, α, β
+) = _forest_capply_adjoint!(x̄, L.op, ȳ, P, α * conj(L.α), β)
+_forest_capply_adjoint!(
+    x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, P::PreparedForest, α, β
+) = _forest_capply!(x̄, L.op, ȳ, P, α, β)
 
 #--------------------------------------------------------------------------------# Boundary lift (linear/affine split)
 
@@ -348,7 +359,7 @@ end
 # Forest lift: the forest-level inhomogeneous face pass writes the ghost offsets
 # (Interface ghosts stay zero, so the lift is local to each block), then the raw
 # stencil sweeps each leaf.
-function boundary_rhs(L::AbstractOperator, x_proto::BlockField)
+function boundary_rhs(L::AbstractOperator, x_proto::AbstractBlockField)
     if !islinear(L)
         throw(
             ArgumentError(
@@ -357,10 +368,7 @@ function boundary_rhs(L::AbstractOperator, x_proto::BlockField)
         )
     end
     g = x_proto.grid
-    z = similar(x_proto)
-    for blk in z.blocks
-        fill!(blk, zero(eltype(blk)))
-    end
+    z = _zero_all!(similar(x_proto))
     fill_bc_inhomogeneous!(z, g)
     b = allocate_output(L, x_proto)
     for i in 1:nleaves(g)
@@ -372,40 +380,35 @@ end
 
 # The adjoint action is built homogeneous (gather + fold, no ghost offsets), so
 # its lift is identically zero — mirrors the ::Field method above.
-function boundary_rhs(L::AdjointOp, x_proto::BlockField)
-    b = allocate_output(L, x_proto)
-    for blk in b.blocks
-        fill!(blk, zero(eltype(blk)))
-    end
-    return b
-end
+boundary_rhs(L::AdjointOp, x_proto::AbstractBlockField) =
+    _zero_all!(allocate_output(L, x_proto))
 
 # Forest combinator lifts recurse at the FOREST level (the ::Field methods above
 # would run per leaf, where a nested Composed's `apply(L.a, b_b)` misses the
 # inter-block exchange its lift field needs).
-function boundary_rhs(L::Added, x_proto::BlockField)
+function boundary_rhs(L::Added, x_proto::AbstractBlockField)
     ba = boundary_rhs(L.a, x_proto)
     bb = boundary_rhs(L.b, x_proto)
-    for (a, b) in zip(ba.blocks, bb.blocks)
-        a .+= b
+    for i in 1:nleaves(ba.grid)
+        _block_array(ba, i) .+= _block_array(bb, i)
     end
     return ba
 end
-function boundary_rhs(L::Scaled, x_proto::BlockField)
+function boundary_rhs(L::Scaled, x_proto::AbstractBlockField)
     b = boundary_rhs(L.op, x_proto)
-    for blk in b.blocks
-        blk .*= L.α
+    for i in 1:nleaves(b.grid)
+        _block_array(b, i) .*= L.α
     end
     return b
 end
 # Affine composition on a forest: a(b(x) + c_b) + c_a — the middle term a(c_b)
-# applies `a` to a real BlockField, whose forest apply performs the exchange.
-function boundary_rhs(L::Composed, x_proto::BlockField)
+# applies `a` to a real forest field, whose forest apply performs the exchange.
+function boundary_rhs(L::Composed, x_proto::AbstractBlockField)
     bb = boundary_rhs(L.b, x_proto)
     lift = apply(L.a, bb)
     ba = boundary_rhs(L.a, bb)
-    for (l, b) in zip(lift.blocks, ba.blocks)
-        l .+= b
+    for i in 1:nleaves(lift.grid)
+        _block_array(lift, i) .+= _block_array(ba, i)
     end
     return lift
 end
