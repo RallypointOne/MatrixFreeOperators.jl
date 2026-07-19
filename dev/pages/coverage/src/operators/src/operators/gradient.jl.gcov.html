@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryHi">92.5&nbsp;%</td>
-            <td class="headerCovTableEntry">40</td>
-            <td class="headerCovTableEntry">37</td>
+            <td class="headerCovTableEntryHi">92.3&nbsp;%</td>
+            <td class="headerCovTableEntry">39</td>
+            <td class="headerCovTableEntry">36</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-18 19:00:20</td>
+            <td class="headerValue">2026-07-19 13:11:05</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -128,11 +128,11 @@
 <span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">           1 :     return (dimension(L.grid) * n, n)</span></span>
 <span id="L67"><span class="lineNum">      67</span>              : end</span>
 <span id="L68"><span class="lineNum">      68</span>              : </span>
-<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">          17 : function allocate_output(::Gradient, x::AbstractField)</span></span>
+<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">           1 : function allocate_output(::Gradient, x::AbstractField)</span></span>
 <span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">         398 :     T = eltype(x)</span></span>
 <span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">         382 :     T &lt;: Number || throw(ArgumentError(&quot;gradient expects a scalar field, got eltype $T&quot;))</span></span>
 <span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">         742 :     y = similar(x, SVector{dimension(x.grid),T})</span></span>
-<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">         699 :     zero_ghosts!(y)</span></span>
+<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">         381 :     zero_ghosts!(y)</span></span>
 <span id="L74"><span class="lineNum">      74</span> <span class="tlaGNC">         381 :     return y</span></span>
 <span id="L75"><span class="lineNum">      75</span>              : end</span>
 <span id="L76"><span class="lineNum">      76</span>              : </span>
@@ -159,7 +159,7 @@
 <span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">         537 :     return y</span></span>
 <span id="L98"><span class="lineNum">      98</span>              : end</span>
 <span id="L99"><span class="lineNum">      99</span>              : </span>
-<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC">         238 : function apply_adjoint!(x̄::Field, L::Gradient, ȳ::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L100"><span class="lineNum">     100</span>              : function apply_adjoint!(x̄::Field, L::Gradient, ȳ::Field, g::AbstractGrid, α, β)</span>
 <span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">         324 :     gather = let inv_h = _inv_spacing(g)</span></span>
 <span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">       11496 :         (u, J) -&gt; _grad_adjoint_gather(u, J, inv_h)</span></span>
 <span id="L103"><span class="lineNum">     103</span>              :     end</span>

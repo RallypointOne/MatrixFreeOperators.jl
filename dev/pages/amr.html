@@ -330,24 +330,30 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="where-the-intelligence-lives" class="level3">
 <h3 class="anchored" data-anchor-id="where-the-intelligence-lives">Where the intelligence lives</h3>
-<p>Operators barely change. The forest does a single <code>halo_update!</code> over the whole forest to fill each block’s ghost cells from its neighbors; then each leaf fills only its <em>physical</em> domain-boundary faces and runs its ordinary stencil. So the only genuinely new operator code is that inter-block exchange — plus its declared transpose <code>halo_update_adjoint!</code>, which keeps the adjoint identity <code>⟨Lx,y⟩ = ⟨x,Lᵀy⟩</code> exact on a forest so Krylov solvers stay correct.</p>
+<p>Operators barely change. The forest does a single <code>halo_update!</code> over the whole forest to fill each block’s interface ghosts from its neighbors, then a single forest-level <code>apply_bc!</code> pass fills the <em>physical</em> domain-boundary ghosts from precomputed face lists; each leaf then runs its ordinary stencil. So the only genuinely new operator code is those two forest-level passes — plus their declared transposes (<code>halo_update_adjoint!</code> and the forest-level <code>fold_bc!</code>), which keep the adjoint identity <code>⟨Lx,y⟩ = ⟨x,Lᵀy⟩</code> exact on a forest so Krylov solvers stay correct.</p>
 <pre><code>  forest
     │
     ▼
   ┌───────────────────────────────────────────────┐
   │ 1.  halo_update!(forest)                       │   ONCE, whole forest —
-  │     fill each block's INTERFACE ghosts from    │   the only genuinely
-  │     its neighbors                              │   new operator code
+  │     fill each block's INTERFACE ghosts from    │   flat descriptor loop,
+  │     its neighbors                              │   no topology queries
+  └───────────────────────────────────────────────┘
+    │
+    ▼
+  ┌───────────────────────────────────────────────┐
+  │ 2.  apply_bc!(forest)                          │   ONCE, whole forest —
+  │     fill each boundary block's PHYSICAL ghosts │   per-(dim, side)
+  │     from precomputed face lists                │   leaf-index lists
   └───────────────────────────────────────────────┘
     │
     ├───────────────┬───────────────┐
     ▼               ▼               ▼
   ┌───────────┐   ┌───────────┐   ┌───────────┐
   │per leaf:  │   │per leaf:  │   │per leaf:  │
-  │2 apply_bc!│   │2 apply_bc!│   │2 apply_bc!│  ← physical faces only
   │3 stencil  │   │3 stencil  │   │3 stencil  │  ← EXISTING single-grid code
   └───────────┘   └───────────┘   └───────────┘</code></pre>
-<p>Internal faces carry the <code>Interface</code> boundary and are skipped by <code>apply_bc!</code> — <code>halo_update!</code> already filled them; physical faces keep the base grid’s BCs.</p>
+<p>Every leaf grid carries the <code>Interface</code> boundary on all faces, so per-leaf BC sweeps are no-ops and every leaf shares one concrete grid type — the physical BCs live on the forest, applied by the face pass above. This is the homogeneous-blocks structure production AMR codes (AMReX, p4est) use: boundary operators are separate passes over face lists, never per-block special cases.</p>
 </section>
 </section>
 <section id="usage" class="level2">
@@ -852,7 +858,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       &nbsp;
     </div>   
     <div class="nav-footer-center">
-<p>Built on 2026-07-18</p>
+<p>Built on 2026-07-19</p>
 </div>
     <div class="nav-footer-right">
       &nbsp;

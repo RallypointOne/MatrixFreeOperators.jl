@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryHi">92.7&nbsp;%</td>
-            <td class="headerCovTableEntry">41</td>
-            <td class="headerCovTableEntry">38</td>
+            <td class="headerCovTableEntryHi">92.3&nbsp;%</td>
+            <td class="headerCovTableEntry">39</td>
+            <td class="headerCovTableEntry">36</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-18 19:00:20</td>
+            <td class="headerValue">2026-07-19 13:11:05</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -125,17 +125,17 @@
 <span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">           1 :     return (n, dimension(L.grid) * n)</span></span>
 <span id="L64"><span class="lineNum">      64</span>              : end</span>
 <span id="L65"><span class="lineNum">      65</span>              : </span>
-<span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">           7 : function allocate_output(::Divergence, x::AbstractField)</span></span>
+<span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">           1 : function allocate_output(::Divergence, x::AbstractField)</span></span>
 <span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">         202 :     T = eltype(x)</span></span>
 <span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">         194 :     T &lt;: SVector || throw(ArgumentError(&quot;divergence expects a vector field, got eltype $T&quot;))</span></span>
 <span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">         378 :     y = similar(x, _scalar_eltype(T))</span></span>
-<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">         235 :     zero_ghosts!(y)</span></span>
+<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">         193 :     zero_ghosts!(y)</span></span>
 <span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">         193 :     return y</span></span>
 <span id="L72"><span class="lineNum">      72</span>              : end</span>
 <span id="L73"><span class="lineNum">      73</span>              : </span>
-<span id="L74"><span class="lineNum">      74</span> <span class="tlaGNC">           1 : function allocate_input(::Divergence, y::AbstractField)</span></span>
+<span id="L74"><span class="lineNum">      74</span>              : function allocate_input(::Divergence, y::AbstractField)</span>
 <span id="L75"><span class="lineNum">      75</span> <span class="tlaGNC">          27 :     x = similar(y, SVector{dimension(y.grid),eltype(y)})</span></span>
-<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">          41 :     zero_ghosts!(x)</span></span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">          14 :     zero_ghosts!(x)</span></span>
 <span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">          14 :     return x</span></span>
 <span id="L78"><span class="lineNum">      78</span>              : end</span>
 <span id="L79"><span class="lineNum">      79</span>              : </span>
@@ -156,7 +156,7 @@
 <span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC">         318 :     return y</span></span>
 <span id="L95"><span class="lineNum">      95</span>              : end</span>
 <span id="L96"><span class="lineNum">      96</span>              : </span>
-<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">          28 : function apply_adjoint!(x̄::Field, L::Divergence, ȳ::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L97"><span class="lineNum">      97</span>              : function apply_adjoint!(x̄::Field, L::Divergence, ȳ::Field, g::AbstractGrid, α, β)</span>
 <span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">          77 :     gather = let inv_h = _inv_spacing(g)</span></span>
 <span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">        2567 :         (u, J) -&gt; _div_adjoint_gather(u, J, inv_h)</span></span>
 <span id="L100"><span class="lineNum">     100</span>              :     end</span>
