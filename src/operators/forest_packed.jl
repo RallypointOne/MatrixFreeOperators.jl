@@ -17,6 +17,11 @@
     return ntuple(d -> inv((spacing0[d] / (1 << ℓ))^2), Val(N))
 end
 
+# Bit-identical to _inv_spacing(leaf_grid(bf, i)).
+@inline function _leaf_inv_h(spacing0::NTuple{N}, ℓ::Integer) where {N}
+    return ntuple(d -> inv(spacing0[d] / (1 << ℓ)), Val(N))
+end
+
 # First N entries of the global (cell..., leaf) index, offset into the halo frame.
 @inline function _halo_cell(idx::NTuple, h::NTuple{N,Int}) where {N}
     return CartesianIndex(ntuple(d -> idx[d] + h[d], Val(N)))
@@ -44,5 +49,187 @@ function _forest_sweep!(
         y.data, x.data, x.levels, g.spacing0, g.halo, α, β;
         ndrange=(g.blocksize..., nleaves(g)),
     )
+    return y
+end
+
+@kernel function _deriv_forest_kernel!(
+    y, @Const(x), @Const(levels), spacing0, h, dim, order, α, β
+)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    I = _halo_cell(idx, h)
+    ℓ = @inbounds levels[leaf]
+    v = α * _deriv_at(_leaf_slice(x, leaf), I, dim, order, _leaf_inv_h(spacing0, ℓ)[dim])
+    @inbounds y[I, leaf] = iszero(β) ? v : muladd(β, y[I, leaf], v)
+end
+
+function _forest_sweep!(
+    y::PackedBlockField, L::Derivative, x::PackedBlockField, g::BlockForest, α, β
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)
+    kernel! = _deriv_forest_kernel!(backend)
+    kernel!(
+        y.data, x.data, x.levels, g.spacing0, g.halo, L.dim, L.order, α, β;
+        ndrange=(g.blocksize..., nleaves(g)),
+    )
+    return y
+end
+
+@kernel function _grad_forest_kernel!(y, @Const(x), @Const(levels), spacing0, h, α, β)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    I = _halo_cell(idx, h)
+    ℓ = @inbounds levels[leaf]
+    v = α * _grad_at(_leaf_slice(x, leaf), I, _leaf_inv_h(spacing0, ℓ))
+    # SVector blend written out (no muladd): identical arithmetic, robust on device.
+    @inbounds y[I, leaf] = iszero(β) ? v : β * y[I, leaf] + v
+end
+
+function _forest_sweep!(
+    y::PackedBlockField, L::Gradient, x::PackedBlockField, g::BlockForest, α, β
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)
+    kernel! = _grad_forest_kernel!(backend)
+    kernel!(
+        y.data, x.data, x.levels, g.spacing0, g.halo, α, β;
+        ndrange=(g.blocksize..., nleaves(g)),
+    )
+    return y
+end
+
+@kernel function _div_forest_kernel!(y, @Const(x), @Const(levels), spacing0, h, α, β)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    I = _halo_cell(idx, h)
+    ℓ = @inbounds levels[leaf]
+    v = α * _div_at(_leaf_slice(x, leaf), I, _leaf_inv_h(spacing0, ℓ))
+    @inbounds y[I, leaf] = iszero(β) ? v : muladd(β, y[I, leaf], v)
+end
+
+function _forest_sweep!(
+    y::PackedBlockField, L::Divergence, x::PackedBlockField, g::BlockForest, α, β
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)
+    kernel! = _div_forest_kernel!(backend)
+    kernel!(
+        y.data, x.data, x.levels, g.spacing0, g.halo, α, β;
+        ndrange=(g.blocksize..., nleaves(g)),
+    )
+    return y
+end
+
+@kernel function _adv_forest_kernel!(
+    y, @Const(x), @Const(vel), @Const(levels), spacing0, h, α, β
+)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    I = _halo_cell(idx, h)
+    ℓ = @inbounds levels[leaf]
+    a = α * _adv_at(_leaf_slice(x, leaf), _leaf_slice(vel, leaf), I, _leaf_inv_h(spacing0, ℓ))
+    @inbounds y[I, leaf] = iszero(β) ? a : muladd(β, y[I, leaf], a)
+end
+
+function _forest_sweep!(
+    y::PackedBlockField,
+    L::Advection{<:BlockForest,<:PackedBlockField},
+    x::PackedBlockField,
+    g::BlockForest,
+    α,
+    β,
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)
+    _require_current(L.velocity)
+    kernel! = _adv_forest_kernel!(backend)
+    kernel!(
+        y.data, x.data, L.velocity.data, x.levels, g.spacing0, g.halo, α, β;
+        ndrange=(g.blocksize..., nleaves(g)),
+    )
+    return y
+end
+
+function _forest_sweep!(
+    y::PackedBlockField,
+    L::Advection{<:BlockForest,SelfAdvection},
+    x::PackedBlockField,
+    g::BlockForest,
+    α,
+    β,
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)
+    eltype(x) <: SVector ||
+        throw(ArgumentError("self-advection u·∇u requires an SVector-valued field"))
+    kernel! = _adv_forest_kernel!(backend)
+    # x.data aliased as state and velocity — both read-only in the kernel.
+    kernel!(
+        y.data, x.data, x.data, x.levels, g.spacing0, g.halo, α, β;
+        ndrange=(g.blocksize..., nleaves(g)),
+    )
+    return y
+end
+
+# Pointwise sweeps still go through a kernel, not a whole-array broadcast: apply!
+# writes the interior of y only (ghosts of y stay deterministic, and a packed
+# coefficient's ghosts are unspecified), and β = 0 must never read y's scratch.
+@kernel function _scale_forest_kernel!(y, @Const(x), κ, h, α, β)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    I = _halo_cell(idx, h)
+    xv = @inbounds x[I, leaf]
+    v = α * κ * xv
+    @inbounds y[I, leaf] = iszero(β) ? v : muladd(β, y[I, leaf], v)
+end
+
+@kernel function _scalefield_forest_kernel!(y, @Const(x), @Const(κ), h, α, β)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    I = _halo_cell(idx, h)
+    v = α * @inbounds(κ[I, leaf]) * @inbounds(x[I, leaf])
+    @inbounds y[I, leaf] = iszero(β) ? v : muladd(β, y[I, leaf], v)
+end
+
+function _forest_sweep!(
+    y::PackedBlockField, S::ScalingOp{<:Number}, x::PackedBlockField, g::BlockForest, α, β
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, S, x, g, α, β)
+    kernel! = _scale_forest_kernel!(backend)
+    kernel!(y.data, x.data, S.coeff, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g)))
+    return y
+end
+
+function _forest_sweep!(
+    y::PackedBlockField,
+    S::ScalingOp{<:PackedBlockField},
+    x::PackedBlockField,
+    g::BlockForest,
+    α,
+    β,
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, S, x, g, α, β)
+    # @inbounds in the kernel would turn a foreign coefficient into UB, not an error.
+    S.coeff.grid === g ||
+        throw(ArgumentError("scaling coefficient must be a field on the same forest"))
+    _require_current(S.coeff)
+    kernel! = _scalefield_forest_kernel!(backend)
+    kernel!(
+        y.data, x.data, S.coeff.data, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g))
+    )
+    return y
+end
+
+function _forest_sweep!(
+    y::PackedBlockField, L::IdentityOp, x::PackedBlockField, g::BlockForest, α, β
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)
+    kernel! = _scale_forest_kernel!(backend)
+    # κ = true: α * true * x ≡ α * x bit-exactly.
+    kernel!(y.data, x.data, true, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g)))
     return y
 end
