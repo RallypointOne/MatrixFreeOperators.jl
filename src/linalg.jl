@@ -245,18 +245,12 @@ function _forest_capply_adjoint!(
     # coupling breaks the halo symmetry), so this shortcut never skips a real transpose.
     isselfadjoint(L) && return _forest_capply!(x̄, L, ȳ, P, α, β)
     if iszero(β)
-        for i in 1:nleaves(P.grid)
-            lg = leaf_grid(P.grid, i)
-            apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)
-        end
+        _forest_adjoint_sweep!(x̄, L, ȳ, P.grid, α)
         fold_bc!(x̄, P.grid)
         halo_update_adjoint!(x̄, P.grid)
     else
         s = P.adjscratch
-        for i in 1:nleaves(P.grid)
-            lg = leaf_grid(P.grid, i)
-            apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)
-        end
+        _forest_adjoint_sweep!(s, L, ȳ, P.grid, true)
         fold_bc!(s, P.grid)
         halo_update_adjoint!(s, P.grid)
         for i in 1:nleaves(P.grid)
@@ -373,7 +367,7 @@ function boundary_rhs(L::AbstractOperator, x_proto::AbstractBlockField)
     b = allocate_output(L, x_proto)
     for i in 1:nleaves(g)
         lg = leaf_grid(g, i)
-        _apply_raw!(block(b, i, lg), L, block(z, i, lg), lg, true, false)
+        _apply_raw!(block(b, i, lg), _leaf_op(L, i, lg), block(z, i, lg), lg, true, false)
     end
     return b
 end
