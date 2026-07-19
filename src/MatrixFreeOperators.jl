@@ -4,12 +4,14 @@ using Adapt: Adapt
 using LinearAlgebra: LinearAlgebra, diag, dot, issuccess, ldiv!, lu, mul!, norm
 using StaticArrays: SVector
 import KernelAbstractions
+using KernelAbstractions: @Const, @index, @kernel
 
 export AbstractGrid, CartesianGrid
 export dimension, spacing, local_size, halo_width, boundary_conditions
 export interior, padded_size, cell_center, coarsen, halo_update!
 export AbstractBC, Periodic, Dirichlet, Neumann, apply_bc!, fold_bc!
-export BlockForest, BlockField, refine!, coarsen!, balance!, leaves, regrid!
+export BlockForest, BlockField, PackedBlockField, pack, unpack
+export refine!, coarsen!, balance!, leaves, regrid!
 export AbstractField, Field, Center, scalar_field, vector_field, set!, ncomponents, component
 export flatten, flat_to_interior!, interior_to_flat!
 export AbstractOperator, apply, apply!, apply_adjoint!, AdjointOp
@@ -32,6 +34,7 @@ include("schedule.jl")
 include("BlockForest.jl")
 include("Fields.jl")
 include("blockfield.jl")
+include("packedfield.jl")
 include("transfer.jl")
 include("operators/abstract.jl")
 include("operators/algebra.jl")
@@ -45,6 +48,7 @@ include("operators/prolongation.jl")
 include("operators/restriction.jl")
 include("operators/diagonal.jl")
 include("operators/forest.jl")
+include("operators/forest_packed.jl")
 include("operators/linearize.jl")
 include("linalg.jl")
 include("amr.jl")
