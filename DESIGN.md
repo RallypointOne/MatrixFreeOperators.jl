@@ -698,12 +698,12 @@ pre-built.
     export would guess the interface from one use case (rule of three).
   - **Planned (packed phase, #15):** staged like #10 — (1) `AbstractBlockField` +
     `PackedBlockField` + `pack`/`unpack` with the Laplacian forest kernel
-    end-to-end, (2) the remaining operator kernels + adjoint transpose-gather
-    kernels, (3) kernelized exchange/BC/flat passes (incl. `GhostFill.terms` CSR
+    end-to-end (built), (2) the remaining operator kernels + adjoint
+    transpose-gather kernels + the coefficient-field layout policy (built),
+    (3) kernelized exchange/BC/flat passes (incl. `GhostFill.terms` CSR
     flattening), (4) packed regrid. The per-leaf fallback guarantee holds
     throughout: every operator works on packed storage from day one via
-    `_forest_sweep!`'s reference loop, and non-uniform adjoints ride the fallback
-    until the gather kernels land. `regrid!` of a packed field errors — regrid the
+    `_forest_sweep!`'s reference loop. `regrid!` of a packed field errors — regrid the
     reference field and re-`pack` (a missing capability degrades to an error,
     never a wrong result). The closing metric is the #7 residual: prepared forest
     `mul!` allocations independent of `nleaves` (the per-leaf stencil-apply call

@@ -92,6 +92,10 @@ Copy `f` into packed contiguous storage: one `(blocksize .+ 2halo ..., nleaves)`
 array on the same device, leaves in the same Morton order. The packed field is
 what the forest-native kernel sweeps consume; `prepare` on a packed prototype
 yields packed scratch, so the prepared `mul!` runs the single-launch path.
+Coefficient fields ([`scaling`](@ref), [`advection`](@ref)) follow the same
+layout rule: their kernels engage when the coefficient is packed too — `prepare`
+packs `BlockField` coefficients under a packed prototype automatically, and any
+remaining layout mismatch degrades to the per-leaf reference sweep.
 
 ### Examples
 
