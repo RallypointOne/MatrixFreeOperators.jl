@@ -392,7 +392,12 @@ wrap any `AbstractOperator` exposing `mul!`/`size`/`eltype`.)
   index) whose body calls the *same* per-cell stencil function the broadcast path
   uses (`_lap_at`, `_deriv_at`, …) on a per-leaf view, so the numerical definition
   never forks. Migration is layered behind the `_forest_sweep!` dispatch seam:
-  storage first, then one kernel override per operator. Kernel AD policy follows
+  storage first, then one kernel override per operator. Kernel overrides engage on
+  **GPU backends only** — per-leaf launch overhead is the problem they solve; on
+  CPU backends fused broadcasts beat KA CPU codegen (~1.6× measured on the
+  Laplacian), so packed fields route to the per-leaf reference sweep there — the
+  same execution-mode-per-backend principle as the halo bullet above. Kernel AD
+  policy follows
   the escape-hatch rule above: forest kernels get declared adjoints — transpose-gather
   kernels reusing the `_*_adjoint_gather` stencils plus the existing
   `fold_bc!`/`halo_update_adjoint!` transposes, verified by the dot-product

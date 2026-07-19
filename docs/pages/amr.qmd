@@ -253,9 +253,11 @@ operator kernels and a kernelized exchange.
 ```
 
 Once the packed phase lands, `pack(u)` will convert a `BlockField` into a
-`PackedBlockField` — every leaf in one contiguous buffer, swept by a single
-kernel launch — and `prepare(L, pack(u))` selects the packed path by dispatch
-(`unpack` converts back). Packed storage is the right choice for GPU runs and
-large-forest hot loops; the reference `BlockField` remains the path for AD,
-Reactant, and regrid-heavy workflows, since a packed field must be re-packed
-after each regrid.
+`PackedBlockField` — every leaf in one contiguous buffer — and
+`prepare(L, pack(u))` selects the packed path by dispatch (`unpack` converts
+back). On GPU backends the packed sweep is a single kernel launch over all
+leaves (instead of one per leaf); on CPU it runs the same per-leaf fused
+broadcasts as the reference layout, so packed storage costs nothing extra
+there. The reference `BlockField` remains the path for AD, Reactant, and
+regrid-heavy workflows, since a packed field must be re-packed after each
+regrid.
