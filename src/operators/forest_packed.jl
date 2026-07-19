@@ -215,9 +215,12 @@ function _forest_sweep!(
 )
     backend = KernelAbstractions.get_backend(g)
     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, S, x, g, α, β)
-    # @inbounds in the kernel would turn a foreign coefficient into UB, not an error.
-    S.coeff.grid === g ||
-        throw(ArgumentError("scaling coefficient must be a field on the same forest"))
+    # @inbounds in the kernel would turn a foreign coefficient into UB, not an
+    # error. Extents, not identity: adaptation clones the forest wrapper (the
+    # topology and its generation Ref are shared), so === would reject adapted
+    # twins of the same forest.
+    size(S.coeff.data) == size(x.data) ||
+        throw(ArgumentError("scaling coefficient does not match the packed field extents"))
     _require_current(S.coeff)
     kernel! = _scalefield_forest_kernel!(backend)
     kernel!(

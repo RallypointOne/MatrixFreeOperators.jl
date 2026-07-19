@@ -81,8 +81,9 @@ function advection(g::BlockForest, velocity::AbstractBlockField)
         ),
     )
     # _leaf_op slices the velocity by this forest's leaf indices — a velocity
-    # bound to a different forest would alias the wrong leaves.
-    velocity.grid === g ||
+    # bound to a different forest would alias the wrong leaves. Topology
+    # identity, not wrapper identity: adapted twins share the forest.
+    velocity.grid.forest === g.forest ||
         throw(ArgumentError("advection velocity must be a field on the same forest"))
     return Advection(g, velocity)
 end
