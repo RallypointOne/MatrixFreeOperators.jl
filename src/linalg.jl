@@ -253,6 +253,9 @@ function _forest_capply_adjoint!(
     # isselfadjoint is grid-aware (false on a non-uniform forest, whose coarse–fine
     # coupling breaks the halo symmetry), so this shortcut never skips a real transpose.
     isselfadjoint(L) && return _forest_capply!(x̄, L, ȳ, P, α, β)
+    # Diagonal transposes are pointwise; the gather + fold below would fold x̄'s
+    # ghost scratch into interiors (mirrors the un-prepared path in forest.jl).
+    isdiagonal(L) && return _forest_capply!(x̄, adjoint_operator(L), ȳ, P, α, β)
     if iszero(β)
         _forest_adjoint_sweep!(x̄, L, ȳ, P.grid, α)
         fold_bc!(x̄, P.grid)

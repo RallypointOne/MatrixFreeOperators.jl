@@ -132,6 +132,10 @@ function apply_adjoint!(
     # coarse–fine coupling breaks the halo symmetry), so this only fires when the
     # forward action IS the adjoint.
     isselfadjoint(L) && return apply!(x̄, L, ȳ, g, α, β)
+    # Diagonal transposes are pointwise (no cross-block coupling) and their
+    # per-leaf adjoint writes interiors only — the gather + fold machinery below
+    # would fold x̄'s ghost scratch into interiors, so it must be skipped.
+    isdiagonal(L) && return apply!(x̄, adjoint_operator(L), ȳ, g, α, β)
     if iszero(β)
         _forest_adjoint_sweep!(x̄, L, ȳ, g, α)
         fold_bc!(x̄, g)
