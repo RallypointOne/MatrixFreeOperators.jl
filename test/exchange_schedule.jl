@@ -55,6 +55,37 @@
         end
     end
 
+    @testset "bcfaces: physical-face lists per (dim, side)" begin
+        # 2×2 tiling: 2 leaves per non-periodic domain side; periodic dims stay empty.
+        for (bc, counts) in
+            ((dirichlet, (2, 2, 2, 2)), (periodic, (0, 0, 0, 0)), (mixed, (0, 0, 2, 2)))
+            bf = make_bf(bc)
+            sched = MFO._exchange_schedule(bf)
+            idx = 0
+            for d in 1:2, (s, list) in zip((-1, 1), sched.bcfaces[d])
+                idx += 1
+                want = [
+                    i for (i, K) in enumerate(bf.forest.leaves) if
+                    MFO.face_neighbor(bf.forest, K, d, s) === nothing
+                ]
+                @test list == want
+                @test length(list) == counts[idx]
+            end
+        end
+        # regeneration after refine!: lists follow the new leaf set
+        bf = make_bf(dirichlet)
+        refine!(bf, _ -> true)                          # 4×4 leaves at level 1
+        sched = MFO._exchange_schedule(bf)
+        for d in 1:2, (s, list) in zip((-1, 1), sched.bcfaces[d])
+            want = [
+                i for (i, K) in enumerate(bf.forest.leaves) if
+                MFO.face_neighbor(bf.forest, K, d, s) === nothing
+            ]
+            @test list == want
+            @test length(list) == 4
+        end
+    end
+
     @testset "halo_update! fills ghosts from the physical neighbor" begin
         # Independent of the schedule: compare each block's face-ghost interior band to
         # the same-level neighbor's boundary-interior band (topology recomputed here).
@@ -102,6 +133,50 @@
         end
     end
 
+    @testset "forest apply_bc! matches the per-leaf physical fill" begin
+        # Reference: per-leaf single-grid apply_bc! on hand-built leaf grids carrying
+        # the physical/Interface mix leaf grids themselves no longer encode.
+        rng = Random.MersenneTwister(3)
+        bf = make_bf(((Dirichlet(), Dirichlet()), (Neumann(), Neumann())))
+        refine!(bf, _ -> true)                          # boundary leaves above level 0
+        x = scalar_field(bf)
+        for i in 1:MFO.nleaves(bf)
+            rand!(rng, x.blocks[i])
+        end
+        ref = copy(x)
+        for (i, K) in enumerate(bf.forest.leaves)
+            lg = MFO.leaf_grid(bf, i)
+            mixbc = ntuple(2) do d
+                nblocks = bf.forest.nroot[d] << K.level
+                lo = K.coords[d] == 0 ? bf.bc[d][1] : MFO.Interface()
+                hi = K.coords[d] == nblocks - 1 ? bf.bc[d][2] : MFO.Interface()
+                (lo, hi)
+            end
+            mg = CartesianGrid{2,Float64,typeof(mixbc),typeof(bf.device),Nothing}(
+                lg.extent, lg.spacing, lg.size, lg.halo, mixbc, bf.device,
+                lg.local_range, nothing,
+            )
+            MFO.apply_bc!(ref.blocks[i], mg)
+        end
+        got = apply_bc!(copy(x), bf)
+        @test all(got.blocks[i] == ref.blocks[i] for i in 1:MFO.nleaves(bf))
+    end
+
+    @testset "forest apply_bc!/fold_bc! duality (⟨Bx,w⟩ = ⟨x,Bᵀw⟩)" begin
+        full_dot(a, b) = sum(i -> dot(vec(a.blocks[i]), vec(b.blocks[i])), 1:MFO.nleaves(a.grid))
+        rng = Random.MersenneTwister(7)
+        bf = make_bf(((Dirichlet(), Dirichlet()), (Neumann(), Neumann())))
+        x = scalar_field(bf)
+        w = scalar_field(bf)
+        for i in 1:MFO.nleaves(bf)
+            rand!(rng, x.blocks[i])
+            rand!(rng, w.blocks[i])
+        end
+        Bx = apply_bc!(copy(x), bf)
+        Btw = MFO.fold_bc!(copy(w), bf)
+        @test full_dot(Bx, w) ≈ full_dot(x, Btw)
+    end
+
     @testset "per-generation cache: reuse and rebuild" begin
         bf = make_bf(dirichlet)
         s1 = MFO._exchange_schedule(bf)
@@ -120,6 +195,8 @@
         bf = make_bf(((Dirichlet(), Dirichlet()), (Neumann(), Neumann())))
         @inferred MFO._exchange_schedule(bf)
         uf = set!(scalar_field(bf), x -> sinpi(x[1]) * x[2])
+        @inferred apply_bc!(uf, bf)
+        @inferred MFO.fold_bc!(uf, bf)
         function alloc_halo(f, g)
             halo_update!(f, g)
             halo_update!(f, g)

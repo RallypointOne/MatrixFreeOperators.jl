@@ -53,50 +53,15 @@ end
     block(f::BlockField, i::Integer, leaf_grid) -> Field
 
 The `i`-th leaf as an ordinary [`Field`](@ref) sharing storage with `f` (no copy),
-on its leaf [`CartesianGrid`](@ref). This is what per-block operators consume; pass
-a precomputed `leaf_grid` to avoid rebuilding it.
+on its leaf [`CartesianGrid`](@ref). This is what per-block operators consume; the
+3-arg form takes an already-computed `leaf_grid` (rebuilding one is cheap — every
+leaf shares one concrete all-`Interface` grid type).
 """
 function block(f::BlockField{L}, i::Integer, leaf_grid) where {L}
     _require_current(f)
     return Field{L}(f.blocks[i], leaf_grid)
 end
 block(f::BlockField, i::Integer) = block(f, i, leaf_grid(f.grid, i))
-
-#--------------------------------------------------------------------------------# Prepare-time leaf cache
-
-# Leaves grouped by concrete leaf-grid type — equivalently by BC signature, the only
-# type parameter `leaf_grid` varies. Each group is a homogeneous `Vector{Tuple{Int,G}}`
-# of (block index, leaf grid); the cache is a `Tuple` of groups so a per-group function
-# barrier ([`_foreach_leaf`](@ref)) keeps the apply loop type-stable and dispatch-free
-# despite `leaf_grid` being type-unstable across signatures — eliminating the per-
-# application leaf-grid rebuild (the dominant forest `mul!` allocation before caching).
-# Built once at `prepare`; interior blocks (all `Interface` faces) form the dominant
-# group, domain-boundary blocks the small remainder. The grouping is also the block
-# layout a packed GPU buffer would launch over.
-function _leaf_cache(bf::BlockForest)
-    buckets = IdDict{DataType,Vector}()
-    for i in 1:nleaves(bf)
-        lg = leaf_grid(bf, i)
-        push!(get!(() -> Tuple{Int,typeof(lg)}[], buckets, typeof(lg)), (i, lg))
-    end
-    return (values(buckets)...,)
-end
-
-# Apply `f(i, leaf_grid)` to every leaf type-stably: the tuple recursion unrolls at
-# compile time and each homogeneous group is a function barrier, so `f` specializes on
-# the concrete grid type and no leaf grid is rebuilt in the sweep.
-@inline _foreach_leaf(f::F, ::Tuple{}) where {F} = nothing
-@inline function _foreach_leaf(f::F, groups::Tuple) where {F}
-    _foreach_leaf_group(f, groups[1])
-    _foreach_leaf(f, Base.tail(groups))
-    return nothing
-end
-@inline function _foreach_leaf_group(f::F, group::Vector{Tuple{Int,G}}) where {F,G}
-    for (i, lg) in group
-        f(i, lg)
-    end
-    return nothing
-end
 
 Base.eltype(::BlockField{L,A}) where {L,A} = eltype(A)
 ncomponents(f::BlockField) = _ncomponents(eltype(f))

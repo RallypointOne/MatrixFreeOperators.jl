@@ -45,13 +45,14 @@ Neumann() = Neumann(0)
 """
     Interface()
 
-Inter-block interface "boundary" used on the internal faces of a
-[`BlockForest`](@ref) leaf — faces shared with a neighbor block rather than the
-physical domain boundary. The homogeneous fill (`apply_bc!`/`fold_bc!`) and the
-inhomogeneous lift skip `Interface` faces: their ghosts are filled by
-[`halo_update!`](@ref) from the neighbor block, so the two never touch the same
-ghost slab. Internal (not exported): `leaf_bc` places it on leaf grids — on a
-plain user-constructed `CartesianGrid` it would leave ghosts silently unfilled.
+Inter-block interface "boundary" carried on every face of a
+[`BlockForest`](@ref) leaf grid. The homogeneous fill (`apply_bc!`/`fold_bc!`)
+and the inhomogeneous lift skip `Interface` faces: inter-block ghosts are filled
+by [`halo_update!`](@ref) and physical-boundary ghosts by the forest-level face
+passes, so per-leaf BC sweeps never touch a ghost slab. Internal (not exported):
+`leaf_grid` places it — in a user grid's bc it is rejected at `BlockForest`
+construction, and on a plain `CartesianGrid` it would leave ghosts silently
+unfilled.
 """
 struct Interface <: AbstractBC end
 
@@ -72,6 +73,21 @@ _source_low(::Periodic, h::Int, n::Int, k::Int) = h + n + 1 - k
 _source_low(::AbstractBC, h::Int, n::Int, k::Int) = h + k
 _source_high(::Periodic, h::Int, n::Int, k::Int) = h + k
 _source_high(::AbstractBC, h::Int, n::Int, k::Int) = h + n + 1 - k
+
+# Forest face-pass capability gate: a physical BC must implement the fill/fold/lift
+# primitives before it can back a BlockForest boundary — erroring at construction
+# beats silently unfilled ghosts.
+_require_face_bc(::Dirichlet) = nothing
+_require_face_bc(::Neumann) = nothing
+function _require_face_bc(bc::AbstractBC)
+    throw(
+        ArgumentError(
+            "$(nameof(typeof(bc))) has no forest face-pass implementation; define " *
+            "_bc_sign, _offset_ghost!, and _require_face_bc methods to support it " *
+            "on a BlockForest",
+        ),
+    )
+end
 
 # Type-stable slab view along compile-time dimension D (selectdim with a runtime
 # dimension boxes the view type, which would allocate inside hot mul! loops).

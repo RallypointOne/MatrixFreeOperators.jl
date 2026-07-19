@@ -1,3 +1,6 @@
+# Top level (not in a @testset): struct definitions need global scope.
+struct UnsupportedBC <: MatrixFreeOperators.AbstractBC end
+
 @testset "BlockForest grid" begin
     MFO = MatrixFreeOperators
     Interface = MFO.Interface
@@ -12,6 +15,14 @@
         @test MFO.nleaves(bf) == 4                 # nroot = (2, 2)
         @test dimension(bf) == 2
         @test_throws ArgumentError BlockForest(base; blocksize=(5, 8), maxlevel=2)
+        # physical BCs without a face-pass implementation are rejected at construction
+        for bad in (
+            ((UnsupportedBC(), UnsupportedBC()), (Dirichlet(), Dirichlet())),
+            ((Dirichlet(), Dirichlet()), (Interface(), Interface())),
+        )
+            badbase = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bad)
+            @test_throws ArgumentError BlockForest(badbase; blocksize=(8, 8), maxlevel=2)
+        end
     end
 
     @testset "leaf geometry tiles the base at level 0" begin
@@ -30,30 +41,21 @@
         @test xlos ≈ [0.0, 1.0]                          # block width 4·0.25 = 1.0
     end
 
-    @testset "leaf boundary conditions (Interface on internal faces)" begin
+    @testset "leaf grids are all-Interface (one concrete type)" begin
+        # Physical BCs live on bf.bc, applied by the forest-level face pass; every
+        # leaf grid is the same concrete all-Interface type, so leaf_grid is
+        # type-stable.
         base = CartesianGrid(
             ((0.0, 1.0), (0.0, 1.0)), (16, 16);
             bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
         )
         bf = BlockForest(base; blocksize=(8, 8), maxlevel=2)   # nroot (2, 2)
-        bc00 = MFO.leaf_bc(bf, LeafKey(0, (0, 0)))
-        @test bc00[1] == (Dirichlet(), Interface())            # x: low domain, high internal
-        @test bc00[2] == (Neumann(), Interface())
-        bc11 = MFO.leaf_bc(bf, LeafKey(0, (1, 1)))
-        @test bc11[1] == (Interface(), Dirichlet())
-        @test bc11[2] == (Interface(), Neumann())
-    end
-
-    @testset "periodic ⇒ every face is Interface" begin
-        base = CartesianGrid(
-            ((0.0, 1.0), (0.0, 1.0)), (8, 8);
-            bc=((Periodic(), Periodic()), (Periodic(), Periodic())),
-        )
-        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
-        for (k, _) in leaves(bf)
-            bc = MFO.leaf_bc(bf, k)
-            @test all(face -> face[1] isa Interface && face[2] isa Interface, bc)
+        g1 = @inferred MFO.leaf_grid(bf, 1)
+        for (_, g) in leaves(bf)
+            @test typeof(g) === typeof(g1)
+            @test all(f -> f[1] isa Interface && f[2] isa Interface, boundary_conditions(g))
         end
+        @test bf.bc === base.bc
     end
 
     @testset "uniform refine halves spacing, multiplies leaves" begin
