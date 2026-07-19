@@ -122,6 +122,15 @@ end
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
 # allocates.
 _prepare_tree(L::AbstractOperator, ::AbstractField) = L
+# Coefficient layout normalization: a BlockField coefficient under a packed
+# prototype is packed once here, so the prepared hot path dispatches to the
+# forest-native kernel sweep instead of silently staying on the per-leaf
+# fallback. Sound because these leaves are isconstant; staleness after a regrid
+# is caught by the PreparedForest generation guard. (Packed coefficients under a
+# BlockField prototype need no conversion — block views serve the fallback.)
+_prepare_tree(S::ScalingOp{<:BlockField}, ::PackedBlockField) = ScalingOp(pack(S.coeff))
+_prepare_tree(L::Advection{<:BlockForest,<:BlockField}, ::PackedBlockField) =
+    Advection(L.grid, pack(L.velocity))
 _prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))
 _prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)
 
