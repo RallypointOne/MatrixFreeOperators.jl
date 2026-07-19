@@ -20,15 +20,51 @@
             g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8); bc=bc)
             bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
             uf = set!(scalar_field(bf), fun)
-            # Laplacian runs the single-launch kernel; derivative runs the fallback sweep.
             for makeL in (laplacian, g -> derivative(g, 1; order=1))
                 L = makeL(bf)
                 @test parity(L * pack(uf), L * uf)
             end
-            # Non-uniform forest: the kernel derives per-leaf spacing from the levels SoA.
             refine!(bf, x -> x[1] < 0.5)
             ur = set!(scalar_field(bf), fun)
             @test parity(laplacian(bf) * pack(ur), laplacian(bf) * ur)
+        end
+    end
+
+    @testset "forest-native kernel: direct launch bit-parity (CPU backend)" begin
+        # The public API routes non-GPU backends to the fallback sweep, so the kernel
+        # body is exercised here by direct launch — same coverage MFO_TEST_GPU gets
+        # through the API on CUDA.
+        for refined in (false, true)
+            g = CartesianGrid(
+                ((0.0, 1.0), (0.0, 1.0)), (8, 8);
+                bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+            )
+            bf = BlockForest(g; blocksize=(4, 4), maxlevel=2)
+            refined && refine!(bf, x -> x[1] < 0.5)   # kernel reads per-leaf levels
+            u = set!(scalar_field(bf), fun)
+            x = pack(u)
+            MFO.halo_update!(x, bf)
+            MFO.apply_bc!(x, bf)
+            ref = MFO._forest_sweep_leaves!(similar(x), laplacian(bf), x, bf, 2.0, false)
+            y = MFO._zero_all!(similar(x))
+            kernel! = MFO._lap_forest_kernel!(KernelAbstractions.CPU())
+            kernel!(
+                y.data, x.data, x.levels, bf.spacing0, bf.halo, 2.0, false;
+                ndrange=(bf.blocksize..., MFO.nleaves(bf)),
+            )
+            @test parity(y, ref)
+            # accumulating form: β ≠ 0 blends into existing y
+            y2 = MFO._zero_all!(similar(x))
+            for i in 1:MFO.nleaves(bf)
+                interior(MFO.block(y2, i)) .= 1.0
+            end
+            ref2 = copy(y2)
+            MFO._forest_sweep_leaves!(ref2, laplacian(bf), x, bf, 2.0, 3.0)
+            kernel!(
+                y2.data, x.data, x.levels, bf.spacing0, bf.halo, 2.0, 3.0;
+                ndrange=(bf.blocksize..., MFO.nleaves(bf)),
+            )
+            @test parity(y2, ref2)
         end
     end
 
@@ -136,7 +172,7 @@
         @test_throws ArgumentError mul!(out, A, v)      # stale prepared operator
     end
 
-    @testset "single-launch mul! allocations are forest-size independent" begin
+    @testset "packed mul! allocations: parity with the reference path (CPU)" begin
         bc = ((Dirichlet(), Dirichlet()), (Neumann(), Neumann()))
         # DCE-proof: consume the output so the measured mul! cannot be elided.
         function alloc_mul(P, out, v)
@@ -145,7 +181,13 @@
             a = @allocated mul!(out, P, v)
             return a, sum(out)
         end
-        allocs = map((16, 32)) do n
+        # Under Pkg.test's --check-bounds=yes BOTH per-leaf sweeps allocate per leaf
+        # (reference ~48 B/leaf, packed ~96 B/leaf on 1.12); under default flags both
+        # are exactly 0 B. So the CPU fallback gets the same loose per-leaf bound the
+        # reference path uses (forest_prepare.jl); the kernel's size-independence is
+        # asserted by direct launch below.
+        alloc_bound(nl) = 1000 * nl
+        for n in (16, 32)
             gn = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (n, n); bc=bc)
             bfn = BlockForest(gn; blocksize=(4, 4), maxlevel=2)
             un = set!(scalar_field(bfn), fun)
@@ -153,11 +195,34 @@
             P = prepare(laplacian(bfn), pack(un))
             a, s = alloc_mul(P, similar(vn), vn)
             @test isfinite(s)
+            @test a ≤ alloc_bound(MFO.nleaves(bfn))
+        end
+    end
+
+    @testset "single-launch kernel allocations are forest-size independent" begin
+        bc = ((Dirichlet(), Dirichlet()), (Neumann(), Neumann()))
+        # The #7 closure claim, asserted where it holds — the kernel itself: one
+        # launch whose cost is a fixed KA constant, flat in nleaves (16 vs 64).
+        # DCE-proof: consume the swept output.
+        function alloc_launch(kernel!, y, x, bf)
+            args = (y.data, x.data, x.levels, bf.spacing0, bf.halo, true, false)
+            nd = (bf.blocksize..., MFO.nleaves(bf))
+            kernel!(args...; ndrange=nd)
+            kernel!(args...; ndrange=nd)
+            a = @allocated kernel!(args...; ndrange=nd)
+            return a, sum(sum(interior(MFO.block(y, i))) for i in 1:MFO.nleaves(bf))
+        end
+        kernel! = MFO._lap_forest_kernel!(KernelAbstractions.CPU())
+        allocs = map((16, 32)) do n
+            gn = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (n, n); bc=bc)
+            bfn = BlockForest(gn; blocksize=(4, 4), maxlevel=2)
+            x = pack(set!(scalar_field(bfn), fun))
+            MFO.halo_update!(x, bfn)
+            MFO.apply_bc!(x, bfn)
+            a, s = alloc_launch(kernel!, MFO._zero_all!(similar(x)), x, bfn)
+            @test isfinite(s)
             a
         end
-        # The whole point of the packed sweep (#7 closure): one launch, so the cost
-        # cannot scale with nleaves (16 vs 64 leaves here). The absolute bound is the
-        # KA CPU-launch constant (~480 B measured), kept loose for version drift.
         @test allocs[1] == allocs[2]
         @test allocs[1] ≤ 4096
     end

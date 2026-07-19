@@ -28,8 +28,16 @@ end
 
 # The stencil sweep behind the halo/BC fills — the dispatch seam forest-native
 # kernels override per (operator, packed layout). The reference sweep runs the
-# ordinary single-grid apply! per leaf; packed fields hit it too, via block views.
+# ordinary single-grid apply! per leaf; packed fields hit it too, via block views,
+# and kernel overrides fall back to it on non-GPU backends (broadcast fusion beats
+# KA CPU codegen).
 function _forest_sweep!(
+    y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β
+)
+    return _forest_sweep_leaves!(y, L, x, g, α, β)
+end
+
+function _forest_sweep_leaves!(
     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β
 )
     for i in 1:nleaves(g)

@@ -94,29 +94,37 @@ end
         n = length(flatten(scalar_field(bf)))
         v = rand(rng, n)
         wf = rand(rng, n)
-        dv = zero(v)
-        Enzyme.autodiff(
-            Enzyme.set_runtime_activity(Enzyme.Reverse),
-            ad_forest_loss,
-            Enzyme.Active,
-            Enzyme.Duplicated(v, dv),
-            Enzyme.Const(wf),
-            Enzyme.Const(L),
-            Enzyme.Const(bf),
-        )
-        fd = fd_gradient(vd -> ad_forest_loss(vd, wf, L, bf), v)
-        @test dv ≈ fd atol = 1e-5
 
-        # pullback = declared adjoint action for a linear operator, incl. the
-        # cross-block ghost fold (and its coarse–fine transpose when refined)
+        # Ground truth: the declared adjoint action (exact for a linear operator,
+        # incl. the cross-block ghost fold and its coarse–fine transpose when
+        # refined), sanity-checked against finite differences.
         w̃ = scalar_field(bf)
         flat_to_interior!(w̃, wf)
-        lt = apply_adjoint!(scalar_field(bf), L, w̃, bf)
-        @test dv ≈ flatten(lt) rtol = 1e-8
+        lt = flatten(apply_adjoint!(scalar_field(bf), L, w̃, bf))
+        fd = fd_gradient(vd -> ad_forest_loss(vd, wf, L, bf), v)
+        @test fd ≈ lt atol = 1e-5
+
+        # Enzyme hits EnzymeNoTypeError inside _run_fills! (the coarse–fine fill
+        # sweep) on Julia 1.10 — refined forests only; see issue #26.
+        if !refined || VERSION >= v"1.11"
+            dv = zero(v)
+            Enzyme.autodiff(
+                Enzyme.set_runtime_activity(Enzyme.Reverse),
+                ad_forest_loss,
+                Enzyme.Active,
+                Enzyme.Duplicated(v, dv),
+                Enzyme.Const(wf),
+                Enzyme.Const(L),
+                Enzyme.Const(bf),
+            )
+            @test dv ≈ lt rtol = 1e-8
+        else
+            @test_skip "Enzyme refined-forest gradient — EnzymeNoTypeError on Julia 1.10"
+        end
 
         cache = Mooncake.prepare_gradient_cache(ad_forest_loss, v, wf, L, bf)
         _, grads = Mooncake.value_and_gradient!!(cache, ad_forest_loss, v, wf, L, bf)
-        @test grads[2] ≈ dv rtol = 1e-10
+        @test grads[2] ≈ lt rtol = 1e-8
     end
 
     @testset "gradient through the nonlinear leaf u·∇u" begin

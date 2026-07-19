@@ -2,12 +2,14 @@
 
 # Single-launch stencil sweeps over PackedBlockField storage: one
 # KernelAbstractions kernel over ndrange (blocksize..., nleaves) replaces the
-# per-leaf reference loop in _forest_sweep!. Kernel bodies reuse the per-cell
-# stencil functions of the broadcast path — the numerical definition never
-# forks — and recompute per-leaf geometry from the levels SoA. Adjoints stay
-# declared, never AD-through-kernel: the grid-aware isselfadjoint shortcut
-# reaches the kernel on uniform forests, and non-uniform adjoints run the
-# per-leaf transpose-gather fallback.
+# per-leaf reference loop in _forest_sweep! — on GPU backends only, where the
+# per-leaf launch cost is the problem; non-GPU backends route to
+# _forest_sweep_leaves!, whose fused broadcasts outperform KA CPU codegen.
+# Kernel bodies reuse the per-cell stencil functions of the broadcast path —
+# the numerical definition never forks — and recompute per-leaf geometry from
+# the levels SoA. Adjoints stay declared, never AD-through-kernel: the
+# grid-aware isselfadjoint shortcut reaches the kernel on uniform forests, and
+# non-uniform adjoints run the per-leaf transpose-gather fallback.
 
 # Bit-identical to _inv_spacing2(leaf_grid(bf, i)): _leaf_spacing divides the
 # root spacing by 1 << level, _inv_spacing2 inverts its square.
@@ -31,9 +33,13 @@ end
 end
 
 function _forest_sweep!(
-    y::PackedBlockField, ::Laplacian, x::PackedBlockField, g::BlockForest, α, β
+    y::PackedBlockField, L::Laplacian, x::PackedBlockField, g::BlockForest, α, β
 )
-    kernel! = _lap_forest_kernel!(KernelAbstractions.get_backend(g))
+    backend = KernelAbstractions.get_backend(g)
+    # Broadcast fusion beats KA CPU codegen for this stencil (~1.6× measured); the
+    # single launch pays only where per-leaf launches are the cost (GPU backends).
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)
+    kernel! = _lap_forest_kernel!(backend)
     kernel!(
         y.data, x.data, x.levels, g.spacing0, g.halo, α, β;
         ndrange=(g.blocksize..., nleaves(g)),
