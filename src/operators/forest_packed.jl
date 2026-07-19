@@ -8,8 +8,11 @@
 # Kernel bodies reuse the per-cell stencil functions of the broadcast path —
 # the numerical definition never forks — and recompute per-leaf geometry from
 # the levels SoA. Adjoints stay declared, never AD-through-kernel: the
-# grid-aware isselfadjoint shortcut reaches the kernel on uniform forests, and
-# non-uniform adjoints run the per-leaf transpose-gather fallback.
+# grid-aware isselfadjoint shortcut reaches the forward kernel on uniform
+# forests, and non-uniform adjoints run declared transpose-gather kernels
+# (reusing the _*_adjoint_gather stencils) behind the _forest_adjoint_sweep!
+# seam — over the full padded extent, so ghost cotangents are written for the
+# callers' fold_bc!/halo_update_adjoint! transposes to fold.
 
 # Bit-identical to _inv_spacing2(leaf_grid(bf, i)): _leaf_spacing divides the
 # root spacing by 1 << level, _inv_spacing2 inverts its square.
@@ -232,4 +235,116 @@ function _forest_sweep!(
     # κ = true: α * true * x ≡ α * x bit-exactly.
     kernel!(y.data, x.data, true, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g)))
     return y
+end
+
+#--------------------------------------------------------------------------------# Adjoint transpose-gather kernels (packed sweeps)
+
+# Single-launch transposes of the stencil sweeps, mirroring the per-leaf
+# adjoint_gather! contract: ȳ's ghosts are zeroed (interior-only cotangents),
+# every padded cell of x̄ is overwritten (ghost cotangents feed the callers'
+# fold_bc!/halo_update_adjoint!), and the leaf-level fold_bc! is omitted — a
+# no-op on the all-Interface leaf grids. Unlike the forward kernels the ndrange
+# spans the full padded extent and the index is used directly (no halo offset);
+# the seam contract is overwrite-only (no β — callers blend). α folds into the
+# gather in-kernel; the reference post-multiplies, bit-equal by commutativity.
+
+@kernel function _lap_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    J = CartesianIndex(Base.front(idx))
+    ℓ = @inbounds levels[leaf]
+    v = α * _lap_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h2(spacing0, ℓ))
+    @inbounds x̄[J, leaf] = v
+end
+
+@kernel function _deriv_adjoint_forest_kernel!(
+    x̄, @Const(ȳ), @Const(levels), spacing0, dim, order, α
+)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    J = CartesianIndex(Base.front(idx))
+    ℓ = @inbounds levels[leaf]
+    v =
+        α * _deriv_adjoint_gather(
+            _leaf_slice(ȳ, leaf), J, dim, order, _leaf_inv_h(spacing0, ℓ)[dim]
+        )
+    @inbounds x̄[J, leaf] = v
+end
+
+@kernel function _grad_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    J = CartesianIndex(Base.front(idx))
+    ℓ = @inbounds levels[leaf]
+    v = α * _grad_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h(spacing0, ℓ))
+    @inbounds x̄[J, leaf] = v
+end
+
+@kernel function _div_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    J = CartesianIndex(Base.front(idx))
+    ℓ = @inbounds levels[leaf]
+    v = α * _div_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h(spacing0, ℓ))
+    @inbounds x̄[J, leaf] = v
+end
+
+function _forest_adjoint_sweep!(
+    x̄::PackedBlockField, L::Laplacian, ȳ::PackedBlockField, g::BlockForest, α
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU ||
+        return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)
+    zero_ghosts!(ȳ)
+    kernel! = _lap_adjoint_forest_kernel!(backend)
+    kernel!(
+        x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;
+        ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),
+    )
+    return x̄
+end
+
+function _forest_adjoint_sweep!(
+    x̄::PackedBlockField, L::Derivative, ȳ::PackedBlockField, g::BlockForest, α
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU ||
+        return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)
+    zero_ghosts!(ȳ)
+    kernel! = _deriv_adjoint_forest_kernel!(backend)
+    kernel!(
+        x̄.data, ȳ.data, ȳ.levels, g.spacing0, L.dim, L.order, α;
+        ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),
+    )
+    return x̄
+end
+
+function _forest_adjoint_sweep!(
+    x̄::PackedBlockField, L::Gradient, ȳ::PackedBlockField, g::BlockForest, α
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU ||
+        return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)
+    zero_ghosts!(ȳ)
+    kernel! = _grad_adjoint_forest_kernel!(backend)
+    kernel!(
+        x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;
+        ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),
+    )
+    return x̄
+end
+
+function _forest_adjoint_sweep!(
+    x̄::PackedBlockField, L::Divergence, ȳ::PackedBlockField, g::BlockForest, α
+)
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU ||
+        return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)
+    zero_ghosts!(ȳ)
+    kernel! = _div_adjoint_forest_kernel!(backend)
+    kernel!(
+        x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;
+        ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),
+    )
+    return x̄
 end
