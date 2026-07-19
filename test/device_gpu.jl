@@ -201,6 +201,61 @@ CUDA.allowscalar(false)
         end
     end
 
+    @testset "part-3 batched exchange/BC + flat broadcasts on device" begin
+        MFO = MatrixFreeOperators
+        base = CartesianGrid(
+            ((0.0, 2π), (0.0, 1.0)), (16, 16);
+            bc=((Periodic(), Periodic()), (Dirichlet(), Dirichlet())),
+        )
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+        refine!(bf, x -> x[1] < π)
+        u = set!(scalar_field(bf), x -> sin(x[1]) * x[2])
+        p = pack(u)
+        # host reference exchange + BC
+        pr = copy(p)
+        MFO.halo_update!(pr, bf)
+        MFO.apply_bc!(pr, bf)
+        # kernelized path through the public API on the adapted twin
+        pg = Adapt.adapt(CuArray, copy(p))
+        MFO.halo_update!(pg, pg.grid)
+        MFO.apply_bc!(pg, pg.grid)
+        back = Array(pg.data)
+        h, n = bf.halo, bf.blocksize
+        for l in 1:MFO.nleaves(bf), I in CartesianIndices(MFO._block_array(pr, l))
+            out = count(d -> !(h[d] < I[d] <= h[d] + n[d]), 1:2)
+            out >= 2 && continue    # copy corners: documented divergence
+            @test back[I, l] ≈ MFO._block_array(pr, l)[I]
+        end
+        # prepared mul! (single-broadcast flat transfers) parity, incl. axpby
+        v = flatten(p)
+        out = similar(v)
+        mul!(out, prepare(laplacian(bf), p), v)
+        pg2 = Adapt.adapt(CuArray, pack(u))
+        vg = flatten(pg2)
+        outg = similar(vg)
+        Ag = prepare(Adapt.adapt(CuArray, laplacian(bf)), pg2)
+        mul!(outg, Ag, vg)
+        @test Array(outg) ≈ out
+        out2 = copy(v)
+        outg2 = CuArray(copy(v))
+        mul!(out2, prepare(laplacian(bf), p), v, 2.0, 3.0)
+        mul!(outg2, Ag, vg, 2.0, 3.0)
+        @test Array(outg2) ≈ out2
+        # regrid invalidates the device schedule: fresh generation rebuilds
+        refine!(bf, x -> x[2] < 0.5)
+        u2 = set!(scalar_field(bf), x -> sin(x[1]) * x[2])
+        pr2 = pack(u2)
+        MFO.halo_update!(pr2, bf)
+        pg3 = Adapt.adapt(CuArray, pack(u2))
+        MFO.halo_update!(pg3, pg3.grid)
+        back3 = Array(pg3.data)
+        for l in 1:MFO.nleaves(bf), I in CartesianIndices(MFO._block_array(pr2, l))
+            out3 = count(d -> !(h[d] < I[d] <= h[d] + n[d]), 1:2)
+            out3 >= 2 && continue
+            @test back3[I, l] ≈ MFO._block_array(pr2, l)[I]
+        end
+    end
+
     @testset "Krylov cg parity" begin
         σ = set!(scalar_field(g), x -> 1 + x[2])
         K = scaling(σ) - laplacian(g)
