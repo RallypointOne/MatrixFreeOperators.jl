@@ -427,15 +427,15 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="status" class="level2">
 <h2 class="anchored" data-anchor-id="status">Status</h2>
-<p>Every AMR phase through the regrid driver is built; the forest is adaptive end-to-end (solve → indicator → <code>regrid!</code> → re-<code>prepare</code>). What remains is the performance phase — packed contiguous block storage with forest-native kernels — staged as packed storage plus a Laplacian kernel first, then the remaining operator kernels and a kernelized exchange.</p>
+<p>Every AMR phase is built, including the packed-storage performance phase: the forest is adaptive end-to-end (solve → indicator → <code>regrid!</code> → re-<code>prepare</code>), and on GPU backends the packed layout sweeps all leaves in single KernelAbstractions launches with a batched device halo exchange.</p>
 <pre><code>  Phase 0  ██████████  DONE   forest topology + BlockForest grid + BlockField
   Phase 1  ██████████  DONE   inter-block halo_update! + operator PARITY
   Phase 2  ██████████  DONE   coarse–fine INTERPOLATION (non-uniform forests)
   Phase 3  ██████████  DONE   Restriction/Prolongation + V-cycle MULTIGRID
   Phase 4  ██████████  DONE   indicator-driven REGRID driver (regrid!)
-  Phase 5  ░░░░░░░░░░  next   packed storage (PackedBlockField) + Laplacian kernel
-           ░░░░░░░░░░  then   per-operator forest kernels + kernelized exchange</code></pre>
-<p>Once the packed phase lands, <code>pack(u)</code> will convert a <code>BlockField</code> into a <code>PackedBlockField</code> — every leaf in one contiguous buffer — and <code>prepare(L, pack(u))</code> selects the packed path by dispatch (<code>unpack</code> converts back). On GPU backends the packed sweep is a single kernel launch over all leaves (instead of one per leaf); on CPU it runs the same per-leaf fused broadcasts as the reference layout, so packed storage costs nothing extra there. The reference <code>BlockField</code> remains the path for AD, Reactant, and regrid-heavy workflows, since a packed field must be re-packed after each regrid.</p>
+  Phase 5  ██████████  DONE   packed storage (PackedBlockField) + Laplacian kernel
+           ██████████  DONE   per-operator forest kernels + kernelized exchange</code></pre>
+<p><code>pack(u)</code> converts a <code>BlockField</code> into a <code>PackedBlockField</code> — every leaf in one contiguous buffer — and <code>prepare(L, pack(u))</code> selects the packed path by dispatch (<code>unpack</code> converts back). On GPU backends the packed sweep is a single kernel launch over all leaves instead of one per leaf: measured on an RTX 4000 Ada (<code>benchmark/gpu.jl</code>), packed <code>mul!</code> runs 30–95× faster than the per-leaf device path at equal DOFs, host allocations stay flat in the leaf count, and the batched exchange kernels beat the per-descriptor loop on the same device data by 230–1370×. On CPU it runs the same per-leaf fused broadcasts as the reference layout, so packed storage costs nothing extra there. The reference <code>BlockField</code> remains the path for AD, Reactant, and regrid-heavy workflows, since a packed field must be re-packed after each regrid.</p>
 
 
 </section>
