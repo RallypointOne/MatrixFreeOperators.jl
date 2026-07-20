@@ -48,7 +48,7 @@ for cycle in 1:4
     global η, u = regrid!(η, u; refine=b -> maximum(norm, interior(b)) > τ)
 end
 
-fig = Figure(size=(560, 480))
+fig = Figure(size=(780, 660), fontsize=17)
 ax = Axis(fig[1, 1]; xlabel="x", ylabel="y", aspect=DataAspect(),
           title="adaptive -∇²u = f: solution + leaf blocks by level")
 hm = nothing
@@ -60,14 +60,20 @@ for (i, (key, lg)) in enumerate(leaves(bf))
     global hm = heatmap!(ax, xs, ys, collect(interior(MFO.block(u, i))); colorrange=(0, 1))
 end
 levelcolors = Makie.wong_colors()
+# Thin the outlines with depth so the fine blocks do not mat over the solution.
 for (key, lg) in leaves(bf)
     ext = lg.extent
     lines!(ax,
            [ext[1][1], ext[1][2], ext[1][2], ext[1][1], ext[1][1]],
            [ext[2][1], ext[2][1], ext[2][2], ext[2][2], ext[2][1]];
-           color=levelcolors[key.level + 1], linewidth=0.8)
+           color=levelcolors[key.level + 1], linewidth=max(0.7, 2.2 / 1.5^key.level))
 end
-Colorbar(fig[1, 2], hm)
+Colorbar(fig[1, 2], hm; label="u")
+maxlev = maximum(k -> k.level, bf.forest.leaves)
+fig[2, 1:2] = Legend(fig,
+                     [LineElement(color=levelcolors[l + 1], linewidth=3) for l in 0:maxlev],
+                     ["level $l" for l in 0:maxlev], "leaf refinement";
+                     orientation=:horizontal, framevisible=false, titleposition=:left)
 figpath = joinpath(@__DIR__, "adaptive_poisson.png")
 save(figpath, fig)
 @printf "figure: %s\n" figpath
