@@ -67,6 +67,48 @@ Base.copy(f::PackedBlockField{L,A,V,G}) where {L,A,V,G} =
 
 _zero_all!(f::PackedBlockField) = (fill!(f.data, zero(eltype(f))); f)
 
+# Whole-forest interior view: the flat vector's layout (leaf-major contiguous
+# block ranges, column-major interior, component-fastest) is exactly a reshape
+# against this view, so the flat boundary is ONE broadcast instead of nleaves
+# per-leaf copies.
+_interior_view(f::PackedBlockField) =
+    _interior_view_data(f.data, f.grid.halo, f.grid.blocksize)
+function _interior_view_data(
+    data::AbstractArray{<:Any,M}, h::NTuple{N,Int}, n::NTuple{N,Int}
+) where {M,N}
+    rs = ntuple(d -> (h[d] + 1):(h[d] + n[d]), Val(N))
+    return view(data, rs..., Colon())
+end
+
+# GPU-gated single-broadcast flat transfers (CPU keeps the per-leaf loops, the
+# same execution-mode-per-backend rule as the kernel sweeps). Exact axpby
+# contract of the per-leaf primitive, including β = 0 never reading v.
+function flat_to_interior!(f::PackedBlockField, v::AbstractVector)
+    KernelAbstractions.get_backend(f.data) isa KernelAbstractions.GPU ||
+        return _flat_to_interior_leaves!(f, v)
+    _require_current(f)
+    dims = (f.grid.blocksize..., nleaves(f.grid))
+    _interior_view(f) .= _as_eltype(eltype(f), v, dims)
+    return f
+end
+
+function interior_to_flat!(
+    v::AbstractVector, f::PackedBlockField, α::Number=true, β::Number=false
+)
+    KernelAbstractions.get_backend(f.data) isa KernelAbstractions.GPU ||
+        return _interior_to_flat_leaves!(v, f, α, β)
+    _require_current(f)
+    dims = (f.grid.blocksize..., nleaves(f.grid))
+    vi = _as_eltype(eltype(f), v, dims)
+    xi = _interior_view(f)
+    if iszero(β)
+        vi .= α .* xi
+    else
+        vi .= α .* xi .+ β .* vi
+    end
+    return v
+end
+
 function Adapt.adapt_structure(to, f::PackedBlockField{L}) where {L}
     data = Adapt.adapt(to, f.data)
     levels = Adapt.adapt(to, f.levels)

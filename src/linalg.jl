@@ -446,16 +446,9 @@ function LinearAlgebra.mul!(
             "(refine!/coarsen!/balance!); re-run prepare on the current forest",
         ),
     )
-    xpad = P.xpad
-    for i in 1:nleaves(P.grid)
-        flat_to_interior!(block(xpad, i, leaf_grid(P.grid, i)), view(x, _block_range(xpad, i)))
-    end
-    _forest_capply!(P.ypad, P.op, xpad, P, true, false)
-    ypad = P.ypad
-    for i in 1:nleaves(P.grid)
-        lg = leaf_grid(P.grid, i)
-        interior_to_flat!(view(y, _block_range(ypad, i)), block(ypad, i, lg), α, β)
-    end
+    flat_to_interior!(P.xpad, x)
+    _forest_capply!(P.ypad, P.op, P.xpad, P, true, false)
+    interior_to_flat!(y, P.ypad, α, β)
     return y
 end
 function LinearAlgebra.mul!(y::AbstractVector, P::PreparedForest, x::AbstractVector)

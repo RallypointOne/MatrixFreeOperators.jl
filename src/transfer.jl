@@ -264,14 +264,30 @@ then coarse→fine quadratic interpolation, then fine→coarse flux-matching
 restriction (which reads the interpolation-filled fine ghosts). Domain-boundary
 faces are left to the forest-level `apply_bc!` face pass. Must run once over the whole forest
 before any stencil sweep.
+
+On a [`PackedBlockField`](@ref) with a GPU backend the phases run as batched
+descriptor kernels over the flattened device schedule — bit-identical to the
+reference loops except corner ghost cells of the copy phase (the batched
+per-dim launches let the last dim win where the host order interleaves), which
+no axis-aligned stencil reads and adjoints require to be zero.
 """
 function halo_update!(x::AbstractBlockField, g::BlockForest)
     _require_current(x)
-    sched = _exchange_schedule(g)
+    _run_exchange!(x, g, _exchange_schedule(g))
+    return x
+end
+
+# Forward-exchange execution seam — device layouts override per (layout, backend)
+# with batched descriptor kernels (transfer_kernels.jl); the reference runs
+# per-descriptor broadcasts.
+_run_exchange!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =
+    _run_exchange_host!(x, sched)
+
+function _run_exchange_host!(x::AbstractBlockField, sched::ExchangeSchedule)
     _run_copies!(x, sched.copies)
     _run_fills!(x, sched.interp)
     _run_fills!(x, sched.restrict)
-    return x
+    return nothing
 end
 
 # Function barrier: specializing on the concrete field type makes each `_block_view`
@@ -362,9 +378,17 @@ in order `1:N`, so corner ghosts are consistent ghost-of-ghost values. Runs afte
 """
 function apply_bc!(x::AbstractBlockField, g::BlockForest)
     _require_current(x)
-    sched = _exchange_schedule(g)
-    _fill_bcfaces_dims!(x, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
+    _run_bc!(x, g, _exchange_schedule(g))
     return x
+end
+
+# Physical-BC execution seam, mirroring _run_exchange!.
+_run_bc!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =
+    _run_bc_host!(x, g, sched)
+
+function _run_bc_host!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule)
+    _fill_bcfaces_dims!(x, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
+    return nothing
 end
 
 function _fill_bcfaces_dims!(
