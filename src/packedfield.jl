@@ -46,6 +46,15 @@ end
 
 Base.eltype(::PackedBlockField{L,A}) where {L,A} = eltype(A)
 
+function component(f::PackedBlockField{L}, d::Integer) where {L}
+    1 <= d <= ncomponents(f) ||
+        throw(ArgumentError("component $d out of range for $(ncomponents(f)) components"))
+    data = getindex.(f.data, d)
+    return PackedBlockField{L,typeof(data),typeof(f.levels),typeof(f.grid)}(
+        data, f.levels, f.grid, f.generation
+    )
+end
+
 # Derived fields inherit the source's generation (same rule as BlockField).
 Base.similar(f::PackedBlockField{L,A,V,G}) where {L,A,V,G} =
     PackedBlockField{L,A,V,G}(similar(f.data), f.levels, f.grid, f.generation)
@@ -83,6 +92,10 @@ Copy `f` into packed contiguous storage: one `(blocksize .+ 2halo ..., nleaves)`
 array on the same device, leaves in the same Morton order. The packed field is
 what the forest-native kernel sweeps consume; `prepare` on a packed prototype
 yields packed scratch, so the prepared `mul!` runs the single-launch path.
+Coefficient fields ([`scaling`](@ref), [`advection`](@ref)) follow the same
+layout rule: their kernels engage when the coefficient is packed too — `prepare`
+packs `BlockField` coefficients under a packed prototype automatically, and any
+remaining layout mismatch degrades to the per-leaf reference sweep.
 
 ### Examples
 

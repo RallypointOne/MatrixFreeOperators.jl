@@ -122,6 +122,15 @@ end
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
 # allocates.
 _prepare_tree(L::AbstractOperator, ::AbstractField) = L
+# Coefficient layout normalization: a BlockField coefficient under a packed
+# prototype is packed once here, so the prepared hot path dispatches to the
+# forest-native kernel sweep instead of silently staying on the per-leaf
+# fallback. Sound because these leaves are isconstant; staleness after a regrid
+# is caught by the PreparedForest generation guard. (Packed coefficients under a
+# BlockField prototype need no conversion — block views serve the fallback.)
+_prepare_tree(S::ScalingOp{<:BlockField}, ::PackedBlockField) = ScalingOp(pack(S.coeff))
+_prepare_tree(L::Advection{<:BlockForest,<:BlockField}, ::PackedBlockField) =
+    Advection(L.grid, pack(L.velocity))
 _prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))
 _prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)
 
@@ -244,19 +253,16 @@ function _forest_capply_adjoint!(
     # isselfadjoint is grid-aware (false on a non-uniform forest, whose coarse–fine
     # coupling breaks the halo symmetry), so this shortcut never skips a real transpose.
     isselfadjoint(L) && return _forest_capply!(x̄, L, ȳ, P, α, β)
+    # Diagonal transposes are pointwise; the gather + fold below would fold x̄'s
+    # ghost scratch into interiors (mirrors the un-prepared path in forest.jl).
+    isdiagonal(L) && return _forest_capply!(x̄, adjoint_operator(L), ȳ, P, α, β)
     if iszero(β)
-        for i in 1:nleaves(P.grid)
-            lg = leaf_grid(P.grid, i)
-            apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)
-        end
+        _forest_adjoint_sweep!(x̄, L, ȳ, P.grid, α)
         fold_bc!(x̄, P.grid)
         halo_update_adjoint!(x̄, P.grid)
     else
         s = P.adjscratch
-        for i in 1:nleaves(P.grid)
-            lg = leaf_grid(P.grid, i)
-            apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)
-        end
+        _forest_adjoint_sweep!(s, L, ȳ, P.grid, true)
         fold_bc!(s, P.grid)
         halo_update_adjoint!(s, P.grid)
         for i in 1:nleaves(P.grid)
@@ -373,7 +379,7 @@ function boundary_rhs(L::AbstractOperator, x_proto::AbstractBlockField)
     b = allocate_output(L, x_proto)
     for i in 1:nleaves(g)
         lg = leaf_grid(g, i)
-        _apply_raw!(block(b, i, lg), L, block(z, i, lg), lg, true, false)
+        _apply_raw!(block(b, i, lg), _leaf_op(L, i, lg), block(z, i, lg), lg, true, false)
     end
     return b
 end

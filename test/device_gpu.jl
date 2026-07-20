@@ -135,6 +135,72 @@ CUDA.allowscalar(false)
         @test Array(yrg.data) ≈ yr.data
     end
 
+    @testset "part-2 packed kernels on device" begin
+        MFO = MatrixFreeOperators
+        base = CartesianGrid(
+            ((0.0, 2π), (0.0, 1.0)), (16, 16);
+            bc=((Periodic(), Periodic()), (Dirichlet(), Dirichlet())),
+        )
+        sfun = x -> sin(x[1]) * x[2]
+        wfun = x -> SVector(sin(x[1]) + x[2], cos(x[1]) - 0.5 * x[2])
+        for refined in (false, true)
+            bf = BlockForest(base; blocksize=(8, 8), maxlevel=2)
+            refined && refine!(bf, x -> x[1] < π)
+            u = set!(scalar_field(bf), sfun)
+            w = set!(vector_field(bf), wfun)
+            κp = pack(set!(scalar_field(bf), x -> 1 + x[2]^2))
+            velp = pack(set!(vector_field(bf), wfun))
+            p = pack(u)
+            pw = pack(w)
+            pg = Adapt.adapt(CuArray, p)
+            pwg = Adapt.adapt(CuArray, pw)
+
+            # un-prepared public path: every part-2 forward kernel vs its CPU result
+            for L in (
+                derivative(bf, 1; order=1),
+                derivative(bf, 2; order=2),
+                MFO.gradient(bf),
+                advection(bf, velp),
+                scaling(2.5),
+                scaling(κp),
+                identity_op(),
+            )
+                y = apply(L, copy(p))
+                yg = apply(Adapt.adapt(CuArray, L), copy(pg))
+                @test Array(yg.data) ≈ y.data
+            end
+            yd = apply(divergence(bf), copy(pw))
+            ydg = apply(Adapt.adapt(CuArray, divergence(bf)), copy(pwg))
+            @test Array(ydg.data) ≈ yd.data
+
+            # prepared flat path through a coefficient composite (normalized packed
+            # coefficient rides the adapted tree)
+            K = divergence(bf) * scaling(κp) * MFO.gradient(bf)
+            v = flatten(p)
+            out = similar(v)
+            mul!(out, prepare(K, p), v)
+            pg2 = Adapt.adapt(CuArray, pack(u))
+            vg = flatten(pg2)
+            outg = similar(vg)
+            mul!(outg, prepare(Adapt.adapt(CuArray, K), pg2), vg)
+            @test Array(outg) ≈ out
+
+            # declared adjoint transpose-gather kernels + fold path on device
+            ys = pack(set!(scalar_field(bf), x -> cos(x[1]) + x[2]^2))
+            for L in (derivative(bf, 1; order=1), MFO.gradient(bf))
+                ȳ = L isa MFO.Gradient ? pack(set!(vector_field(bf), wfun)) : ys
+                x̄ = apply_adjoint!(MFO.allocate_input(L, ȳ), L, copy(ȳ), bf)
+                x̄g = apply_adjoint!(
+                    MFO.allocate_input(Adapt.adapt(CuArray, L), Adapt.adapt(CuArray, ȳ)),
+                    Adapt.adapt(CuArray, L),
+                    Adapt.adapt(CuArray, copy(ȳ)),
+                    pg.grid,
+                )
+                @test Array(x̄g.data) ≈ x̄.data
+            end
+        end
+    end
+
     @testset "Krylov cg parity" begin
         σ = set!(scalar_field(g), x -> 1 + x[2])
         K = scaling(σ) - laplacian(g)

@@ -33,11 +33,14 @@ end
 
 """
     advection(g::AbstractGrid, velocity::Field) -> Advection
+    advection(g::BlockForest, velocity::AbstractBlockField) -> Advection
     advection(g::AbstractGrid, ::SelfAdvection) -> Advection
 
 Build a matrix-free advection operator `v·∇` bound to `g`, with second-order
 central differences. A prescribed velocity must be an `SVector`-valued field with
-one component per grid dimension; the resulting operator is linear in the
+one component per grid dimension — on a [`BlockForest`](@ref) a block field on
+that same forest (matching the applied field's layout lets the forest-native
+kernel engage); the resulting operator is linear in the
 advected input and acts componentwise on scalar or vector inputs. With
 [`SelfAdvection`](@ref) the operator computes `u·∇u` of a vector field and is
 nonlinear — see [`linearize`](@ref) for its Jacobian.
@@ -66,16 +69,34 @@ function advection(g::AbstractGrid, velocity::Field)
     return Advection(g, velocity)
 end
 advection(g::AbstractGrid, velocity::SelfAdvection) = Advection(g, velocity)
+function advection(g::BlockForest, velocity::AbstractBlockField)
+    eltype(velocity) <: SVector || throw(
+        ArgumentError(
+            "prescribed advection velocity must be an SVector-valued field, got eltype $(eltype(velocity))",
+        ),
+    )
+    ncomponents(velocity) == dimension(g) || throw(
+        ArgumentError(
+            "velocity has $(ncomponents(velocity)) components but the grid is $(dimension(g))-D",
+        ),
+    )
+    # _leaf_op slices the velocity by this forest's leaf indices — a velocity
+    # bound to a different forest would alias the wrong leaves. Topology
+    # identity, not wrapper identity: adapted twins share the forest.
+    velocity.grid.forest === g.forest ||
+        throw(ArgumentError("advection velocity must be a field on the same forest"))
+    return Advection(g, velocity)
+end
 
-islinear(::Advection{<:AbstractGrid,<:Field}) = true
+islinear(::Advection{<:AbstractGrid,<:AbstractField}) = true
 islinear(::Advection{<:AbstractGrid,SelfAdvection}) = false
-isconstant(::Advection{<:AbstractGrid,<:Field}) = true
+isconstant(::Advection{<:AbstractGrid,<:AbstractField}) = true
 isconstant(::Advection{<:AbstractGrid,SelfAdvection}) = false
 operator_grid(L::Advection) = L.grid
 
 # Adjoint of passive transport, expressed in the operator algebra: the mechanical
 # transpose of Σ_d diag(v_d)·D_d is Σ_d D_dᵀ·diag(v_d).
-function adjoint_operator(L::Advection{<:AbstractGrid,<:Field})
+function adjoint_operator(L::Advection{<:AbstractGrid,<:AbstractField})
     g = L.grid
     terms = ntuple(Val(dimension(g))) do d
         Composed(adjoint_operator(derivative(g, d)), scaling(component(L.velocity, d)))

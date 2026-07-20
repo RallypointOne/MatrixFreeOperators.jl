@@ -42,9 +42,18 @@ function _forest_sweep_leaves!(
 )
     for i in 1:nleaves(g)
         lg = leaf_grid(g, i)
-        apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)
+        apply!(block(y, i, lg), _leaf_op(L, i, lg), block(x, i, lg), lg, α, β)
     end
     return y
+end
+
+# Per-leaf slicing of coefficient-carrying leaves: the reference sweeps see
+# ordinary single-grid operators whose coefficient is the leaf's block view.
+# block() re-checks the coefficient field's generation on every slice.
+@inline _leaf_op(L::AbstractOperator, i, lg) = L
+@inline _leaf_op(S::ScalingOp{<:AbstractBlockField}, i, lg) = ScalingOp(block(S.coeff, i, lg))
+@inline function _leaf_op(A::Advection{<:BlockForest,<:AbstractBlockField}, i, lg)
+    return Advection(lg, block(A.velocity, i, lg))
 end
 
 # Combinators recurse at the forest level (mirroring their Field methods in
@@ -123,19 +132,17 @@ function apply_adjoint!(
     # coarse–fine coupling breaks the halo symmetry), so this only fires when the
     # forward action IS the adjoint.
     isselfadjoint(L) && return apply!(x̄, L, ȳ, g, α, β)
+    # Diagonal transposes are pointwise (no cross-block coupling) and their
+    # per-leaf adjoint writes interiors only — the gather + fold machinery below
+    # would fold x̄'s ghost scratch into interiors, so it must be skipped.
+    isdiagonal(L) && return apply!(x̄, adjoint_operator(L), ȳ, g, α, β)
     if iszero(β)
-        for i in 1:nleaves(g)
-            lg = leaf_grid(g, i)
-            apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)
-        end
+        _forest_adjoint_sweep!(x̄, L, ȳ, g, α)
         fold_bc!(x̄, g)
         halo_update_adjoint!(x̄, g)
     else
         s = similar(x̄)
-        for i in 1:nleaves(g)
-            lg = leaf_grid(g, i)
-            apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)
-        end
+        _forest_adjoint_sweep!(s, L, ȳ, g, true)
         fold_bc!(s, g)
         halo_update_adjoint!(s, g)
         for i in 1:nleaves(g)
@@ -143,6 +150,27 @@ function apply_adjoint!(
             xi = interior(block(x̄, i, lg))
             xi .= α .* interior(block(s, i, lg)) .+ β .* xi
         end
+    end
+    return x̄
+end
+
+# The adjoint stencil sweep behind the fold path — the dispatch seam packed
+# adjoint kernels override per (operator, layout), mirroring _forest_sweep!.
+# Overwrite-only contract (β = 0 gather into the target; callers blend): the
+# per-leaf reference runs the ordinary apply_adjoint!, whose leaf-level
+# fold_bc! is a no-op on the all-Interface leaf grids.
+function _forest_adjoint_sweep!(
+    x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, g::BlockForest, α
+)
+    return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)
+end
+
+function _forest_adjoint_sweep_leaves!(
+    x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, g::BlockForest, α
+)
+    for i in 1:nleaves(g)
+        lg = leaf_grid(g, i)
+        apply_adjoint!(block(x̄, i, lg), _leaf_op(L, i, lg), block(ȳ, i, lg), lg, α, false)
     end
     return x̄
 end
