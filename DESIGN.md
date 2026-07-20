@@ -616,8 +616,8 @@ pre-built.
   *alternative execution modes* of the same leaf — chosen per backend — not one
   `apply!` body serving both at once.
 
-- **Adaptive grids (AMR) — built through the regrid driver (#13); packed-storage
-  GPU phase (#15) remains.** Decided against a
+- **Adaptive grids (AMR) — built end-to-end, including the packed-storage GPU
+  phase (#15).** Decided against a
   cell-based octree (p4est/Trixi-style hanging nodes everywhere break the
   dense-array leaf stencils). Instead: a **forest of fixed-size leaf-blocks**
   (FLASH/PARAMESH/AMReX style). The domain is a forest of `2ᴺ`-trees of equal-cell
@@ -707,21 +707,34 @@ pre-built.
     code** (`examples/adaptive_poisson.jl` is the canonical form; solver must be
     a nonsymmetric Krylov method on an adapted forest) — an `adaptive_solve`
     export would guess the interface from one use case (rule of three).
-  - **Planned (packed phase, #15):** staged like #10 — (1) `AbstractBlockField` +
+  - **Built (packed phase, #15):** staged like #10 — (1) `AbstractBlockField` +
     `PackedBlockField` + `pack`/`unpack` with the Laplacian forest kernel
-    end-to-end (built), (2) the remaining operator kernels + adjoint
-    transpose-gather kernels + the coefficient-field layout policy (built),
+    end-to-end, (2) the remaining operator kernels + adjoint
+    transpose-gather kernels + the coefficient-field layout policy,
     (3) kernelized exchange/BC/flat passes (incl. `GhostFill.terms` CSR
-    flattening) (built; adjoint exchange deliberately stays on the host
-    descriptor loops — see §5), (4) packed regrid. The per-leaf fallback guarantee holds
-    throughout: every operator works on packed storage from day one via
-    `_forest_sweep!`'s reference loop. `regrid!` of a packed field errors — regrid the
+    flattening; adjoint exchange deliberately stays on the host
+    descriptor loops — see §5), (4) packed regrid — resolved as the documented
+    re-pack contract, not code: `regrid!` of a packed field errors — regrid the
     reference field and re-`pack` (a missing capability degrades to an error,
-    never a wrong result). The closing metric is the #7 residual: prepared forest
-    `mul!` allocations independent of `nleaves` (the per-leaf stencil-apply call
-    boundary is what allocates today, ~384 B/leaf — its `interior(...)` views
-    escape once the call is not inlined into `mul!`), plus the packed-vs-per-leaf
-    benchmark delta at equal DOFs.
+    never a wrong result; regridding is host-side leaf surgery, so an automatic
+    round-trip would only hide the device transfer). The per-leaf fallback
+    guarantee held throughout: every operator works on packed storage from day
+    one via `_forest_sweep!`'s reference loop. Closing metrics (first real-CUDA
+    session, RTX 4000 Ada): the #7 residual is closed — prepared packed `mul!`
+    host allocations hold at ~11 KB of CUDA launch bookkeeping from 256 to 4096
+    leaves, no per-leaf term (the historical ~384 B/leaf per-leaf residual had
+    already vanished with the all-Interface leaves, #14/#23, which let the
+    per-leaf `apply!` fully specialize — per-leaf prepared `mul!` measures 0 B
+    on CPU); the packed single-launch sweep runs 30–95× faster than the
+    per-leaf device path at equal DOFs (60× at 4 M DOFs uniform, 95× refined),
+    and the batched device exchange runs 230–1370× faster than the
+    per-descriptor loop on the same device data (`benchmark/gpu.jl`). An nsys
+    trace shows a constant 5 kernel launches per prepared `mul!` — packed
+    sweep, two exchange copies, flat in/out broadcasts — identical at 64 and
+    4096 leaves. The
+    unsynchronized launch chain (same-task-stream FIFO, §5) was probed with 100
+    unsynced `mul!` parity checks and adapted-forest Krylov solves on device —
+    no explicit `synchronize` is needed.
   - **Extending to other tree structures (deliberately not abstracted yet).** There is
     no pluggable "swap the tree structure" interface, and that is the design, not an
     omission. A *fundamentally different* AMR (cell-octree, patch-based) would enter as a
