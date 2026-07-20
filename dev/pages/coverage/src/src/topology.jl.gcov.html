@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-20 18:24:23</td>
+            <td class="headerValue">2026-07-20 18:39:37</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -71,7 +71,7 @@
 <span id="L9"><span class="lineNum">       9</span>              : spacing) is *recomputed* from the key — never stored per block.</span>
 <span id="L10"><span class="lineNum">      10</span>              : &quot;&quot;&quot;</span>
 <span id="L11"><span class="lineNum">      11</span>              : struct LeafKey{N}</span>
-<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">       21686 :     level::Int</span></span>
+<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">       26238 :     level::Int</span></span>
 <span id="L13"><span class="lineNum">      13</span>              :     coords::NTuple{N,Int}</span>
 <span id="L14"><span class="lineNum">      14</span>              : end</span>
 <span id="L15"><span class="lineNum">      15</span>              : </span>
@@ -80,7 +80,7 @@
 <span id="L18"><span class="lineNum">      18</span>              : </span>
 <span id="L19"><span class="lineNum">      19</span>              : The level-`(ℓ-1)` block that contains `key`. Undefined at level 0.</span>
 <span id="L20"><span class="lineNum">      20</span>              : &quot;&quot;&quot;</span>
-<span id="L21"><span class="lineNum">      21</span> <span class="tlaGNC">        4723 : parent_key(key::LeafKey{N}) where {N} = LeafKey(key.level - 1, ntuple(d -&gt; key.coords[d] &gt;&gt; 1, Val(N)))</span></span>
+<span id="L21"><span class="lineNum">      21</span> <span class="tlaGNC">        5091 : parent_key(key::LeafKey{N}) where {N} = LeafKey(key.level - 1, ntuple(d -&gt; key.coords[d] &gt;&gt; 1, Val(N)))</span></span>
 <span id="L22"><span class="lineNum">      22</span>              : </span>
 <span id="L23"><span class="lineNum">      23</span>              : &quot;&quot;&quot;</span>
 <span id="L24"><span class="lineNum">      24</span>              :     children(key::LeafKey) -&gt; Vector{LeafKey}</span>
@@ -88,9 +88,9 @@
 <span id="L26"><span class="lineNum">      26</span>              : The `2ᴺ` level-`(ℓ+1)` blocks tiling `key`.</span>
 <span id="L27"><span class="lineNum">      27</span>              : &quot;&quot;&quot;</span>
 <span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC">           2 : function children(key::LeafKey{N}) where {N}</span></span>
-<span id="L29"><span class="lineNum">      29</span> <span class="tlaGNC">        1243 :     base = ntuple(d -&gt; key.coords[d] &lt;&lt; 1, Val(N))</span></span>
-<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">        1243 :     offsets = CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
-<span id="L31"><span class="lineNum">      31</span> <span class="tlaGNC">        4953 :     return [LeafKey(key.level + 1, ntuple(d -&gt; base[d] + o[d], Val(N))) for o in offsets]</span></span>
+<span id="L29"><span class="lineNum">      29</span> <span class="tlaGNC">        1523 :     base = ntuple(d -&gt; key.coords[d] &lt;&lt; 1, Val(N))</span></span>
+<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">        1523 :     offsets = CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
+<span id="L31"><span class="lineNum">      31</span> <span class="tlaGNC">        6073 :     return [LeafKey(key.level + 1, ntuple(d -&gt; base[d] + o[d], Val(N))) for o in offsets]</span></span>
 <span id="L32"><span class="lineNum">      32</span>              : end</span>
 <span id="L33"><span class="lineNum">      33</span>              : </span>
 <span id="L34"><span class="lineNum">      34</span>              : #--------------------------------------------------------------------------------# Forest</span>
@@ -111,7 +111,7 @@
 <span id="L49"><span class="lineNum">      49</span>              : allocated on).</span>
 <span id="L50"><span class="lineNum">      50</span>              : &quot;&quot;&quot;</span>
 <span id="L51"><span class="lineNum">      51</span>              : struct Forest{N}</span>
-<span id="L52"><span class="lineNum">      52</span> <span class="tlaGNC">         158 :     nroot::NTuple{N,Int}</span></span>
+<span id="L52"><span class="lineNum">      52</span> <span class="tlaGNC">         171 :     nroot::NTuple{N,Int}</span></span>
 <span id="L53"><span class="lineNum">      53</span>              :     periodic::NTuple{N,Bool}</span>
 <span id="L54"><span class="lineNum">      54</span>              :     maxlevel::Int</span>
 <span id="L55"><span class="lineNum">      55</span>              :     leaves::Vector{LeafKey{N}}</span>
@@ -120,23 +120,23 @@
 <span id="L58"><span class="lineNum">      58</span>              :     generation::Base.RefValue{Int}</span>
 <span id="L59"><span class="lineNum">      59</span>              : end</span>
 <span id="L60"><span class="lineNum">      60</span>              : </span>
-<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">         158 : function Forest(nroot::NTuple{N,Int}, periodic::NTuple{N,Bool}, maxlevel::Int) where {N}</span></span>
-<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">         158 :     N * _morton_bits(nroot, maxlevel) &lt;= 8 * sizeof(UInt) || throw(</span></span>
+<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">         171 : function Forest(nroot::NTuple{N,Int}, periodic::NTuple{N,Bool}, maxlevel::Int) where {N}</span></span>
+<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">         171 :     N * _morton_bits(nroot, maxlevel) &lt;= 8 * sizeof(UInt) || throw(</span></span>
 <span id="L63"><span class="lineNum">      63</span>              :         ArgumentError(</span>
 <span id="L64"><span class="lineNum">      64</span>              :             &quot;nroot $nroot with maxlevel $maxlevel exceeds the $(8 * sizeof(UInt))-bit &quot; *</span>
 <span id="L65"><span class="lineNum">      65</span>              :             &quot;Morton key capacity&quot;,</span>
 <span id="L66"><span class="lineNum">      66</span>              :         ),</span>
 <span id="L67"><span class="lineNum">      67</span>              :     )</span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">         158 :     forest = Forest{N}(</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">         171 :     forest = Forest{N}(</span></span>
 <span id="L69"><span class="lineNum">      69</span>              :         nroot, periodic, maxlevel, LeafKey{N}[], Dict{LeafKey{N},Int}(), Ref(true), Ref(0)</span>
 <span id="L70"><span class="lineNum">      70</span>              :     )</span>
-<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">        1613 :     roots = [LeafKey(0, ntuple(d -&gt; I[d] - 1, Val(N))) for I in CartesianIndices(nroot)]</span></span>
-<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">         158 :     return _set_leaves!(forest, roots)</span></span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">        1882 :     roots = [LeafKey(0, ntuple(d -&gt; I[d] - 1, Val(N))) for I in CartesianIndices(nroot)]</span></span>
+<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">         171 :     return _set_leaves!(forest, roots)</span></span>
 <span id="L73"><span class="lineNum">      73</span>              : end</span>
 <span id="L74"><span class="lineNum">      74</span>              : </span>
-<span id="L75"><span class="lineNum">      75</span> <span class="tlaGNC">       14230 : nleaves(forest::Forest) = length(forest.leaves)</span></span>
-<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">       17629 : is_leaf(forest::Forest, key::LeafKey) = haskey(forest.index, key)</span></span>
-<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">        5803 : leaf_index(forest::Forest, key::LeafKey) = forest.index[key]</span></span>
+<span id="L75"><span class="lineNum">      75</span> <span class="tlaGNC">       14429 : nleaves(forest::Forest) = length(forest.leaves)</span></span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">       21585 : is_leaf(forest::Forest, key::LeafKey) = haskey(forest.index, key)</span></span>
+<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">        7683 : leaf_index(forest::Forest, key::LeafKey) = forest.index[key]</span></span>
 <span id="L78"><span class="lineNum">      78</span>              : </span>
 <span id="L79"><span class="lineNum">      79</span> <span class="tlaUNC tlaBgUNC">           0 : function Base.show(io::IO, forest::Forest{N}) where {N}</span></span>
 <span id="L80"><span class="lineNum">      80</span> <span class="tlaUNC">           0 :     if isempty(forest.leaves)</span></span>
@@ -153,43 +153,43 @@
 <span id="L91"><span class="lineNum">      91</span>              : </span>
 <span id="L92"><span class="lineNum">      92</span>              : # Number of bits per coordinate needed to Morton-encode the finest resolution.</span>
 <span id="L93"><span class="lineNum">      93</span>              : function _morton_bits(nroot::NTuple{N,Int}, maxlevel::Int) where {N}</span>
-<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC tlaBgGNC">         420 :     maxfine = maximum(nroot) &lt;&lt; maxlevel</span></span>
-<span id="L95"><span class="lineNum">      95</span> <span class="tlaGNC">         840 :     return maxfine &lt;= 1 ? 1 : (8 * sizeof(Int) - leading_zeros(maxfine - 1))</span></span>
+<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC tlaBgGNC">         455 :     maxfine = maximum(nroot) &lt;&lt; maxlevel</span></span>
+<span id="L95"><span class="lineNum">      95</span> <span class="tlaGNC">         910 :     return maxfine &lt;= 1 ? 1 : (8 * sizeof(Int) - leading_zeros(maxfine - 1))</span></span>
 <span id="L96"><span class="lineNum">      96</span>              : end</span>
-<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">         524 : _morton_bits(forest::Forest) = _morton_bits(forest.nroot, forest.maxlevel)</span></span>
+<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">         568 : _morton_bits(forest::Forest) = _morton_bits(forest.nroot, forest.maxlevel)</span></span>
 <span id="L98"><span class="lineNum">      98</span>              : </span>
 <span id="L99"><span class="lineNum">      99</span>              : # Lower-corner block index at the finest level — the position a leaf maps to for</span>
 <span id="L100"><span class="lineNum">     100</span>              : # Morton ordering (a leaf and its descendant are never both present, so unique).</span>
-<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">       34968 : _fine_coords(key::LeafKey{N}, maxlevel::Int) where {N} =</span></span>
-<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">       34968 :     ntuple(d -&gt; key.coords[d] &lt;&lt; (maxlevel - key.level), Val(N))</span></span>
+<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">       45540 : _fine_coords(key::LeafKey{N}, maxlevel::Int) where {N} =</span></span>
+<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">       45540 :     ntuple(d -&gt; key.coords[d] &lt;&lt; (maxlevel - key.level), Val(N))</span></span>
 <span id="L103"><span class="lineNum">     103</span>              : </span>
 <span id="L104"><span class="lineNum">     104</span>              : # Z-order interleave of `coords` (dim 1 least significant within each bit group).</span>
 <span id="L105"><span class="lineNum">     105</span>              : function morton(coords::NTuple{N,Int}, nbits::Int) where {N}</span>
-<span id="L106"><span class="lineNum">     106</span> <span class="tlaGNC">       34968 :     code = zero(UInt)</span></span>
-<span id="L107"><span class="lineNum">     107</span> <span class="tlaGNC">       34968 :     for b in 0:(nbits - 1), d in 1:N</span></span>
-<span id="L108"><span class="lineNum">     108</span> <span class="tlaGNC">      291304 :         bit = (UInt(coords[d]) &gt;&gt; b) &amp; one(UInt)</span></span>
-<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">      291304 :         code |= bit &lt;&lt; (b * N + (d - 1))</span></span>
-<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">      346646 :     end</span></span>
-<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">       34968 :     return code</span></span>
+<span id="L106"><span class="lineNum">     106</span> <span class="tlaGNC">       45540 :     code = zero(UInt)</span></span>
+<span id="L107"><span class="lineNum">     107</span> <span class="tlaGNC">       45540 :     for b in 0:(nbits - 1), d in 1:N</span></span>
+<span id="L108"><span class="lineNum">     108</span> <span class="tlaGNC">      381000 :         bit = (UInt(coords[d]) &gt;&gt; b) &amp; one(UInt)</span></span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">      381000 :         code |= bit &lt;&lt; (b * N + (d - 1))</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">      453480 :     end</span></span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">       45540 :     return code</span></span>
 <span id="L112"><span class="lineNum">     112</span>              : end</span>
 <span id="L113"><span class="lineNum">     113</span>              : </span>
 <span id="L114"><span class="lineNum">     114</span>              : # Commit a new leaf set: sort into Morton order, rebuild the key→index map, and</span>
 <span id="L115"><span class="lineNum">     115</span>              : # refresh the uniformity flag. A set identical to the current one is a no-op so</span>
 <span id="L116"><span class="lineNum">     116</span>              : # predicate-miss regrids do not invalidate existing fields.</span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">         262 : function _set_leaves!(forest::Forest{N}, keys) where {N}</span></span>
-<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">         524 :     nbits = _morton_bits(forest)</span></span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">         262 :     maxlevel = forest.maxlevel</span></span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">       90685 :     sorted = sort!(vec(collect(LeafKey{N}, keys)); by=k -&gt; morton(_fine_coords(k, maxlevel), nbits))</span></span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">         269 :     sorted == forest.leaves &amp;&amp; return forest</span></span>
-<span id="L122"><span class="lineNum">     122</span> <span class="tlaGNC">        1757 :     empty!(forest.leaves)</span></span>
-<span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC">         510 :     append!(forest.leaves, sorted)</span></span>
-<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">        5406 :     empty!(forest.index)</span></span>
-<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">         255 :     for (i, k) in enumerate(sorted)</span></span>
-<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">        3996 :         forest.index[k] = i</span></span>
-<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">        7737 :     end</span></span>
-<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        3133 :     forest.uniform[] = isempty(sorted) || all(k -&gt; k.level == sorted[1].level, sorted)</span></span>
-<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">         255 :     forest.generation[] += 1</span></span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">         255 :     return forest</span></span>
+<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">         284 : function _set_leaves!(forest::Forest{N}, keys) where {N}</span></span>
+<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">         568 :     nbits = _morton_bits(forest)</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">         284 :     maxlevel = forest.maxlevel</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">      118439 :     sorted = sort!(vec(collect(LeafKey{N}, keys)); by=k -&gt; morton(_fine_coords(k, maxlevel), nbits))</span></span>
+<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">         291 :     sorted == forest.leaves &amp;&amp; return forest</span></span>
+<span id="L122"><span class="lineNum">     122</span> <span class="tlaGNC">        1962 :     empty!(forest.leaves)</span></span>
+<span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC">         554 :     append!(forest.leaves, sorted)</span></span>
+<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">        6187 :     empty!(forest.index)</span></span>
+<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">         277 :     for (i, k) in enumerate(sorted)</span></span>
+<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">        4732 :         forest.index[k] = i</span></span>
+<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">        9187 :     end</span></span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        3650 :     forest.uniform[] = isempty(sorted) || all(k -&gt; k.level == sorted[1].level, sorted)</span></span>
+<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">         277 :     forest.generation[] += 1</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">         277 :     return forest</span></span>
 <span id="L131"><span class="lineNum">     131</span>              : end</span>
 <span id="L132"><span class="lineNum">     132</span>              : </span>
 <span id="L133"><span class="lineNum">     133</span>              : #--------------------------------------------------------------------------------# Neighbor queries</span>
@@ -205,19 +205,19 @@
 <span id="L143"><span class="lineNum">     143</span>              : # Neighbor block coordinate along `dim` at `side` (±1), or `nothing` past a</span>
 <span id="L144"><span class="lineNum">     144</span>              : # non-periodic domain boundary.</span>
 <span id="L145"><span class="lineNum">     145</span>              : @inline function _neighbor_coord(forest::Forest, key::LeafKey, dim::Int, side::Int)</span>
-<span id="L146"><span class="lineNum">     146</span> <span class="tlaGNC">       18160 :     nblocks = forest.nroot[dim] &lt;&lt; key.level</span></span>
-<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">       18160 :     c = key.coords[dim] + side</span></span>
-<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">       34271 :     if c &lt; 0 || c &gt;= nblocks</span></span>
-<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">        6500 :         forest.periodic[dim] || return nothing</span></span>
-<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">        1799 :         return mod(c, nblocks)</span></span>
+<span id="L146"><span class="lineNum">     146</span> <span class="tlaGNC">       22160 :     nblocks = forest.nroot[dim] &lt;&lt; key.level</span></span>
+<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">       22160 :     c = key.coords[dim] + side</span></span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">       41965 :     if c &lt; 0 || c &gt;= nblocks</span></span>
+<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">        7484 :         forest.periodic[dim] || return nothing</span></span>
+<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">        1975 :         return mod(c, nblocks)</span></span>
 <span id="L151"><span class="lineNum">     151</span>              :     end</span>
-<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">       14461 :     return c</span></span>
+<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">       17925 :     return c</span></span>
 <span id="L153"><span class="lineNum">     153</span>              : end</span>
 <span id="L154"><span class="lineNum">     154</span>              : </span>
 <span id="L155"><span class="lineNum">     155</span> <span class="tlaGNC">         787 : function face_neighbor(forest::Forest{N}, key::LeafKey{N}, dim::Int, side::Int) where {N}</span></span>
-<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">       19059 :     c = _neighbor_coord(forest, key, dim, side)</span></span>
-<span id="L157"><span class="lineNum">     157</span> <span class="tlaGNC">       18160 :     c === nothing &amp;&amp; return nothing</span></span>
-<span id="L158"><span class="lineNum">     158</span> <span class="tlaGNC">       53772 :     return LeafKey(key.level, ntuple(d -&gt; d == dim ? c : key.coords[d], Val(N)))</span></span>
+<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">       23147 :     c = _neighbor_coord(forest, key, dim, side)</span></span>
+<span id="L157"><span class="lineNum">     157</span> <span class="tlaGNC">       22160 :     c === nothing &amp;&amp; return nothing</span></span>
+<span id="L158"><span class="lineNum">     158</span> <span class="tlaGNC">       66216 :     return LeafKey(key.level, ntuple(d -&gt; d == dim ? c : key.coords[d], Val(N)))</span></span>
 <span id="L159"><span class="lineNum">     159</span>              : end</span>
 <span id="L160"><span class="lineNum">     160</span>              : </span>
 <span id="L161"><span class="lineNum">     161</span>              : &quot;&quot;&quot;</span>
@@ -228,12 +228,12 @@
 <span id="L166"><span class="lineNum">     166</span>              : covered by *finer* leaves (i.e. `key` is a refined, internal node).</span>
 <span id="L167"><span class="lineNum">     167</span>              : &quot;&quot;&quot;</span>
 <span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">         136 : function leaf_covering(forest::Forest{N}, key::LeafKey{N}) where {N}</span></span>
-<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">        9897 :     k = key</span></span>
-<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">       11253 :     while true</span></span>
-<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">       11253 :         is_leaf(forest, k) &amp;&amp; return k</span></span>
-<span id="L172"><span class="lineNum">     172</span> <span class="tlaGNC">        1949 :         k.level == 0 &amp;&amp; return nothing</span></span>
-<span id="L173"><span class="lineNum">     173</span> <span class="tlaGNC">        1357 :         k = parent_key(k)</span></span>
-<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">        1357 :     end</span></span>
+<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">       11745 :     k = key</span></span>
+<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">       13285 :     while true</span></span>
+<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">       13285 :         is_leaf(forest, k) &amp;&amp; return k</span></span>
+<span id="L172"><span class="lineNum">     172</span> <span class="tlaGNC">        2225 :         k.level == 0 &amp;&amp; return nothing</span></span>
+<span id="L173"><span class="lineNum">     173</span> <span class="tlaGNC">        1541 :         k = parent_key(k)</span></span>
+<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">        1541 :     end</span></span>
 <span id="L175"><span class="lineNum">     175</span>              : end</span>
 <span id="L176"><span class="lineNum">     176</span>              : </span>
 <span id="L177"><span class="lineNum">     177</span>              : #--------------------------------------------------------------------------------# Refine / coarsen / balance</span>
@@ -244,18 +244,18 @@
 <span id="L182"><span class="lineNum">     182</span>              : Replace every leaf `key` (below `maxlevel`) for which `should_refine(key)` is true</span>
 <span id="L183"><span class="lineNum">     183</span>              : with its `2ᴺ` children, then re-establish 2:1 balance via [`balance!`](@ref).</span>
 <span id="L184"><span class="lineNum">     184</span>              : &quot;&quot;&quot;</span>
-<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">          68 : function refine!(forest::Forest{N}, should_refine) where {N}</span></span>
-<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">          68 :     keys = Set(forest.leaves)</span></span>
-<span id="L187"><span class="lineNum">     187</span> <span class="tlaGNC">          68 :     for key in forest.leaves</span></span>
-<span id="L188"><span class="lineNum">     188</span> <span class="tlaGNC">         701 :         if key.level &lt; forest.maxlevel &amp;&amp; should_refine(key)</span></span>
-<span id="L189"><span class="lineNum">     189</span> <span class="tlaGNC">         296 :             delete!(keys, key)</span></span>
-<span id="L190"><span class="lineNum">     190</span> <span class="tlaGNC">         202 :             for c in children(key)</span></span>
-<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">         808 :                 push!(keys, c)</span></span>
-<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">         808 :             end</span></span>
+<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">          77 : function refine!(forest::Forest{N}, should_refine) where {N}</span></span>
+<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">          77 :     keys = Set(forest.leaves)</span></span>
+<span id="L187"><span class="lineNum">     187</span> <span class="tlaGNC">          77 :     for key in forest.leaves</span></span>
+<span id="L188"><span class="lineNum">     188</span> <span class="tlaGNC">         893 :         if key.level &lt; forest.maxlevel &amp;&amp; should_refine(key)</span></span>
+<span id="L189"><span class="lineNum">     189</span> <span class="tlaGNC">         378 :             delete!(keys, key)</span></span>
+<span id="L190"><span class="lineNum">     190</span> <span class="tlaGNC">         298 :             for c in children(key)</span></span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">        1192 :                 push!(keys, c)</span></span>
+<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">        1192 :             end</span></span>
 <span id="L193"><span class="lineNum">     193</span>              :         end</span>
-<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         679 :     end</span></span>
-<span id="L195"><span class="lineNum">     195</span> <span class="tlaGNC">          68 :     _set_leaves!(forest, keys)</span></span>
-<span id="L196"><span class="lineNum">     196</span> <span class="tlaGNC">          68 :     return balance!(forest)</span></span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         871 :     end</span></span>
+<span id="L195"><span class="lineNum">     195</span> <span class="tlaGNC">          77 :     _set_leaves!(forest, keys)</span></span>
+<span id="L196"><span class="lineNum">     196</span> <span class="tlaGNC">          77 :     return balance!(forest)</span></span>
 <span id="L197"><span class="lineNum">     197</span>              : end</span>
 <span id="L198"><span class="lineNum">     198</span>              : </span>
 <span id="L199"><span class="lineNum">     199</span>              : &quot;&quot;&quot;</span>
@@ -275,7 +275,7 @@
 <span id="L213"><span class="lineNum">     213</span> <span class="tlaGNC">           4 :     for (p, sibs) in families</span></span>
 <span id="L214"><span class="lineNum">     214</span> <span class="tlaGNC">           8 :         (length(sibs) == 2^N &amp;&amp; all(should_coarsen, sibs)) || continue</span></span>
 <span id="L215"><span class="lineNum">     215</span> <span class="tlaGNC">           8 :         for s in sibs</span></span>
-<span id="L216"><span class="lineNum">     216</span> <span class="tlaGNC">          52 :             delete!(keys, s)</span></span>
+<span id="L216"><span class="lineNum">     216</span> <span class="tlaGNC">          46 :             delete!(keys, s)</span></span>
 <span id="L217"><span class="lineNum">     217</span> <span class="tlaGNC">          32 :         end</span></span>
 <span id="L218"><span class="lineNum">     218</span> <span class="tlaGNC">           8 :         push!(keys, p)</span></span>
 <span id="L219"><span class="lineNum">     219</span> <span class="tlaGNC">          14 :     end</span></span>
@@ -291,29 +291,29 @@
 <span id="L229"><span class="lineNum">     229</span>              : any violating pair. This is what reduces every coarse–fine interface to the three</span>
 <span id="L230"><span class="lineNum">     230</span>              : tractable cases (same level / one-coarser / one-finer).</span>
 <span id="L231"><span class="lineNum">     231</span>              : &quot;&quot;&quot;</span>
-<span id="L232"><span class="lineNum">     232</span> <span class="tlaGNC">         101 : function balance!(forest::Forest{N}) where {N}</span></span>
-<span id="L233"><span class="lineNum">     233</span> <span class="tlaGNC">         104 :     while true</span></span>
-<span id="L234"><span class="lineNum">     234</span> <span class="tlaGNC">         104 :         to_refine = Set{LeafKey{N}}()</span></span>
-<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC">         104 :         for F in forest.leaves, dim in 1:N, side in (-1, 1)</span></span>
-<span id="L236"><span class="lineNum">     236</span> <span class="tlaGNC">       19724 :             nbr = face_neighbor(forest, F, dim, side)</span></span>
-<span id="L237"><span class="lineNum">     237</span> <span class="tlaGNC">       10564 :             nbr === nothing &amp;&amp; continue</span></span>
-<span id="L238"><span class="lineNum">     238</span> <span class="tlaGNC">       10432 :             cover = leaf_covering(forest, nbr)</span></span>
+<span id="L232"><span class="lineNum">     232</span> <span class="tlaGNC">         110 : function balance!(forest::Forest{N}) where {N}</span></span>
+<span id="L233"><span class="lineNum">     233</span> <span class="tlaGNC">         113 :     while true</span></span>
+<span id="L234"><span class="lineNum">     234</span> <span class="tlaGNC">         113 :         to_refine = Set{LeafKey{N}}()</span></span>
+<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC">         113 :         for F in forest.leaves, dim in 1:N, side in (-1, 1)</span></span>
+<span id="L236"><span class="lineNum">     236</span> <span class="tlaGNC">       23360 :             nbr = face_neighbor(forest, F, dim, side)</span></span>
+<span id="L237"><span class="lineNum">     237</span> <span class="tlaGNC">       12484 :             nbr === nothing &amp;&amp; continue</span></span>
+<span id="L238"><span class="lineNum">     238</span> <span class="tlaGNC">       12292 :             cover = leaf_covering(forest, nbr)</span></span>
 <span id="L239"><span class="lineNum">     239</span>              :             # cover.level ≤ F.level − 2 &lt; maxlevel, so refining it never exceeds maxlevel.</span>
-<span id="L240"><span class="lineNum">     240</span> <span class="tlaGNC">        9160 :             if cover !== nothing &amp;&amp; F.level - cover.level &gt;= 2</span></span>
+<span id="L240"><span class="lineNum">     240</span> <span class="tlaGNC">       10876 :             if cover !== nothing &amp;&amp; F.level - cover.level &gt;= 2</span></span>
 <span id="L241"><span class="lineNum">     241</span> <span class="tlaGNC">          28 :                 push!(to_refine, cover)</span></span>
 <span id="L242"><span class="lineNum">     242</span>              :             end</span>
-<span id="L243"><span class="lineNum">     243</span> <span class="tlaGNC">       10564 :         end</span></span>
-<span id="L244"><span class="lineNum">     244</span> <span class="tlaGNC">         104 :         isempty(to_refine) &amp;&amp; break</span></span>
+<span id="L243"><span class="lineNum">     243</span> <span class="tlaGNC">       12484 :         end</span></span>
+<span id="L244"><span class="lineNum">     244</span> <span class="tlaGNC">         113 :         isempty(to_refine) &amp;&amp; break</span></span>
 <span id="L245"><span class="lineNum">     245</span> <span class="tlaGNC">           3 :         keys = Set(forest.leaves)</span></span>
 <span id="L246"><span class="lineNum">     246</span> <span class="tlaGNC">           6 :         for k in to_refine</span></span>
-<span id="L247"><span class="lineNum">     247</span> <span class="tlaGNC">          10 :             delete!(keys, k)</span></span>
+<span id="L247"><span class="lineNum">     247</span> <span class="tlaGNC">          12 :             delete!(keys, k)</span></span>
 <span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC">           8 :             for c in children(k)</span></span>
 <span id="L249"><span class="lineNum">     249</span> <span class="tlaGNC">          32 :                 push!(keys, c)</span></span>
 <span id="L250"><span class="lineNum">     250</span> <span class="tlaGNC">          32 :             end</span></span>
 <span id="L251"><span class="lineNum">     251</span> <span class="tlaGNC">          16 :         end</span></span>
 <span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">           3 :         _set_leaves!(forest, keys)</span></span>
 <span id="L253"><span class="lineNum">     253</span> <span class="tlaGNC">           3 :     end</span></span>
-<span id="L254"><span class="lineNum">     254</span> <span class="tlaGNC">         101 :     return forest</span></span>
+<span id="L254"><span class="lineNum">     254</span> <span class="tlaGNC">         110 :     return forest</span></span>
 <span id="L255"><span class="lineNum">     255</span>              : end</span>
         </pre>
               </td>

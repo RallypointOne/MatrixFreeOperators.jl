@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-20 18:24:23</td>
+            <td class="headerValue">2026-07-20 18:39:37</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -99,20 +99,20 @@
 <span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">        3158 :     return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
 <span id="L38"><span class="lineNum">      38</span>              : end</span>
 <span id="L39"><span class="lineNum">      39</span>              : </span>
-<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">        3405 : function _forest_sweep_leaves!(</span></span>
+<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">        3421 : function _forest_sweep_leaves!(</span></span>
 <span id="L41"><span class="lineNum">      41</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L42"><span class="lineNum">      42</span>              : )</span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">        3413 :     for i in 1:nleaves(g)</span></span>
-<span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">       76584 :         lg = leaf_grid(g, i)</span></span>
-<span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">      151105 :         apply!(block(y, i, lg), _leaf_op(L, i, lg), block(x, i, lg), lg, α, β)</span></span>
-<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">      149761 :     end</span></span>
-<span id="L47"><span class="lineNum">      47</span> <span class="tlaGNC">        3403 :     return y</span></span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">        3429 :     for i in 1:nleaves(g)</span></span>
+<span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">       77032 :         lg = leaf_grid(g, i)</span></span>
+<span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">      151553 :         apply!(block(y, i, lg), _leaf_op(L, i, lg), block(x, i, lg), lg, α, β)</span></span>
+<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">      150641 :     end</span></span>
+<span id="L47"><span class="lineNum">      47</span> <span class="tlaGNC">        3419 :     return y</span></span>
 <span id="L48"><span class="lineNum">      48</span>              : end</span>
 <span id="L49"><span class="lineNum">      49</span>              : </span>
 <span id="L50"><span class="lineNum">      50</span>              : # Per-leaf slicing of coefficient-carrying leaves: the reference sweeps see</span>
 <span id="L51"><span class="lineNum">      51</span>              : # ordinary single-grid operators whose coefficient is the leaf's block view.</span>
 <span id="L52"><span class="lineNum">      52</span>              : # block() re-checks the coefficient field's generation on every slice.</span>
-<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">      103690 : @inline _leaf_op(L::AbstractOperator, i, lg) = L</span></span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">      104138 : @inline _leaf_op(L::AbstractOperator, i, lg) = L</span></span>
 <span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         721 : @inline _leaf_op(S::ScalingOp{&lt;:AbstractBlockField}, i, lg) = ScalingOp(block(S.coeff, i, lg))</span></span>
 <span id="L55"><span class="lineNum">      55</span>              : @inline function _leaf_op(A::Advection{&lt;:BlockForest,&lt;:AbstractBlockField}, i, lg)</span>
 <span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">         485 :     return Advection(lg, block(A.velocity, i, lg))</span></span>
