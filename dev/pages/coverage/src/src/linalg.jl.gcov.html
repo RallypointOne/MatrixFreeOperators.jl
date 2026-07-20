@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryMed">83.8&nbsp;%</td>
-            <td class="headerCovTableEntry">191</td>
-            <td class="headerCovTableEntry">160</td>
+            <td class="headerCovTableEntryMed">85.2&nbsp;%</td>
+            <td class="headerCovTableEntry">189</td>
+            <td class="headerCovTableEntry">161</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-19 18:19:51</td>
+            <td class="headerValue">2026-07-20 18:24:23</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -107,7 +107,7 @@
 <span id="L45"><span class="lineNum">      45</span>              :     FY&lt;:AbstractBlockField,</span>
 <span id="L46"><span class="lineNum">      46</span>              :     S&lt;:AbstractBlockField,</span>
 <span id="L47"><span class="lineNum">      47</span>              : }</span>
-<span id="L48"><span class="lineNum">      48</span> <span class="tlaGNC">          35 :     op::O</span></span>
+<span id="L48"><span class="lineNum">      48</span> <span class="tlaGNC">          41 :     op::O</span></span>
 <span id="L49"><span class="lineNum">      49</span>              :     grid::G</span>
 <span id="L50"><span class="lineNum">      50</span>              :     xpad::FX</span>
 <span id="L51"><span class="lineNum">      51</span>              :     ypad::FY</span>
@@ -163,8 +163,8 @@
 <span id="L101"><span class="lineNum">     101</span>              : # Forest prepare: same tree walk. adjscratch backs the accumulating adjoint sweep</span>
 <span id="L102"><span class="lineNum">     102</span>              : # the un-prepared path allocates per call. A PackedBlockField prototype yields</span>
 <span id="L103"><span class="lineNum">     103</span>              : # packed scratch (via similar), routing mul! to the forest-native kernel sweeps.</span>
-<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">          35 : function prepare(L::AbstractOperator, x::AbstractBlockField)</span></span>
-<span id="L105"><span class="lineNum">     105</span> <span class="tlaGNC">          35 :     if !islinear(L)</span></span>
+<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">          41 : function prepare(L::AbstractOperator, x::AbstractBlockField)</span></span>
+<span id="L105"><span class="lineNum">     105</span> <span class="tlaGNC">          41 :     if !islinear(L)</span></span>
 <span id="L106"><span class="lineNum">     106</span> <span class="tlaUNC tlaBgUNC">           0 :         throw(</span></span>
 <span id="L107"><span class="lineNum">     107</span>              :             ArgumentError(</span>
 <span id="L108"><span class="lineNum">     108</span>              :                 &quot;prepare requires a linear operator; for nonlinear operators prepare &quot; *</span>
@@ -172,365 +172,371 @@
 <span id="L110"><span class="lineNum">     110</span>              :             ),</span>
 <span id="L111"><span class="lineNum">     111</span>              :         )</span>
 <span id="L112"><span class="lineNum">     112</span>              :     end</span>
-<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC tlaBgGNC">          35 :     xpad = similar(x)</span></span>
-<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">         425 :     zero_ghosts!(xpad)</span></span>
-<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          35 :     ypad = allocate_output(L, x)</span></span>
-<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          35 :     op = _prepare_tree(L, x)</span></span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          49 :     _exchange_schedule(x.grid)   # warm the halo-exchange cache (build once, not on first mul!)</span></span>
-<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">          35 :     return PreparedForest(op, x.grid, xpad, ypad, similar(x), x.grid.forest.generation[])</span></span>
+<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC tlaBgGNC">          41 :     xpad = similar(x)</span></span>
+<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">         476 :     zero_ghosts!(xpad)</span></span>
+<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          41 :     ypad = allocate_output(L, x)</span></span>
+<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          41 :     op = _prepare_tree(L, x)</span></span>
+<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          57 :     _exchange_schedule(x.grid)   # warm the halo-exchange cache (build once, not on first mul!)</span></span>
+<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">          41 :     return PreparedForest(op, x.grid, xpad, ypad, similar(x), x.grid.forest.generation[])</span></span>
 <span id="L119"><span class="lineNum">     119</span>              : end</span>
 <span id="L120"><span class="lineNum">     120</span>              : </span>
 <span id="L121"><span class="lineNum">     121</span>              : # Tree-walking buffer allocation: leaves pass through unchanged; Composed and</span>
 <span id="L122"><span class="lineNum">     122</span>              : # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never</span>
 <span id="L123"><span class="lineNum">     123</span>              : # allocates.</span>
-<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">         201 : _prepare_tree(L::AbstractOperator, ::AbstractField) = L</span></span>
-<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">          17 : _prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))</span></span>
-<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">          72 : _prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)</span></span>
-<span id="L127"><span class="lineNum">     127</span>              : </span>
-<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">          12 : function _prepare_tree(L::Composed, x::AbstractField)</span></span>
-<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">          27 :     pb = _prepare_tree(L.b, x)</span></span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">          43 :     tmp = allocate_output(L.b, x)</span></span>
-<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">          37 :     pa = _prepare_tree(L.a, tmp)</span></span>
-<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">          26 :     return PreparedComposed(pa, pb, tmp)</span></span>
-<span id="L133"><span class="lineNum">     133</span>              : end</span>
-<span id="L134"><span class="lineNum">     134</span>              : # Composed on a BlockField uses the generic method above: the PreparedComposed</span>
-<span id="L135"><span class="lineNum">     135</span>              : # tmp is a whole BlockField, and _forest_capply! recurses at the forest level so</span>
-<span id="L136"><span class="lineNum">     136</span>              : # the intermediate gets its inter-block exchange.</span>
-<span id="L137"><span class="lineNum">     137</span>              : </span>
-<span id="L138"><span class="lineNum">     138</span>              : function _prepare_tree(L::AdjointOp, x::AbstractField)</span>
-<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">          47 :     return PreparedAdjoint(L.op, allocate_output(L, x))</span></span>
-<span id="L140"><span class="lineNum">     140</span>              : end</span>
-<span id="L141"><span class="lineNum">     141</span>              : </span>
-<span id="L142"><span class="lineNum">     142</span>              : # Composed twin holding its concretely-typed intermediate field.</span>
-<span id="L143"><span class="lineNum">     143</span>              : struct PreparedComposed{A&lt;:AbstractOperator,B&lt;:AbstractOperator,F&lt;:AbstractField} &lt;: AbstractOperator</span>
-<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">          26 :     a::A</span></span>
-<span id="L145"><span class="lineNum">     145</span>              :     b::B</span>
-<span id="L146"><span class="lineNum">     146</span>              :     tmp::F</span>
-<span id="L147"><span class="lineNum">     147</span>              : end</span>
-<span id="L148"><span class="lineNum">     148</span>              : </span>
-<span id="L149"><span class="lineNum">     149</span>              : # The inner factor sees the grid of the intermediate it consumes (transfer</span>
-<span id="L150"><span class="lineNum">     150</span>              : # chains compose factors living on different grids).</span>
-<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">          33 : function apply!(y::Field, L::PreparedComposed, x::Field, g::AbstractGrid, α, β)</span></span>
-<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">         246 :     apply!(L.tmp, L.b, x, g)</span></span>
-<span id="L153"><span class="lineNum">     153</span> <span class="tlaGNC">         246 :     apply!(y, L.a, L.tmp, L.tmp.grid, α, β)</span></span>
-<span id="L154"><span class="lineNum">     154</span> <span class="tlaGNC">         246 :     return y</span></span>
-<span id="L155"><span class="lineNum">     155</span>              : end</span>
-<span id="L156"><span class="lineNum">     156</span>              : </span>
-<span id="L157"><span class="lineNum">     157</span>              : # AdjointOp twin: the leaf adjoint gather is allocation-free only for β = 0, so</span>
-<span id="L158"><span class="lineNum">     158</span>              : # accumulating applications gather into the held scratch first.</span>
-<span id="L159"><span class="lineNum">     159</span>              : struct PreparedAdjoint{O&lt;:AbstractOperator,F&lt;:AbstractField} &lt;: AbstractOperator</span>
-<span id="L160"><span class="lineNum">     160</span> <span class="tlaGNC">          32 :     op::O</span></span>
-<span id="L161"><span class="lineNum">     161</span>              :     scratch::F</span>
-<span id="L162"><span class="lineNum">     162</span>              : end</span>
-<span id="L163"><span class="lineNum">     163</span>              : </span>
-<span id="L164"><span class="lineNum">     164</span> <span class="tlaGNC">         228 : function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)</span></span>
-<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">         228 :     iszero(β) &amp;&amp; return apply_adjoint!(y, L.op, x, g, α, β)</span></span>
-<span id="L166"><span class="lineNum">     166</span> <span class="tlaGNC">          78 :     apply_adjoint!(L.scratch, L.op, x, g)</span></span>
-<span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">          78 :     interior(y) .= α .* interior(L.scratch) .+ β .* interior(y)</span></span>
-<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">          39 :     return y</span></span>
-<span id="L169"><span class="lineNum">     169</span>              : end</span>
-<span id="L170"><span class="lineNum">     170</span>              : </span>
-<span id="L171"><span class="lineNum">     171</span>              : #--------------------------------------------------------------------------------# Cached forest apply (the PreparedForest hot path)</span>
+<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">         212 : _prepare_tree(L::AbstractOperator, ::AbstractField) = L</span></span>
+<span id="L125"><span class="lineNum">     125</span>              : # Coefficient layout normalization: a BlockField coefficient under a packed</span>
+<span id="L126"><span class="lineNum">     126</span>              : # prototype is packed once here, so the prepared hot path dispatches to the</span>
+<span id="L127"><span class="lineNum">     127</span>              : # forest-native kernel sweep instead of silently staying on the per-leaf</span>
+<span id="L128"><span class="lineNum">     128</span>              : # fallback. Sound because these leaves are isconstant; staleness after a regrid</span>
+<span id="L129"><span class="lineNum">     129</span>              : # is caught by the PreparedForest generation guard. (Packed coefficients under a</span>
+<span id="L130"><span class="lineNum">     130</span>              : # BlockField prototype need no conversion — block views serve the fallback.)</span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">           2 : _prepare_tree(S::ScalingOp{&lt;:BlockField}, ::PackedBlockField) = ScalingOp(pack(S.coeff))</span></span>
+<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">           1 : _prepare_tree(L::Advection{&lt;:BlockForest,&lt;:BlockField}, ::PackedBlockField) =</span></span>
+<span id="L133"><span class="lineNum">     133</span>              :     Advection(L.grid, pack(L.velocity))</span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">          17 : _prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))</span></span>
+<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">          72 : _prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)</span></span>
+<span id="L136"><span class="lineNum">     136</span>              : </span>
+<span id="L137"><span class="lineNum">     137</span> <span class="tlaGNC">          12 : function _prepare_tree(L::Composed, x::AbstractField)</span></span>
+<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">          35 :     pb = _prepare_tree(L.b, x)</span></span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">          51 :     tmp = allocate_output(L.b, x)</span></span>
+<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">          45 :     pa = _prepare_tree(L.a, tmp)</span></span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">          34 :     return PreparedComposed(pa, pb, tmp)</span></span>
+<span id="L142"><span class="lineNum">     142</span>              : end</span>
+<span id="L143"><span class="lineNum">     143</span>              : # Composed on a BlockField uses the generic method above: the PreparedComposed</span>
+<span id="L144"><span class="lineNum">     144</span>              : # tmp is a whole BlockField, and _forest_capply! recurses at the forest level so</span>
+<span id="L145"><span class="lineNum">     145</span>              : # the intermediate gets its inter-block exchange.</span>
+<span id="L146"><span class="lineNum">     146</span>              : </span>
+<span id="L147"><span class="lineNum">     147</span>              : function _prepare_tree(L::AdjointOp, x::AbstractField)</span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">          47 :     return PreparedAdjoint(L.op, allocate_output(L, x))</span></span>
+<span id="L149"><span class="lineNum">     149</span>              : end</span>
+<span id="L150"><span class="lineNum">     150</span>              : </span>
+<span id="L151"><span class="lineNum">     151</span>              : # Composed twin holding its concretely-typed intermediate field.</span>
+<span id="L152"><span class="lineNum">     152</span>              : struct PreparedComposed{A&lt;:AbstractOperator,B&lt;:AbstractOperator,F&lt;:AbstractField} &lt;: AbstractOperator</span>
+<span id="L153"><span class="lineNum">     153</span> <span class="tlaGNC">          34 :     a::A</span></span>
+<span id="L154"><span class="lineNum">     154</span>              :     b::B</span>
+<span id="L155"><span class="lineNum">     155</span>              :     tmp::F</span>
+<span id="L156"><span class="lineNum">     156</span>              : end</span>
+<span id="L157"><span class="lineNum">     157</span>              : </span>
+<span id="L158"><span class="lineNum">     158</span>              : # The inner factor sees the grid of the intermediate it consumes (transfer</span>
+<span id="L159"><span class="lineNum">     159</span>              : # chains compose factors living on different grids).</span>
+<span id="L160"><span class="lineNum">     160</span> <span class="tlaGNC">          33 : function apply!(y::Field, L::PreparedComposed, x::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L161"><span class="lineNum">     161</span> <span class="tlaGNC">         246 :     apply!(L.tmp, L.b, x, g)</span></span>
+<span id="L162"><span class="lineNum">     162</span> <span class="tlaGNC">         246 :     apply!(y, L.a, L.tmp, L.tmp.grid, α, β)</span></span>
+<span id="L163"><span class="lineNum">     163</span> <span class="tlaGNC">         246 :     return y</span></span>
+<span id="L164"><span class="lineNum">     164</span>              : end</span>
+<span id="L165"><span class="lineNum">     165</span>              : </span>
+<span id="L166"><span class="lineNum">     166</span>              : # AdjointOp twin: the leaf adjoint gather is allocation-free only for β = 0, so</span>
+<span id="L167"><span class="lineNum">     167</span>              : # accumulating applications gather into the held scratch first.</span>
+<span id="L168"><span class="lineNum">     168</span>              : struct PreparedAdjoint{O&lt;:AbstractOperator,F&lt;:AbstractField} &lt;: AbstractOperator</span>
+<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">          32 :     op::O</span></span>
+<span id="L170"><span class="lineNum">     170</span>              :     scratch::F</span>
+<span id="L171"><span class="lineNum">     171</span>              : end</span>
 <span id="L172"><span class="lineNum">     172</span>              : </span>
-<span id="L173"><span class="lineNum">     173</span>              : # Cached counterpart of the un-prepared forest apply in operators/forest.jl, using</span>
-<span id="L174"><span class="lineNum">     174</span>              : # the prepared scratch fields (leaf grids are one concrete all-Interface type, so</span>
-<span id="L175"><span class="lineNum">     175</span>              : # rebuilding them in the sweep is type-stable and free). The combinator</span>
-<span id="L176"><span class="lineNum">     176</span>              : # structure mirrors forest.jl exactly — Added/Scaled/AdjointOp recurse at the forest</span>
-<span id="L177"><span class="lineNum">     177</span>              : # level so a nested adjoint still reaches halo_update_adjoint!'s cross-block fold —</span>
-<span id="L178"><span class="lineNum">     178</span>              : # and additionally handles the PreparedAdjoint nodes _prepare_tree introduces. (The</span>
-<span id="L179"><span class="lineNum">     179</span>              : # residual per-leaf cost is the stencil apply! itself; see the alloc-free-kernel note</span>
-<span id="L180"><span class="lineNum">     180</span>              : # on PreparedForest.)</span>
-<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">        2430 : function _forest_capply!(</span></span>
-<span id="L182"><span class="lineNum">     182</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L183"><span class="lineNum">     183</span>              : )</span>
-<span id="L184"><span class="lineNum">     184</span> <span class="tlaGNC">        2430 :     _require_current(y)</span></span>
-<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">        2430 :     halo_update!(x, P.grid)</span></span>
-<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">        2430 :     apply_bc!(x, P.grid)</span></span>
-<span id="L187"><span class="lineNum">     187</span> <span class="tlaGNC">        2430 :     return _forest_sweep!(y, L, x, P.grid, α, β)</span></span>
-<span id="L188"><span class="lineNum">     188</span>              : end</span>
-<span id="L189"><span class="lineNum">     189</span>              : function _forest_capply!(</span>
-<span id="L190"><span class="lineNum">     190</span>              :     y::AbstractBlockField, L::Added, x::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L191"><span class="lineNum">     191</span>              : )</span>
-<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">          12 :     _forest_capply!(y, L.a, x, P, α, β)</span></span>
-<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC">          12 :     _forest_capply!(y, L.b, x, P, α, true)</span></span>
-<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">          12 :     return y</span></span>
-<span id="L195"><span class="lineNum">     195</span>              : end</span>
-<span id="L196"><span class="lineNum">     196</span> <span class="tlaUNC tlaBgUNC">           0 : _forest_capply!(y::AbstractBlockField, L::Scaled, x::AbstractBlockField, P::PreparedForest, α, β) =</span></span>
-<span id="L197"><span class="lineNum">     197</span>              :     _forest_capply!(y, L.op, x, P, α * L.α, β)</span>
-<span id="L198"><span class="lineNum">     198</span> <span class="tlaUNC">           0 : _forest_capply!(</span></span>
-<span id="L199"><span class="lineNum">     199</span>              :     y::AbstractBlockField, L::AdjointOp, x::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L200"><span class="lineNum">     200</span>              : ) = _forest_capply_adjoint!(y, L.op, x, P, α, β)</span>
-<span id="L201"><span class="lineNum">     201</span>              : </span>
-<span id="L202"><span class="lineNum">     202</span>              : # PreparedComposed: the held tmp is a BlockField; recursing at the forest level</span>
-<span id="L203"><span class="lineNum">     203</span>              : # gives the intermediate its inter-block exchange. The adjoint of a∘b is bᵀ∘aᵀ,</span>
-<span id="L204"><span class="lineNum">     204</span>              : # and tmp doubles as the cotangent intermediate (aᵀȳ has tmp's shape, and tmp is</span>
-<span id="L205"><span class="lineNum">     205</span>              : # dead between applications).</span>
-<span id="L206"><span class="lineNum">     206</span>              : function _forest_capply!(</span>
-<span id="L207"><span class="lineNum">     207</span>              :     y::AbstractBlockField, L::PreparedComposed, x::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L208"><span class="lineNum">     208</span>              : )</span>
-<span id="L209"><span class="lineNum">     209</span> <span class="tlaGNC tlaBgGNC">        1093 :     _forest_capply!(L.tmp, L.b, x, P, true, false)</span></span>
-<span id="L210"><span class="lineNum">     210</span> <span class="tlaGNC">        1093 :     _forest_capply!(y, L.a, L.tmp, P, α, β)</span></span>
-<span id="L211"><span class="lineNum">     211</span> <span class="tlaGNC">        1093 :     return y</span></span>
-<span id="L212"><span class="lineNum">     212</span>              : end</span>
-<span id="L213"><span class="lineNum">     213</span> <span class="tlaUNC tlaBgUNC">           0 : function _forest_capply_adjoint!(</span></span>
-<span id="L214"><span class="lineNum">     214</span>              :     x̄::AbstractBlockField, L::PreparedComposed, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L215"><span class="lineNum">     215</span>              : )</span>
-<span id="L216"><span class="lineNum">     216</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(L.tmp, L.a, ȳ, P, true, false)</span></span>
-<span id="L217"><span class="lineNum">     217</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(x̄, L.b, L.tmp, P, α, β)</span></span>
-<span id="L218"><span class="lineNum">     218</span> <span class="tlaUNC">           0 :     return x̄</span></span>
-<span id="L219"><span class="lineNum">     219</span>              : end</span>
-<span id="L220"><span class="lineNum">     220</span>              : </span>
-<span id="L221"><span class="lineNum">     221</span>              : # PreparedAdjoint: the leaf adjoint gather is allocation-free only for β = 0, so the</span>
-<span id="L222"><span class="lineNum">     222</span>              : # accumulating form gathers into the node's own scratch, then blends per leaf.</span>
-<span id="L223"><span class="lineNum">     223</span> <span class="tlaGNC tlaBgGNC">        1097 : function _forest_capply!(</span></span>
-<span id="L224"><span class="lineNum">     224</span>              :     y::AbstractBlockField, L::PreparedAdjoint, x::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L225"><span class="lineNum">     225</span>              : )</span>
-<span id="L226"><span class="lineNum">     226</span> <span class="tlaGNC">        1097 :     iszero(β) &amp;&amp; return _forest_capply_adjoint!(y, L.op, x, P, α, β)</span></span>
-<span id="L227"><span class="lineNum">     227</span> <span class="tlaGNC">          12 :     _forest_capply_adjoint!(L.scratch, L.op, x, P, true, false)</span></span>
-<span id="L228"><span class="lineNum">     228</span> <span class="tlaGNC">          12 :     s = L.scratch</span></span>
-<span id="L229"><span class="lineNum">     229</span> <span class="tlaGNC">          12 :     for i in 1:nleaves(P.grid)</span></span>
-<span id="L230"><span class="lineNum">     230</span> <span class="tlaGNC">         144 :         lg = leaf_grid(P.grid, i)</span></span>
-<span id="L231"><span class="lineNum">     231</span> <span class="tlaGNC">         144 :         yi = interior(block(y, i, lg))</span></span>
-<span id="L232"><span class="lineNum">     232</span> <span class="tlaGNC">         288 :         yi .= α .* interior(block(s, i, lg)) .+ β .* yi</span></span>
-<span id="L233"><span class="lineNum">     233</span> <span class="tlaGNC">         276 :     end</span></span>
-<span id="L234"><span class="lineNum">     234</span> <span class="tlaGNC">          12 :     return y</span></span>
-<span id="L235"><span class="lineNum">     235</span>              : end</span>
-<span id="L236"><span class="lineNum">     236</span>              : </span>
-<span id="L237"><span class="lineNum">     237</span>              : # Cached forest adjoint action, mirroring apply_adjoint! in operators/forest.jl. The</span>
-<span id="L238"><span class="lineNum">     238</span>              : # accumulating (β ≠ 0) branch uses the prepared adjscratch in place of similar(x̄).</span>
-<span id="L239"><span class="lineNum">     239</span> <span class="tlaGNC">        1097 : function _forest_capply_adjoint!(</span></span>
-<span id="L240"><span class="lineNum">     240</span>              :     x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L241"><span class="lineNum">     241</span>              : )</span>
-<span id="L242"><span class="lineNum">     242</span> <span class="tlaGNC">        1097 :     _require_current(x̄)</span></span>
-<span id="L243"><span class="lineNum">     243</span> <span class="tlaGNC">        1097 :     _require_current(ȳ)</span></span>
-<span id="L244"><span class="lineNum">     244</span>              :     # isselfadjoint is grid-aware (false on a non-uniform forest, whose coarse–fine</span>
-<span id="L245"><span class="lineNum">     245</span>              :     # coupling breaks the halo symmetry), so this shortcut never skips a real transpose.</span>
-<span id="L246"><span class="lineNum">     246</span> <span class="tlaGNC">        1097 :     isselfadjoint(L) &amp;&amp; return _forest_capply!(x̄, L, ȳ, P, α, β)</span></span>
-<span id="L247"><span class="lineNum">     247</span> <span class="tlaGNC">        1097 :     if iszero(β)</span></span>
-<span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC">        1097 :         for i in 1:nleaves(P.grid)</span></span>
-<span id="L249"><span class="lineNum">     249</span> <span class="tlaGNC">       26384 :             lg = leaf_grid(P.grid, i)</span></span>
-<span id="L250"><span class="lineNum">     250</span> <span class="tlaGNC">       52736 :             apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)</span></span>
-<span id="L251"><span class="lineNum">     251</span> <span class="tlaGNC">       51671 :         end</span></span>
-<span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">        1097 :         fold_bc!(x̄, P.grid)</span></span>
-<span id="L253"><span class="lineNum">     253</span> <span class="tlaGNC">        1097 :         halo_update_adjoint!(x̄, P.grid)</span></span>
-<span id="L254"><span class="lineNum">     254</span>              :     else</span>
-<span id="L255"><span class="lineNum">     255</span> <span class="tlaUNC tlaBgUNC">           0 :         s = P.adjscratch</span></span>
-<span id="L256"><span class="lineNum">     256</span> <span class="tlaUNC">           0 :         for i in 1:nleaves(P.grid)</span></span>
-<span id="L257"><span class="lineNum">     257</span> <span class="tlaUNC">           0 :             lg = leaf_grid(P.grid, i)</span></span>
-<span id="L258"><span class="lineNum">     258</span> <span class="tlaUNC">           0 :             apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)</span></span>
-<span id="L259"><span class="lineNum">     259</span> <span class="tlaUNC">           0 :         end</span></span>
-<span id="L260"><span class="lineNum">     260</span> <span class="tlaUNC">           0 :         fold_bc!(s, P.grid)</span></span>
-<span id="L261"><span class="lineNum">     261</span> <span class="tlaUNC">           0 :         halo_update_adjoint!(s, P.grid)</span></span>
-<span id="L262"><span class="lineNum">     262</span> <span class="tlaUNC">           0 :         for i in 1:nleaves(P.grid)</span></span>
-<span id="L263"><span class="lineNum">     263</span> <span class="tlaUNC">           0 :             lg = leaf_grid(P.grid, i)</span></span>
-<span id="L264"><span class="lineNum">     264</span> <span class="tlaUNC">           0 :             xi = interior(block(x̄, i, lg))</span></span>
-<span id="L265"><span class="lineNum">     265</span> <span class="tlaUNC">           0 :             xi .= α .* interior(block(s, i, lg)) .+ β .* xi</span></span>
-<span id="L266"><span class="lineNum">     266</span> <span class="tlaUNC">           0 :         end</span></span>
-<span id="L267"><span class="lineNum">     267</span>              :     end</span>
-<span id="L268"><span class="lineNum">     268</span> <span class="tlaGNC tlaBgGNC">        1097 :     return x̄</span></span>
-<span id="L269"><span class="lineNum">     269</span>              : end</span>
-<span id="L270"><span class="lineNum">     270</span> <span class="tlaUNC tlaBgUNC">           0 : function _forest_capply_adjoint!(</span></span>
-<span id="L271"><span class="lineNum">     271</span>              :     x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L272"><span class="lineNum">     272</span>              : )</span>
-<span id="L273"><span class="lineNum">     273</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(x̄, L.a, ȳ, P, α, β)</span></span>
-<span id="L274"><span class="lineNum">     274</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(x̄, L.b, ȳ, P, α, true)</span></span>
-<span id="L275"><span class="lineNum">     275</span> <span class="tlaUNC">           0 :     return x̄</span></span>
-<span id="L276"><span class="lineNum">     276</span>              : end</span>
-<span id="L277"><span class="lineNum">     277</span> <span class="tlaUNC">           0 : _forest_capply_adjoint!(</span></span>
-<span id="L278"><span class="lineNum">     278</span>              :     x̄::AbstractBlockField, L::Scaled, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L279"><span class="lineNum">     279</span>              : ) = _forest_capply_adjoint!(x̄, L.op, ȳ, P, α * conj(L.α), β)</span>
-<span id="L280"><span class="lineNum">     280</span> <span class="tlaUNC">           0 : _forest_capply_adjoint!(</span></span>
-<span id="L281"><span class="lineNum">     281</span>              :     x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
-<span id="L282"><span class="lineNum">     282</span>              : ) = _forest_capply!(x̄, L.op, ȳ, P, α, β)</span>
-<span id="L283"><span class="lineNum">     283</span>              : </span>
-<span id="L284"><span class="lineNum">     284</span>              : #--------------------------------------------------------------------------------# Boundary lift (linear/affine split)</span>
-<span id="L285"><span class="lineNum">     285</span>              : </span>
-<span id="L286"><span class="lineNum">     286</span>              : &quot;&quot;&quot;</span>
-<span id="L287"><span class="lineNum">     287</span>              :     boundary_rhs(L::AbstractOperator, g::AbstractGrid) -&gt; AbstractField</span>
-<span id="L288"><span class="lineNum">     288</span>              :     boundary_rhs(L::AbstractOperator, x_proto::AbstractField) -&gt; AbstractField</span>
+<span id="L173"><span class="lineNum">     173</span> <span class="tlaGNC">         228 : function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">         228 :     iszero(β) &amp;&amp; return apply_adjoint!(y, L.op, x, g, α, β)</span></span>
+<span id="L175"><span class="lineNum">     175</span> <span class="tlaGNC">          78 :     apply_adjoint!(L.scratch, L.op, x, g)</span></span>
+<span id="L176"><span class="lineNum">     176</span> <span class="tlaGNC">          78 :     interior(y) .= α .* interior(L.scratch) .+ β .* interior(y)</span></span>
+<span id="L177"><span class="lineNum">     177</span> <span class="tlaGNC">          39 :     return y</span></span>
+<span id="L178"><span class="lineNum">     178</span>              : end</span>
+<span id="L179"><span class="lineNum">     179</span>              : </span>
+<span id="L180"><span class="lineNum">     180</span>              : #--------------------------------------------------------------------------------# Cached forest apply (the PreparedForest hot path)</span>
+<span id="L181"><span class="lineNum">     181</span>              : </span>
+<span id="L182"><span class="lineNum">     182</span>              : # Cached counterpart of the un-prepared forest apply in operators/forest.jl, using</span>
+<span id="L183"><span class="lineNum">     183</span>              : # the prepared scratch fields (leaf grids are one concrete all-Interface type, so</span>
+<span id="L184"><span class="lineNum">     184</span>              : # rebuilding them in the sweep is type-stable and free). The combinator</span>
+<span id="L185"><span class="lineNum">     185</span>              : # structure mirrors forest.jl exactly — Added/Scaled/AdjointOp recurse at the forest</span>
+<span id="L186"><span class="lineNum">     186</span>              : # level so a nested adjoint still reaches halo_update_adjoint!'s cross-block fold —</span>
+<span id="L187"><span class="lineNum">     187</span>              : # and additionally handles the PreparedAdjoint nodes _prepare_tree introduces. (The</span>
+<span id="L188"><span class="lineNum">     188</span>              : # residual per-leaf cost is the stencil apply! itself; see the alloc-free-kernel note</span>
+<span id="L189"><span class="lineNum">     189</span>              : # on PreparedForest.)</span>
+<span id="L190"><span class="lineNum">     190</span> <span class="tlaGNC">        2457 : function _forest_capply!(</span></span>
+<span id="L191"><span class="lineNum">     191</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L192"><span class="lineNum">     192</span>              : )</span>
+<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC">        2457 :     _require_current(y)</span></span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">        2457 :     halo_update!(x, P.grid)</span></span>
+<span id="L195"><span class="lineNum">     195</span> <span class="tlaGNC">        2457 :     apply_bc!(x, P.grid)</span></span>
+<span id="L196"><span class="lineNum">     196</span> <span class="tlaGNC">        2457 :     return _forest_sweep!(y, L, x, P.grid, α, β)</span></span>
+<span id="L197"><span class="lineNum">     197</span>              : end</span>
+<span id="L198"><span class="lineNum">     198</span>              : function _forest_capply!(</span>
+<span id="L199"><span class="lineNum">     199</span>              :     y::AbstractBlockField, L::Added, x::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L200"><span class="lineNum">     200</span>              : )</span>
+<span id="L201"><span class="lineNum">     201</span> <span class="tlaGNC">          12 :     _forest_capply!(y, L.a, x, P, α, β)</span></span>
+<span id="L202"><span class="lineNum">     202</span> <span class="tlaGNC">          12 :     _forest_capply!(y, L.b, x, P, α, true)</span></span>
+<span id="L203"><span class="lineNum">     203</span> <span class="tlaGNC">          12 :     return y</span></span>
+<span id="L204"><span class="lineNum">     204</span>              : end</span>
+<span id="L205"><span class="lineNum">     205</span> <span class="tlaUNC tlaBgUNC">           0 : _forest_capply!(y::AbstractBlockField, L::Scaled, x::AbstractBlockField, P::PreparedForest, α, β) =</span></span>
+<span id="L206"><span class="lineNum">     206</span>              :     _forest_capply!(y, L.op, x, P, α * L.α, β)</span>
+<span id="L207"><span class="lineNum">     207</span> <span class="tlaUNC">           0 : _forest_capply!(</span></span>
+<span id="L208"><span class="lineNum">     208</span>              :     y::AbstractBlockField, L::AdjointOp, x::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L209"><span class="lineNum">     209</span>              : ) = _forest_capply_adjoint!(y, L.op, x, P, α, β)</span>
+<span id="L210"><span class="lineNum">     210</span>              : </span>
+<span id="L211"><span class="lineNum">     211</span>              : # PreparedComposed: the held tmp is a BlockField; recursing at the forest level</span>
+<span id="L212"><span class="lineNum">     212</span>              : # gives the intermediate its inter-block exchange. The adjoint of a∘b is bᵀ∘aᵀ,</span>
+<span id="L213"><span class="lineNum">     213</span>              : # and tmp doubles as the cotangent intermediate (aᵀȳ has tmp's shape, and tmp is</span>
+<span id="L214"><span class="lineNum">     214</span>              : # dead between applications).</span>
+<span id="L215"><span class="lineNum">     215</span> <span class="tlaGNC tlaBgGNC">           1 : function _forest_capply!(</span></span>
+<span id="L216"><span class="lineNum">     216</span>              :     y::AbstractBlockField, L::PreparedComposed, x::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L217"><span class="lineNum">     217</span>              : )</span>
+<span id="L218"><span class="lineNum">     218</span> <span class="tlaGNC">        1109 :     _forest_capply!(L.tmp, L.b, x, P, true, false)</span></span>
+<span id="L219"><span class="lineNum">     219</span> <span class="tlaGNC">        1109 :     _forest_capply!(y, L.a, L.tmp, P, α, β)</span></span>
+<span id="L220"><span class="lineNum">     220</span> <span class="tlaGNC">        1109 :     return y</span></span>
+<span id="L221"><span class="lineNum">     221</span>              : end</span>
+<span id="L222"><span class="lineNum">     222</span> <span class="tlaUNC tlaBgUNC">           0 : function _forest_capply_adjoint!(</span></span>
+<span id="L223"><span class="lineNum">     223</span>              :     x̄::AbstractBlockField, L::PreparedComposed, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L224"><span class="lineNum">     224</span>              : )</span>
+<span id="L225"><span class="lineNum">     225</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(L.tmp, L.a, ȳ, P, true, false)</span></span>
+<span id="L226"><span class="lineNum">     226</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(x̄, L.b, L.tmp, P, α, β)</span></span>
+<span id="L227"><span class="lineNum">     227</span> <span class="tlaUNC">           0 :     return x̄</span></span>
+<span id="L228"><span class="lineNum">     228</span>              : end</span>
+<span id="L229"><span class="lineNum">     229</span>              : </span>
+<span id="L230"><span class="lineNum">     230</span>              : # PreparedAdjoint: the leaf adjoint gather is allocation-free only for β = 0, so the</span>
+<span id="L231"><span class="lineNum">     231</span>              : # accumulating form gathers into the node's own scratch, then blends per leaf.</span>
+<span id="L232"><span class="lineNum">     232</span> <span class="tlaGNC tlaBgGNC">        1097 : function _forest_capply!(</span></span>
+<span id="L233"><span class="lineNum">     233</span>              :     y::AbstractBlockField, L::PreparedAdjoint, x::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L234"><span class="lineNum">     234</span>              : )</span>
+<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC">        1097 :     iszero(β) &amp;&amp; return _forest_capply_adjoint!(y, L.op, x, P, α, β)</span></span>
+<span id="L236"><span class="lineNum">     236</span> <span class="tlaGNC">          12 :     _forest_capply_adjoint!(L.scratch, L.op, x, P, true, false)</span></span>
+<span id="L237"><span class="lineNum">     237</span> <span class="tlaGNC">          12 :     s = L.scratch</span></span>
+<span id="L238"><span class="lineNum">     238</span> <span class="tlaGNC">          12 :     for i in 1:nleaves(P.grid)</span></span>
+<span id="L239"><span class="lineNum">     239</span> <span class="tlaGNC">         144 :         lg = leaf_grid(P.grid, i)</span></span>
+<span id="L240"><span class="lineNum">     240</span> <span class="tlaGNC">         144 :         yi = interior(block(y, i, lg))</span></span>
+<span id="L241"><span class="lineNum">     241</span> <span class="tlaGNC">         288 :         yi .= α .* interior(block(s, i, lg)) .+ β .* yi</span></span>
+<span id="L242"><span class="lineNum">     242</span> <span class="tlaGNC">         276 :     end</span></span>
+<span id="L243"><span class="lineNum">     243</span> <span class="tlaGNC">          12 :     return y</span></span>
+<span id="L244"><span class="lineNum">     244</span>              : end</span>
+<span id="L245"><span class="lineNum">     245</span>              : </span>
+<span id="L246"><span class="lineNum">     246</span>              : # Cached forest adjoint action, mirroring apply_adjoint! in operators/forest.jl. The</span>
+<span id="L247"><span class="lineNum">     247</span>              : # accumulating (β ≠ 0) branch uses the prepared adjscratch in place of similar(x̄).</span>
+<span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC">        1097 : function _forest_capply_adjoint!(</span></span>
+<span id="L249"><span class="lineNum">     249</span>              :     x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L250"><span class="lineNum">     250</span>              : )</span>
+<span id="L251"><span class="lineNum">     251</span> <span class="tlaGNC">        1097 :     _require_current(x̄)</span></span>
+<span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">        1097 :     _require_current(ȳ)</span></span>
+<span id="L253"><span class="lineNum">     253</span>              :     # isselfadjoint is grid-aware (false on a non-uniform forest, whose coarse–fine</span>
+<span id="L254"><span class="lineNum">     254</span>              :     # coupling breaks the halo symmetry), so this shortcut never skips a real transpose.</span>
+<span id="L255"><span class="lineNum">     255</span> <span class="tlaGNC">        1097 :     isselfadjoint(L) &amp;&amp; return _forest_capply!(x̄, L, ȳ, P, α, β)</span></span>
+<span id="L256"><span class="lineNum">     256</span>              :     # Diagonal transposes are pointwise; the gather + fold below would fold x̄'s</span>
+<span id="L257"><span class="lineNum">     257</span>              :     # ghost scratch into interiors (mirrors the un-prepared path in forest.jl).</span>
+<span id="L258"><span class="lineNum">     258</span> <span class="tlaGNC">        1097 :     isdiagonal(L) &amp;&amp; return _forest_capply!(x̄, adjoint_operator(L), ȳ, P, α, β)</span></span>
+<span id="L259"><span class="lineNum">     259</span> <span class="tlaGNC">        1097 :     if iszero(β)</span></span>
+<span id="L260"><span class="lineNum">     260</span> <span class="tlaGNC">        1097 :         _forest_adjoint_sweep!(x̄, L, ȳ, P.grid, α)</span></span>
+<span id="L261"><span class="lineNum">     261</span> <span class="tlaGNC">        1097 :         fold_bc!(x̄, P.grid)</span></span>
+<span id="L262"><span class="lineNum">     262</span> <span class="tlaGNC">        1097 :         halo_update_adjoint!(x̄, P.grid)</span></span>
+<span id="L263"><span class="lineNum">     263</span>              :     else</span>
+<span id="L264"><span class="lineNum">     264</span> <span class="tlaUNC tlaBgUNC">           0 :         s = P.adjscratch</span></span>
+<span id="L265"><span class="lineNum">     265</span> <span class="tlaUNC">           0 :         _forest_adjoint_sweep!(s, L, ȳ, P.grid, true)</span></span>
+<span id="L266"><span class="lineNum">     266</span> <span class="tlaUNC">           0 :         fold_bc!(s, P.grid)</span></span>
+<span id="L267"><span class="lineNum">     267</span> <span class="tlaUNC">           0 :         halo_update_adjoint!(s, P.grid)</span></span>
+<span id="L268"><span class="lineNum">     268</span> <span class="tlaUNC">           0 :         for i in 1:nleaves(P.grid)</span></span>
+<span id="L269"><span class="lineNum">     269</span> <span class="tlaUNC">           0 :             lg = leaf_grid(P.grid, i)</span></span>
+<span id="L270"><span class="lineNum">     270</span> <span class="tlaUNC">           0 :             xi = interior(block(x̄, i, lg))</span></span>
+<span id="L271"><span class="lineNum">     271</span> <span class="tlaUNC">           0 :             xi .= α .* interior(block(s, i, lg)) .+ β .* xi</span></span>
+<span id="L272"><span class="lineNum">     272</span> <span class="tlaUNC">           0 :         end</span></span>
+<span id="L273"><span class="lineNum">     273</span>              :     end</span>
+<span id="L274"><span class="lineNum">     274</span> <span class="tlaGNC tlaBgGNC">        1097 :     return x̄</span></span>
+<span id="L275"><span class="lineNum">     275</span>              : end</span>
+<span id="L276"><span class="lineNum">     276</span> <span class="tlaUNC tlaBgUNC">           0 : function _forest_capply_adjoint!(</span></span>
+<span id="L277"><span class="lineNum">     277</span>              :     x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L278"><span class="lineNum">     278</span>              : )</span>
+<span id="L279"><span class="lineNum">     279</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(x̄, L.a, ȳ, P, α, β)</span></span>
+<span id="L280"><span class="lineNum">     280</span> <span class="tlaUNC">           0 :     _forest_capply_adjoint!(x̄, L.b, ȳ, P, α, true)</span></span>
+<span id="L281"><span class="lineNum">     281</span> <span class="tlaUNC">           0 :     return x̄</span></span>
+<span id="L282"><span class="lineNum">     282</span>              : end</span>
+<span id="L283"><span class="lineNum">     283</span> <span class="tlaUNC">           0 : _forest_capply_adjoint!(</span></span>
+<span id="L284"><span class="lineNum">     284</span>              :     x̄::AbstractBlockField, L::Scaled, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L285"><span class="lineNum">     285</span>              : ) = _forest_capply_adjoint!(x̄, L.op, ȳ, P, α * conj(L.α), β)</span>
+<span id="L286"><span class="lineNum">     286</span> <span class="tlaUNC">           0 : _forest_capply_adjoint!(</span></span>
+<span id="L287"><span class="lineNum">     287</span>              :     x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, P::PreparedForest, α, β</span>
+<span id="L288"><span class="lineNum">     288</span>              : ) = _forest_capply!(x̄, L.op, ȳ, P, α, β)</span>
 <span id="L289"><span class="lineNum">     289</span>              : </span>
-<span id="L290"><span class="lineNum">     290</span>              : Boundary lift of the affine split `L_full(x) = L(x) + b`: the contribution of</span>
-<span id="L291"><span class="lineNum">     291</span>              : *inhomogeneous* boundary data (Dirichlet values, Neumann fluxes) that</span>
-<span id="L292"><span class="lineNum">     292</span>              : [`apply!`](@ref) deliberately omits so that `L` stays linear (`L(0) = 0`).</span>
-<span id="L293"><span class="lineNum">     293</span>              : Assemble once per solve and fold into the right-hand side: the discrete problem</span>
-<span id="L294"><span class="lineNum">     294</span>              : `L_full(u) = f` becomes `L·u = f - b`. The grid form assumes a scalar input</span>
-<span id="L295"><span class="lineNum">     295</span>              : field; pass a prototype field for vector inputs. On a [`BlockForest`](@ref) the</span>
-<span id="L296"><span class="lineNum">     296</span>              : lift is assembled by the forest-level inhomogeneous face pass — only physical</span>
-<span id="L297"><span class="lineNum">     297</span>              : domain faces contribute; [`Interface`](@ref) faces stay homogeneous.</span>
-<span id="L298"><span class="lineNum">     298</span>              : </span>
-<span id="L299"><span class="lineNum">     299</span>              : ### Examples</span>
-<span id="L300"><span class="lineNum">     300</span>              : </span>
-<span id="L301"><span class="lineNum">     301</span>              : ```julia</span>
-<span id="L302"><span class="lineNum">     302</span>              : g = CartesianGrid(((0.0, 1.0),), (64,); bc=((Dirichlet(1.0), Dirichlet(2.0)),))</span>
-<span id="L303"><span class="lineNum">     303</span>              : L = laplacian(g)</span>
-<span id="L304"><span class="lineNum">     304</span>              : b = boundary_rhs(L, g)</span>
-<span id="L305"><span class="lineNum">     305</span>              : rhs = flatten(f) .- flatten(b)        # solve  prepare(L) \\ rhs  with Krylov</span>
-<span id="L306"><span class="lineNum">     306</span>              : ```</span>
-<span id="L307"><span class="lineNum">     307</span>              : &quot;&quot;&quot;</span>
-<span id="L308"><span class="lineNum">     308</span> <span class="tlaGNC tlaBgGNC">          13 : function boundary_rhs(L::AbstractOperator, g::AbstractGrid)</span></span>
-<span id="L309"><span class="lineNum">     309</span> <span class="tlaGNC">          13 :     return boundary_rhs(L, scalar_field(g))</span></span>
-<span id="L310"><span class="lineNum">     310</span>              : end</span>
-<span id="L311"><span class="lineNum">     311</span>              : </span>
-<span id="L312"><span class="lineNum">     312</span> <span class="tlaGNC">          20 : function boundary_rhs(L::AbstractOperator, x_proto::Field)</span></span>
-<span id="L313"><span class="lineNum">     313</span> <span class="tlaGNC">          20 :     if !islinear(L)</span></span>
-<span id="L314"><span class="lineNum">     314</span> <span class="tlaGNC">           1 :         throw(</span></span>
-<span id="L315"><span class="lineNum">     315</span>              :             ArgumentError(</span>
-<span id="L316"><span class="lineNum">     316</span>              :                 &quot;boundary_rhs is the affine lift of a linear operator; $(nameof(typeof(L))) is nonlinear&quot;,</span>
-<span id="L317"><span class="lineNum">     317</span>              :             ),</span>
-<span id="L318"><span class="lineNum">     318</span>              :         )</span>
-<span id="L319"><span class="lineNum">     319</span>              :     end</span>
-<span id="L320"><span class="lineNum">     320</span> <span class="tlaGNC">          19 :     g = x_proto.grid</span></span>
-<span id="L321"><span class="lineNum">     321</span> <span class="tlaGNC">          38 :     z = similar(x_proto)</span></span>
-<span id="L322"><span class="lineNum">     322</span> <span class="tlaGNC">        2422 :     fill!(z.data, zero(eltype(z.data)))</span></span>
-<span id="L323"><span class="lineNum">     323</span> <span class="tlaGNC">          19 :     fill_bc_inhomogeneous!(z.data, g)</span></span>
-<span id="L324"><span class="lineNum">     324</span> <span class="tlaGNC">          38 :     b = allocate_output(L, x_proto)</span></span>
-<span id="L325"><span class="lineNum">     325</span> <span class="tlaGNC">          19 :     _apply_raw!(b, L, z, g, true, false)</span></span>
-<span id="L326"><span class="lineNum">     326</span> <span class="tlaGNC">          19 :     return b</span></span>
-<span id="L327"><span class="lineNum">     327</span>              : end</span>
-<span id="L328"><span class="lineNum">     328</span>              : </span>
-<span id="L329"><span class="lineNum">     329</span> <span class="tlaGNC">           3 : function boundary_rhs(L::Added, x_proto::Field)</span></span>
-<span id="L330"><span class="lineNum">     330</span> <span class="tlaGNC">           3 :     ba = boundary_rhs(L.a, x_proto)</span></span>
-<span id="L331"><span class="lineNum">     331</span> <span class="tlaGNC">           3 :     bb = boundary_rhs(L.b, x_proto)</span></span>
-<span id="L332"><span class="lineNum">     332</span> <span class="tlaGNC">           6 :     ba.data .+= bb.data</span></span>
-<span id="L333"><span class="lineNum">     333</span> <span class="tlaGNC">           3 :     return ba</span></span>
-<span id="L334"><span class="lineNum">     334</span>              : end</span>
-<span id="L335"><span class="lineNum">     335</span>              : </span>
-<span id="L336"><span class="lineNum">     336</span> <span class="tlaGNC">           4 : function boundary_rhs(L::Scaled, x_proto::Field)</span></span>
-<span id="L337"><span class="lineNum">     337</span> <span class="tlaGNC">           4 :     b = boundary_rhs(L.op, x_proto)</span></span>
-<span id="L338"><span class="lineNum">     338</span> <span class="tlaGNC">           7 :     b.data .*= L.α</span></span>
-<span id="L339"><span class="lineNum">     339</span> <span class="tlaGNC">           4 :     return b</span></span>
+<span id="L290"><span class="lineNum">     290</span>              : #--------------------------------------------------------------------------------# Boundary lift (linear/affine split)</span>
+<span id="L291"><span class="lineNum">     291</span>              : </span>
+<span id="L292"><span class="lineNum">     292</span>              : &quot;&quot;&quot;</span>
+<span id="L293"><span class="lineNum">     293</span>              :     boundary_rhs(L::AbstractOperator, g::AbstractGrid) -&gt; AbstractField</span>
+<span id="L294"><span class="lineNum">     294</span>              :     boundary_rhs(L::AbstractOperator, x_proto::AbstractField) -&gt; AbstractField</span>
+<span id="L295"><span class="lineNum">     295</span>              : </span>
+<span id="L296"><span class="lineNum">     296</span>              : Boundary lift of the affine split `L_full(x) = L(x) + b`: the contribution of</span>
+<span id="L297"><span class="lineNum">     297</span>              : *inhomogeneous* boundary data (Dirichlet values, Neumann fluxes) that</span>
+<span id="L298"><span class="lineNum">     298</span>              : [`apply!`](@ref) deliberately omits so that `L` stays linear (`L(0) = 0`).</span>
+<span id="L299"><span class="lineNum">     299</span>              : Assemble once per solve and fold into the right-hand side: the discrete problem</span>
+<span id="L300"><span class="lineNum">     300</span>              : `L_full(u) = f` becomes `L·u = f - b`. The grid form assumes a scalar input</span>
+<span id="L301"><span class="lineNum">     301</span>              : field; pass a prototype field for vector inputs. On a [`BlockForest`](@ref) the</span>
+<span id="L302"><span class="lineNum">     302</span>              : lift is assembled by the forest-level inhomogeneous face pass — only physical</span>
+<span id="L303"><span class="lineNum">     303</span>              : domain faces contribute; [`Interface`](@ref) faces stay homogeneous.</span>
+<span id="L304"><span class="lineNum">     304</span>              : </span>
+<span id="L305"><span class="lineNum">     305</span>              : ### Examples</span>
+<span id="L306"><span class="lineNum">     306</span>              : </span>
+<span id="L307"><span class="lineNum">     307</span>              : ```julia</span>
+<span id="L308"><span class="lineNum">     308</span>              : g = CartesianGrid(((0.0, 1.0),), (64,); bc=((Dirichlet(1.0), Dirichlet(2.0)),))</span>
+<span id="L309"><span class="lineNum">     309</span>              : L = laplacian(g)</span>
+<span id="L310"><span class="lineNum">     310</span>              : b = boundary_rhs(L, g)</span>
+<span id="L311"><span class="lineNum">     311</span>              : rhs = flatten(f) .- flatten(b)        # solve  prepare(L) \\ rhs  with Krylov</span>
+<span id="L312"><span class="lineNum">     312</span>              : ```</span>
+<span id="L313"><span class="lineNum">     313</span>              : &quot;&quot;&quot;</span>
+<span id="L314"><span class="lineNum">     314</span> <span class="tlaGNC tlaBgGNC">          13 : function boundary_rhs(L::AbstractOperator, g::AbstractGrid)</span></span>
+<span id="L315"><span class="lineNum">     315</span> <span class="tlaGNC">          13 :     return boundary_rhs(L, scalar_field(g))</span></span>
+<span id="L316"><span class="lineNum">     316</span>              : end</span>
+<span id="L317"><span class="lineNum">     317</span>              : </span>
+<span id="L318"><span class="lineNum">     318</span> <span class="tlaGNC">          20 : function boundary_rhs(L::AbstractOperator, x_proto::Field)</span></span>
+<span id="L319"><span class="lineNum">     319</span> <span class="tlaGNC">          20 :     if !islinear(L)</span></span>
+<span id="L320"><span class="lineNum">     320</span> <span class="tlaGNC">           1 :         throw(</span></span>
+<span id="L321"><span class="lineNum">     321</span>              :             ArgumentError(</span>
+<span id="L322"><span class="lineNum">     322</span>              :                 &quot;boundary_rhs is the affine lift of a linear operator; $(nameof(typeof(L))) is nonlinear&quot;,</span>
+<span id="L323"><span class="lineNum">     323</span>              :             ),</span>
+<span id="L324"><span class="lineNum">     324</span>              :         )</span>
+<span id="L325"><span class="lineNum">     325</span>              :     end</span>
+<span id="L326"><span class="lineNum">     326</span> <span class="tlaGNC">          19 :     g = x_proto.grid</span></span>
+<span id="L327"><span class="lineNum">     327</span> <span class="tlaGNC">          38 :     z = similar(x_proto)</span></span>
+<span id="L328"><span class="lineNum">     328</span> <span class="tlaGNC">        2422 :     fill!(z.data, zero(eltype(z.data)))</span></span>
+<span id="L329"><span class="lineNum">     329</span> <span class="tlaGNC">          19 :     fill_bc_inhomogeneous!(z.data, g)</span></span>
+<span id="L330"><span class="lineNum">     330</span> <span class="tlaGNC">          38 :     b = allocate_output(L, x_proto)</span></span>
+<span id="L331"><span class="lineNum">     331</span> <span class="tlaGNC">          19 :     _apply_raw!(b, L, z, g, true, false)</span></span>
+<span id="L332"><span class="lineNum">     332</span> <span class="tlaGNC">          19 :     return b</span></span>
+<span id="L333"><span class="lineNum">     333</span>              : end</span>
+<span id="L334"><span class="lineNum">     334</span>              : </span>
+<span id="L335"><span class="lineNum">     335</span> <span class="tlaGNC">           3 : function boundary_rhs(L::Added, x_proto::Field)</span></span>
+<span id="L336"><span class="lineNum">     336</span> <span class="tlaGNC">           3 :     ba = boundary_rhs(L.a, x_proto)</span></span>
+<span id="L337"><span class="lineNum">     337</span> <span class="tlaGNC">           3 :     bb = boundary_rhs(L.b, x_proto)</span></span>
+<span id="L338"><span class="lineNum">     338</span> <span class="tlaGNC">           6 :     ba.data .+= bb.data</span></span>
+<span id="L339"><span class="lineNum">     339</span> <span class="tlaGNC">           3 :     return ba</span></span>
 <span id="L340"><span class="lineNum">     340</span>              : end</span>
 <span id="L341"><span class="lineNum">     341</span>              : </span>
-<span id="L342"><span class="lineNum">     342</span>              : # Affine composition: a(b(x) + c_b) + c_a = (a∘b)(x) + a(c_b) + c_a.</span>
-<span id="L343"><span class="lineNum">     343</span> <span class="tlaGNC">           3 : function boundary_rhs(L::Composed, x_proto::Field)</span></span>
-<span id="L344"><span class="lineNum">     344</span> <span class="tlaGNC">           3 :     bb = boundary_rhs(L.b, x_proto)</span></span>
-<span id="L345"><span class="lineNum">     345</span> <span class="tlaGNC">           4 :     lift = apply(L.a, bb)</span></span>
-<span id="L346"><span class="lineNum">     346</span> <span class="tlaGNC">           3 :     ba = boundary_rhs(L.a, bb)</span></span>
-<span id="L347"><span class="lineNum">     347</span> <span class="tlaGNC">           6 :     lift.data .+= ba.data</span></span>
-<span id="L348"><span class="lineNum">     348</span> <span class="tlaGNC">           3 :     return lift</span></span>
-<span id="L349"><span class="lineNum">     349</span>              : end</span>
-<span id="L350"><span class="lineNum">     350</span>              : </span>
-<span id="L351"><span class="lineNum">     351</span>              : # The adjoint action is built homogeneous (gather + fold, no ghost offsets), so</span>
-<span id="L352"><span class="lineNum">     352</span>              : # its lift is identically zero.</span>
-<span id="L353"><span class="lineNum">     353</span> <span class="tlaUNC tlaBgUNC">           0 : function boundary_rhs(L::AdjointOp, x_proto::Field)</span></span>
-<span id="L354"><span class="lineNum">     354</span> <span class="tlaUNC">           0 :     b = allocate_output(L, x_proto)</span></span>
-<span id="L355"><span class="lineNum">     355</span> <span class="tlaUNC">           0 :     fill!(b.data, zero(eltype(b.data)))</span></span>
-<span id="L356"><span class="lineNum">     356</span> <span class="tlaUNC">           0 :     return b</span></span>
-<span id="L357"><span class="lineNum">     357</span>              : end</span>
-<span id="L358"><span class="lineNum">     358</span>              : </span>
-<span id="L359"><span class="lineNum">     359</span>              : # Forest lift: the forest-level inhomogeneous face pass writes the ghost offsets</span>
-<span id="L360"><span class="lineNum">     360</span>              : # (Interface ghosts stay zero, so the lift is local to each block), then the raw</span>
-<span id="L361"><span class="lineNum">     361</span>              : # stencil sweeps each leaf.</span>
-<span id="L362"><span class="lineNum">     362</span> <span class="tlaGNC tlaBgGNC">          15 : function boundary_rhs(L::AbstractOperator, x_proto::AbstractBlockField)</span></span>
-<span id="L363"><span class="lineNum">     363</span> <span class="tlaGNC">          15 :     if !islinear(L)</span></span>
-<span id="L364"><span class="lineNum">     364</span> <span class="tlaUNC tlaBgUNC">           0 :         throw(</span></span>
-<span id="L365"><span class="lineNum">     365</span>              :             ArgumentError(</span>
-<span id="L366"><span class="lineNum">     366</span>              :                 &quot;boundary_rhs is the affine lift of a linear operator; $(nameof(typeof(L))) is nonlinear&quot;,</span>
-<span id="L367"><span class="lineNum">     367</span>              :             ),</span>
-<span id="L368"><span class="lineNum">     368</span>              :         )</span>
-<span id="L369"><span class="lineNum">     369</span>              :     end</span>
-<span id="L370"><span class="lineNum">     370</span> <span class="tlaGNC tlaBgGNC">          15 :     g = x_proto.grid</span></span>
-<span id="L371"><span class="lineNum">     371</span> <span class="tlaGNC">         492 :     z = _zero_all!(similar(x_proto))</span></span>
-<span id="L372"><span class="lineNum">     372</span> <span class="tlaGNC">          15 :     fill_bc_inhomogeneous!(z, g)</span></span>
-<span id="L373"><span class="lineNum">     373</span> <span class="tlaGNC">          15 :     b = allocate_output(L, x_proto)</span></span>
-<span id="L374"><span class="lineNum">     374</span> <span class="tlaGNC">          15 :     for i in 1:nleaves(g)</span></span>
-<span id="L375"><span class="lineNum">     375</span> <span class="tlaGNC">          72 :         lg = leaf_grid(g, i)</span></span>
-<span id="L376"><span class="lineNum">     376</span> <span class="tlaGNC">         132 :         _apply_raw!(block(b, i, lg), L, block(z, i, lg), lg, true, false)</span></span>
-<span id="L377"><span class="lineNum">     377</span> <span class="tlaGNC">         129 :     end</span></span>
-<span id="L378"><span class="lineNum">     378</span> <span class="tlaGNC">          15 :     return b</span></span>
-<span id="L379"><span class="lineNum">     379</span>              : end</span>
-<span id="L380"><span class="lineNum">     380</span>              : </span>
-<span id="L381"><span class="lineNum">     381</span>              : # The adjoint action is built homogeneous (gather + fold, no ghost offsets), so</span>
-<span id="L382"><span class="lineNum">     382</span>              : # its lift is identically zero — mirrors the ::Field method above.</span>
-<span id="L383"><span class="lineNum">     383</span> <span class="tlaUNC tlaBgUNC">           0 : boundary_rhs(L::AdjointOp, x_proto::AbstractBlockField) =</span></span>
-<span id="L384"><span class="lineNum">     384</span>              :     _zero_all!(allocate_output(L, x_proto))</span>
-<span id="L385"><span class="lineNum">     385</span>              : </span>
-<span id="L386"><span class="lineNum">     386</span>              : # Forest combinator lifts recurse at the FOREST level (the ::Field methods above</span>
-<span id="L387"><span class="lineNum">     387</span>              : # would run per leaf, where a nested Composed's `apply(L.a, b_b)` misses the</span>
-<span id="L388"><span class="lineNum">     388</span>              : # inter-block exchange its lift field needs).</span>
-<span id="L389"><span class="lineNum">     389</span> <span class="tlaGNC tlaBgGNC">           4 : function boundary_rhs(L::Added, x_proto::AbstractBlockField)</span></span>
-<span id="L390"><span class="lineNum">     390</span> <span class="tlaGNC">           4 :     ba = boundary_rhs(L.a, x_proto)</span></span>
-<span id="L391"><span class="lineNum">     391</span> <span class="tlaGNC">           4 :     bb = boundary_rhs(L.b, x_proto)</span></span>
-<span id="L392"><span class="lineNum">     392</span> <span class="tlaGNC">           4 :     for i in 1:nleaves(ba.grid)</span></span>
-<span id="L393"><span class="lineNum">     393</span> <span class="tlaGNC">          32 :         _block_array(ba, i) .+= _block_array(bb, i)</span></span>
-<span id="L394"><span class="lineNum">     394</span> <span class="tlaGNC">          28 :     end</span></span>
-<span id="L395"><span class="lineNum">     395</span> <span class="tlaGNC">           4 :     return ba</span></span>
-<span id="L396"><span class="lineNum">     396</span>              : end</span>
-<span id="L397"><span class="lineNum">     397</span> <span class="tlaGNC">           4 : function boundary_rhs(L::Scaled, x_proto::AbstractBlockField)</span></span>
-<span id="L398"><span class="lineNum">     398</span> <span class="tlaGNC">           4 :     b = boundary_rhs(L.op, x_proto)</span></span>
-<span id="L399"><span class="lineNum">     399</span> <span class="tlaGNC">           4 :     for i in 1:nleaves(b.grid)</span></span>
-<span id="L400"><span class="lineNum">     400</span> <span class="tlaGNC">          32 :         _block_array(b, i) .*= L.α</span></span>
-<span id="L401"><span class="lineNum">     401</span> <span class="tlaGNC">          28 :     end</span></span>
-<span id="L402"><span class="lineNum">     402</span> <span class="tlaGNC">           4 :     return b</span></span>
-<span id="L403"><span class="lineNum">     403</span>              : end</span>
-<span id="L404"><span class="lineNum">     404</span>              : # Affine composition on a forest: a(b(x) + c_b) + c_a — the middle term a(c_b)</span>
-<span id="L405"><span class="lineNum">     405</span>              : # applies `a` to a real forest field, whose forest apply performs the exchange.</span>
-<span id="L406"><span class="lineNum">     406</span> <span class="tlaGNC">           2 : function boundary_rhs(L::Composed, x_proto::AbstractBlockField)</span></span>
-<span id="L407"><span class="lineNum">     407</span> <span class="tlaGNC">           2 :     bb = boundary_rhs(L.b, x_proto)</span></span>
-<span id="L408"><span class="lineNum">     408</span> <span class="tlaGNC">           2 :     lift = apply(L.a, bb)</span></span>
-<span id="L409"><span class="lineNum">     409</span> <span class="tlaGNC">           2 :     ba = boundary_rhs(L.a, bb)</span></span>
-<span id="L410"><span class="lineNum">     410</span> <span class="tlaGNC">           2 :     for i in 1:nleaves(lift.grid)</span></span>
-<span id="L411"><span class="lineNum">     411</span> <span class="tlaGNC">          16 :         _block_array(lift, i) .+= _block_array(ba, i)</span></span>
-<span id="L412"><span class="lineNum">     412</span> <span class="tlaGNC">          14 :     end</span></span>
-<span id="L413"><span class="lineNum">     413</span> <span class="tlaGNC">           2 :     return lift</span></span>
-<span id="L414"><span class="lineNum">     414</span>              : end</span>
-<span id="L415"><span class="lineNum">     415</span>              : </span>
-<span id="L416"><span class="lineNum">     416</span> <span class="tlaGNC">           6 : function Base.size(P::_AnyPrepared)</span></span>
-<span id="L417"><span class="lineNum">     417</span> <span class="tlaGNC">         139 :     return (flat_length(P.ypad), flat_length(P.xpad))</span></span>
-<span id="L418"><span class="lineNum">     418</span>              : end</span>
-<span id="L419"><span class="lineNum">     419</span> <span class="tlaGNC">           6 : Base.size(P::_AnyPrepared, d::Integer) = size(P)[d]</span></span>
-<span id="L420"><span class="lineNum">     420</span> <span class="tlaGNC">         313 : Base.eltype(P::_AnyPrepared) = _scalar_eltype(eltype(P.xpad))</span></span>
+<span id="L342"><span class="lineNum">     342</span> <span class="tlaGNC">           4 : function boundary_rhs(L::Scaled, x_proto::Field)</span></span>
+<span id="L343"><span class="lineNum">     343</span> <span class="tlaGNC">           4 :     b = boundary_rhs(L.op, x_proto)</span></span>
+<span id="L344"><span class="lineNum">     344</span> <span class="tlaGNC">           7 :     b.data .*= L.α</span></span>
+<span id="L345"><span class="lineNum">     345</span> <span class="tlaGNC">           4 :     return b</span></span>
+<span id="L346"><span class="lineNum">     346</span>              : end</span>
+<span id="L347"><span class="lineNum">     347</span>              : </span>
+<span id="L348"><span class="lineNum">     348</span>              : # Affine composition: a(b(x) + c_b) + c_a = (a∘b)(x) + a(c_b) + c_a.</span>
+<span id="L349"><span class="lineNum">     349</span> <span class="tlaGNC">           3 : function boundary_rhs(L::Composed, x_proto::Field)</span></span>
+<span id="L350"><span class="lineNum">     350</span> <span class="tlaGNC">           3 :     bb = boundary_rhs(L.b, x_proto)</span></span>
+<span id="L351"><span class="lineNum">     351</span> <span class="tlaGNC">           4 :     lift = apply(L.a, bb)</span></span>
+<span id="L352"><span class="lineNum">     352</span> <span class="tlaGNC">           3 :     ba = boundary_rhs(L.a, bb)</span></span>
+<span id="L353"><span class="lineNum">     353</span> <span class="tlaGNC">           6 :     lift.data .+= ba.data</span></span>
+<span id="L354"><span class="lineNum">     354</span> <span class="tlaGNC">           3 :     return lift</span></span>
+<span id="L355"><span class="lineNum">     355</span>              : end</span>
+<span id="L356"><span class="lineNum">     356</span>              : </span>
+<span id="L357"><span class="lineNum">     357</span>              : # The adjoint action is built homogeneous (gather + fold, no ghost offsets), so</span>
+<span id="L358"><span class="lineNum">     358</span>              : # its lift is identically zero.</span>
+<span id="L359"><span class="lineNum">     359</span> <span class="tlaUNC tlaBgUNC">           0 : function boundary_rhs(L::AdjointOp, x_proto::Field)</span></span>
+<span id="L360"><span class="lineNum">     360</span> <span class="tlaUNC">           0 :     b = allocate_output(L, x_proto)</span></span>
+<span id="L361"><span class="lineNum">     361</span> <span class="tlaUNC">           0 :     fill!(b.data, zero(eltype(b.data)))</span></span>
+<span id="L362"><span class="lineNum">     362</span> <span class="tlaUNC">           0 :     return b</span></span>
+<span id="L363"><span class="lineNum">     363</span>              : end</span>
+<span id="L364"><span class="lineNum">     364</span>              : </span>
+<span id="L365"><span class="lineNum">     365</span>              : # Forest lift: the forest-level inhomogeneous face pass writes the ghost offsets</span>
+<span id="L366"><span class="lineNum">     366</span>              : # (Interface ghosts stay zero, so the lift is local to each block), then the raw</span>
+<span id="L367"><span class="lineNum">     367</span>              : # stencil sweeps each leaf.</span>
+<span id="L368"><span class="lineNum">     368</span> <span class="tlaGNC tlaBgGNC">          15 : function boundary_rhs(L::AbstractOperator, x_proto::AbstractBlockField)</span></span>
+<span id="L369"><span class="lineNum">     369</span> <span class="tlaGNC">          15 :     if !islinear(L)</span></span>
+<span id="L370"><span class="lineNum">     370</span> <span class="tlaUNC tlaBgUNC">           0 :         throw(</span></span>
+<span id="L371"><span class="lineNum">     371</span>              :             ArgumentError(</span>
+<span id="L372"><span class="lineNum">     372</span>              :                 &quot;boundary_rhs is the affine lift of a linear operator; $(nameof(typeof(L))) is nonlinear&quot;,</span>
+<span id="L373"><span class="lineNum">     373</span>              :             ),</span>
+<span id="L374"><span class="lineNum">     374</span>              :         )</span>
+<span id="L375"><span class="lineNum">     375</span>              :     end</span>
+<span id="L376"><span class="lineNum">     376</span> <span class="tlaGNC tlaBgGNC">          15 :     g = x_proto.grid</span></span>
+<span id="L377"><span class="lineNum">     377</span> <span class="tlaGNC">         492 :     z = _zero_all!(similar(x_proto))</span></span>
+<span id="L378"><span class="lineNum">     378</span> <span class="tlaGNC">          15 :     fill_bc_inhomogeneous!(z, g)</span></span>
+<span id="L379"><span class="lineNum">     379</span> <span class="tlaGNC">          15 :     b = allocate_output(L, x_proto)</span></span>
+<span id="L380"><span class="lineNum">     380</span> <span class="tlaGNC">          15 :     for i in 1:nleaves(g)</span></span>
+<span id="L381"><span class="lineNum">     381</span> <span class="tlaGNC">          72 :         lg = leaf_grid(g, i)</span></span>
+<span id="L382"><span class="lineNum">     382</span> <span class="tlaGNC">         132 :         _apply_raw!(block(b, i, lg), _leaf_op(L, i, lg), block(z, i, lg), lg, true, false)</span></span>
+<span id="L383"><span class="lineNum">     383</span> <span class="tlaGNC">         129 :     end</span></span>
+<span id="L384"><span class="lineNum">     384</span> <span class="tlaGNC">          15 :     return b</span></span>
+<span id="L385"><span class="lineNum">     385</span>              : end</span>
+<span id="L386"><span class="lineNum">     386</span>              : </span>
+<span id="L387"><span class="lineNum">     387</span>              : # The adjoint action is built homogeneous (gather + fold, no ghost offsets), so</span>
+<span id="L388"><span class="lineNum">     388</span>              : # its lift is identically zero — mirrors the ::Field method above.</span>
+<span id="L389"><span class="lineNum">     389</span> <span class="tlaUNC tlaBgUNC">           0 : boundary_rhs(L::AdjointOp, x_proto::AbstractBlockField) =</span></span>
+<span id="L390"><span class="lineNum">     390</span>              :     _zero_all!(allocate_output(L, x_proto))</span>
+<span id="L391"><span class="lineNum">     391</span>              : </span>
+<span id="L392"><span class="lineNum">     392</span>              : # Forest combinator lifts recurse at the FOREST level (the ::Field methods above</span>
+<span id="L393"><span class="lineNum">     393</span>              : # would run per leaf, where a nested Composed's `apply(L.a, b_b)` misses the</span>
+<span id="L394"><span class="lineNum">     394</span>              : # inter-block exchange its lift field needs).</span>
+<span id="L395"><span class="lineNum">     395</span> <span class="tlaGNC tlaBgGNC">           4 : function boundary_rhs(L::Added, x_proto::AbstractBlockField)</span></span>
+<span id="L396"><span class="lineNum">     396</span> <span class="tlaGNC">           4 :     ba = boundary_rhs(L.a, x_proto)</span></span>
+<span id="L397"><span class="lineNum">     397</span> <span class="tlaGNC">           4 :     bb = boundary_rhs(L.b, x_proto)</span></span>
+<span id="L398"><span class="lineNum">     398</span> <span class="tlaGNC">           4 :     for i in 1:nleaves(ba.grid)</span></span>
+<span id="L399"><span class="lineNum">     399</span> <span class="tlaGNC">          32 :         _block_array(ba, i) .+= _block_array(bb, i)</span></span>
+<span id="L400"><span class="lineNum">     400</span> <span class="tlaGNC">          28 :     end</span></span>
+<span id="L401"><span class="lineNum">     401</span> <span class="tlaGNC">           4 :     return ba</span></span>
+<span id="L402"><span class="lineNum">     402</span>              : end</span>
+<span id="L403"><span class="lineNum">     403</span> <span class="tlaGNC">           4 : function boundary_rhs(L::Scaled, x_proto::AbstractBlockField)</span></span>
+<span id="L404"><span class="lineNum">     404</span> <span class="tlaGNC">           4 :     b = boundary_rhs(L.op, x_proto)</span></span>
+<span id="L405"><span class="lineNum">     405</span> <span class="tlaGNC">           4 :     for i in 1:nleaves(b.grid)</span></span>
+<span id="L406"><span class="lineNum">     406</span> <span class="tlaGNC">          32 :         _block_array(b, i) .*= L.α</span></span>
+<span id="L407"><span class="lineNum">     407</span> <span class="tlaGNC">          28 :     end</span></span>
+<span id="L408"><span class="lineNum">     408</span> <span class="tlaGNC">           4 :     return b</span></span>
+<span id="L409"><span class="lineNum">     409</span>              : end</span>
+<span id="L410"><span class="lineNum">     410</span>              : # Affine composition on a forest: a(b(x) + c_b) + c_a — the middle term a(c_b)</span>
+<span id="L411"><span class="lineNum">     411</span>              : # applies `a` to a real forest field, whose forest apply performs the exchange.</span>
+<span id="L412"><span class="lineNum">     412</span> <span class="tlaGNC">           2 : function boundary_rhs(L::Composed, x_proto::AbstractBlockField)</span></span>
+<span id="L413"><span class="lineNum">     413</span> <span class="tlaGNC">           2 :     bb = boundary_rhs(L.b, x_proto)</span></span>
+<span id="L414"><span class="lineNum">     414</span> <span class="tlaGNC">           2 :     lift = apply(L.a, bb)</span></span>
+<span id="L415"><span class="lineNum">     415</span> <span class="tlaGNC">           2 :     ba = boundary_rhs(L.a, bb)</span></span>
+<span id="L416"><span class="lineNum">     416</span> <span class="tlaGNC">           2 :     for i in 1:nleaves(lift.grid)</span></span>
+<span id="L417"><span class="lineNum">     417</span> <span class="tlaGNC">          16 :         _block_array(lift, i) .+= _block_array(ba, i)</span></span>
+<span id="L418"><span class="lineNum">     418</span> <span class="tlaGNC">          14 :     end</span></span>
+<span id="L419"><span class="lineNum">     419</span> <span class="tlaGNC">           2 :     return lift</span></span>
+<span id="L420"><span class="lineNum">     420</span>              : end</span>
 <span id="L421"><span class="lineNum">     421</span>              : </span>
-<span id="L422"><span class="lineNum">     422</span> <span class="tlaGNC">         177 : function LinearAlgebra.mul!(</span></span>
-<span id="L423"><span class="lineNum">     423</span>              :     y::AbstractVector, P::PreparedOperator, x::AbstractVector, α::Number, β::Number</span>
-<span id="L424"><span class="lineNum">     424</span>              : )</span>
-<span id="L425"><span class="lineNum">     425</span> <span class="tlaGNC">        3189 :     flat_to_interior!(P.xpad, x)</span></span>
-<span id="L426"><span class="lineNum">     426</span> <span class="tlaGNC">        3189 :     apply!(P.ypad, P.op, P.xpad, P.grid)</span></span>
-<span id="L427"><span class="lineNum">     427</span> <span class="tlaGNC">        3189 :     interior_to_flat!(y, P.ypad, α, β)</span></span>
-<span id="L428"><span class="lineNum">     428</span> <span class="tlaGNC">        3189 :     return y</span></span>
-<span id="L429"><span class="lineNum">     429</span>              : end</span>
-<span id="L430"><span class="lineNum">     430</span> <span class="tlaGNC">          15 : function LinearAlgebra.mul!(y::AbstractVector, P::PreparedOperator, x::AbstractVector)</span></span>
-<span id="L431"><span class="lineNum">     431</span> <span class="tlaGNC">        3187 :     return mul!(y, P, x, true, false)</span></span>
-<span id="L432"><span class="lineNum">     432</span>              : end</span>
-<span id="L433"><span class="lineNum">     433</span>              : </span>
-<span id="L434"><span class="lineNum">     434</span> <span class="tlaGNC">        2423 : function LinearAlgebra.mul!(</span></span>
-<span id="L435"><span class="lineNum">     435</span>              :     y::AbstractVector, P::PreparedForest, x::AbstractVector, α::Number, β::Number</span>
-<span id="L436"><span class="lineNum">     436</span>              : )</span>
-<span id="L437"><span class="lineNum">     437</span> <span class="tlaGNC">        2426 :     P.generation == P.grid.forest.generation[] || throw(</span></span>
-<span id="L438"><span class="lineNum">     438</span>              :         ArgumentError(</span>
-<span id="L439"><span class="lineNum">     439</span>              :             &quot;this PreparedForest was built before the forest was regridded &quot; *</span>
-<span id="L440"><span class="lineNum">     440</span>              :             &quot;(refine!/coarsen!/balance!); re-run prepare on the current forest&quot;,</span>
-<span id="L441"><span class="lineNum">     441</span>              :         ),</span>
-<span id="L442"><span class="lineNum">     442</span>              :     )</span>
-<span id="L443"><span class="lineNum">     443</span> <span class="tlaGNC">        2420 :     xpad = P.xpad</span></span>
-<span id="L444"><span class="lineNum">     444</span> <span class="tlaGNC">        2420 :     for i in 1:nleaves(P.grid)</span></span>
-<span id="L445"><span class="lineNum">     445</span> <span class="tlaGNC">       68486 :         flat_to_interior!(block(xpad, i, leaf_grid(P.grid, i)), view(x, _block_range(xpad, i)))</span></span>
-<span id="L446"><span class="lineNum">     446</span> <span class="tlaGNC">      134552 :     end</span></span>
-<span id="L447"><span class="lineNum">     447</span> <span class="tlaGNC">        2420 :     _forest_capply!(P.ypad, P.op, xpad, P, true, false)</span></span>
-<span id="L448"><span class="lineNum">     448</span> <span class="tlaGNC">        2420 :     ypad = P.ypad</span></span>
-<span id="L449"><span class="lineNum">     449</span> <span class="tlaGNC">        2420 :     for i in 1:nleaves(P.grid)</span></span>
-<span id="L450"><span class="lineNum">     450</span> <span class="tlaGNC">       68486 :         lg = leaf_grid(P.grid, i)</span></span>
-<span id="L451"><span class="lineNum">     451</span> <span class="tlaGNC">      136684 :         interior_to_flat!(view(y, _block_range(ypad, i)), block(ypad, i, lg), α, β)</span></span>
-<span id="L452"><span class="lineNum">     452</span> <span class="tlaGNC">      134552 :     end</span></span>
-<span id="L453"><span class="lineNum">     453</span> <span class="tlaGNC">        2420 :     return y</span></span>
-<span id="L454"><span class="lineNum">     454</span>              : end</span>
-<span id="L455"><span class="lineNum">     455</span> <span class="tlaGNC">          28 : function LinearAlgebra.mul!(y::AbstractVector, P::PreparedForest, x::AbstractVector)</span></span>
-<span id="L456"><span class="lineNum">     456</span> <span class="tlaGNC">        2416 :     return mul!(y, P, x, true, false)</span></span>
-<span id="L457"><span class="lineNum">     457</span>              : end</span>
-<span id="L458"><span class="lineNum">     458</span>              : </span>
-<span id="L459"><span class="lineNum">     459</span> <span class="tlaGNC">           2 : function LinearAlgebra.mul!(::AbstractVector, L::AbstractOperator, ::AbstractVector)</span></span>
-<span id="L460"><span class="lineNum">     460</span> <span class="tlaGNC">           2 :     throw(</span></span>
-<span id="L461"><span class="lineNum">     461</span>              :         ArgumentError(</span>
-<span id="L462"><span class="lineNum">     462</span>              :             &quot;mul! on a raw $(nameof(typeof(L))) would allocate scratch every call; wrap the &quot; *</span>
-<span id="L463"><span class="lineNum">     463</span>              :             &quot;operator once with prepare(L, x) and hand the prepared operator to the solver&quot;,</span>
-<span id="L464"><span class="lineNum">     464</span>              :         ),</span>
-<span id="L465"><span class="lineNum">     465</span>              :     )</span>
-<span id="L466"><span class="lineNum">     466</span>              : end</span>
-<span id="L467"><span class="lineNum">     467</span> <span class="tlaGNC">           1 : function LinearAlgebra.mul!(</span></span>
-<span id="L468"><span class="lineNum">     468</span>              :     y::AbstractVector, L::AbstractOperator, x::AbstractVector, ::Number, ::Number</span>
-<span id="L469"><span class="lineNum">     469</span>              : )</span>
-<span id="L470"><span class="lineNum">     470</span> <span class="tlaGNC">           1 :     return mul!(y, L, x)</span></span>
-<span id="L471"><span class="lineNum">     471</span>              : end</span>
+<span id="L422"><span class="lineNum">     422</span> <span class="tlaGNC">           6 : function Base.size(P::_AnyPrepared)</span></span>
+<span id="L423"><span class="lineNum">     423</span> <span class="tlaGNC">         139 :     return (flat_length(P.ypad), flat_length(P.xpad))</span></span>
+<span id="L424"><span class="lineNum">     424</span>              : end</span>
+<span id="L425"><span class="lineNum">     425</span> <span class="tlaGNC">           6 : Base.size(P::_AnyPrepared, d::Integer) = size(P)[d]</span></span>
+<span id="L426"><span class="lineNum">     426</span> <span class="tlaGNC">         313 : Base.eltype(P::_AnyPrepared) = _scalar_eltype(eltype(P.xpad))</span></span>
+<span id="L427"><span class="lineNum">     427</span>              : </span>
+<span id="L428"><span class="lineNum">     428</span> <span class="tlaGNC">         177 : function LinearAlgebra.mul!(</span></span>
+<span id="L429"><span class="lineNum">     429</span>              :     y::AbstractVector, P::PreparedOperator, x::AbstractVector, α::Number, β::Number</span>
+<span id="L430"><span class="lineNum">     430</span>              : )</span>
+<span id="L431"><span class="lineNum">     431</span> <span class="tlaGNC">        3189 :     flat_to_interior!(P.xpad, x)</span></span>
+<span id="L432"><span class="lineNum">     432</span> <span class="tlaGNC">        3189 :     apply!(P.ypad, P.op, P.xpad, P.grid)</span></span>
+<span id="L433"><span class="lineNum">     433</span> <span class="tlaGNC">        3189 :     interior_to_flat!(y, P.ypad, α, β)</span></span>
+<span id="L434"><span class="lineNum">     434</span> <span class="tlaGNC">        3189 :     return y</span></span>
+<span id="L435"><span class="lineNum">     435</span>              : end</span>
+<span id="L436"><span class="lineNum">     436</span> <span class="tlaGNC">          15 : function LinearAlgebra.mul!(y::AbstractVector, P::PreparedOperator, x::AbstractVector)</span></span>
+<span id="L437"><span class="lineNum">     437</span> <span class="tlaGNC">        3187 :     return mul!(y, P, x, true, false)</span></span>
+<span id="L438"><span class="lineNum">     438</span>              : end</span>
+<span id="L439"><span class="lineNum">     439</span>              : </span>
+<span id="L440"><span class="lineNum">     440</span> <span class="tlaGNC">        2433 : function LinearAlgebra.mul!(</span></span>
+<span id="L441"><span class="lineNum">     441</span>              :     y::AbstractVector, P::PreparedForest, x::AbstractVector, α::Number, β::Number</span>
+<span id="L442"><span class="lineNum">     442</span>              : )</span>
+<span id="L443"><span class="lineNum">     443</span> <span class="tlaGNC">        2437 :     P.generation == P.grid.forest.generation[] || throw(</span></span>
+<span id="L444"><span class="lineNum">     444</span>              :         ArgumentError(</span>
+<span id="L445"><span class="lineNum">     445</span>              :             &quot;this PreparedForest was built before the forest was regridded &quot; *</span>
+<span id="L446"><span class="lineNum">     446</span>              :             &quot;(refine!/coarsen!/balance!); re-run prepare on the current forest&quot;,</span>
+<span id="L447"><span class="lineNum">     447</span>              :         ),</span>
+<span id="L448"><span class="lineNum">     448</span>              :     )</span>
+<span id="L449"><span class="lineNum">     449</span> <span class="tlaGNC">        2429 :     xpad = P.xpad</span></span>
+<span id="L450"><span class="lineNum">     450</span> <span class="tlaGNC">        2429 :     for i in 1:nleaves(P.grid)</span></span>
+<span id="L451"><span class="lineNum">     451</span> <span class="tlaGNC">       68630 :         flat_to_interior!(block(xpad, i, leaf_grid(P.grid, i)), view(x, _block_range(xpad, i)))</span></span>
+<span id="L452"><span class="lineNum">     452</span> <span class="tlaGNC">      134831 :     end</span></span>
+<span id="L453"><span class="lineNum">     453</span> <span class="tlaGNC">        2429 :     _forest_capply!(P.ypad, P.op, xpad, P, true, false)</span></span>
+<span id="L454"><span class="lineNum">     454</span> <span class="tlaGNC">        2429 :     ypad = P.ypad</span></span>
+<span id="L455"><span class="lineNum">     455</span> <span class="tlaGNC">        2429 :     for i in 1:nleaves(P.grid)</span></span>
+<span id="L456"><span class="lineNum">     456</span> <span class="tlaGNC">       68630 :         lg = leaf_grid(P.grid, i)</span></span>
+<span id="L457"><span class="lineNum">     457</span> <span class="tlaGNC">      136876 :         interior_to_flat!(view(y, _block_range(ypad, i)), block(ypad, i, lg), α, β)</span></span>
+<span id="L458"><span class="lineNum">     458</span> <span class="tlaGNC">      134831 :     end</span></span>
+<span id="L459"><span class="lineNum">     459</span> <span class="tlaGNC">        2429 :     return y</span></span>
+<span id="L460"><span class="lineNum">     460</span>              : end</span>
+<span id="L461"><span class="lineNum">     461</span> <span class="tlaGNC">          34 : function LinearAlgebra.mul!(y::AbstractVector, P::PreparedForest, x::AbstractVector)</span></span>
+<span id="L462"><span class="lineNum">     462</span> <span class="tlaGNC">        2424 :     return mul!(y, P, x, true, false)</span></span>
+<span id="L463"><span class="lineNum">     463</span>              : end</span>
+<span id="L464"><span class="lineNum">     464</span>              : </span>
+<span id="L465"><span class="lineNum">     465</span> <span class="tlaGNC">           2 : function LinearAlgebra.mul!(::AbstractVector, L::AbstractOperator, ::AbstractVector)</span></span>
+<span id="L466"><span class="lineNum">     466</span> <span class="tlaGNC">           2 :     throw(</span></span>
+<span id="L467"><span class="lineNum">     467</span>              :         ArgumentError(</span>
+<span id="L468"><span class="lineNum">     468</span>              :             &quot;mul! on a raw $(nameof(typeof(L))) would allocate scratch every call; wrap the &quot; *</span>
+<span id="L469"><span class="lineNum">     469</span>              :             &quot;operator once with prepare(L, x) and hand the prepared operator to the solver&quot;,</span>
+<span id="L470"><span class="lineNum">     470</span>              :         ),</span>
+<span id="L471"><span class="lineNum">     471</span>              :     )</span>
+<span id="L472"><span class="lineNum">     472</span>              : end</span>
+<span id="L473"><span class="lineNum">     473</span> <span class="tlaGNC">           1 : function LinearAlgebra.mul!(</span></span>
+<span id="L474"><span class="lineNum">     474</span>              :     y::AbstractVector, L::AbstractOperator, x::AbstractVector, ::Number, ::Number</span>
+<span id="L475"><span class="lineNum">     475</span>              : )</span>
+<span id="L476"><span class="lineNum">     476</span> <span class="tlaGNC">           1 :     return mul!(y, L, x)</span></span>
+<span id="L477"><span class="lineNum">     477</span>              : end</span>
         </pre>
               </td>
             </tr>

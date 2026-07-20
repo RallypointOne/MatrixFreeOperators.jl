@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryMed">87.8&nbsp;%</td>
-            <td class="headerCovTableEntry">41</td>
-            <td class="headerCovTableEntry">36</td>
+            <td class="headerCovTableEntryMed">89.4&nbsp;%</td>
+            <td class="headerCovTableEntry">47</td>
+            <td class="headerCovTableEntry">42</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-19 18:19:51</td>
+            <td class="headerValue">2026-07-20 18:24:23</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -68,16 +68,16 @@
 <span id="L6"><span class="lineNum">       6</span>              : Velocity marker for [`advection`](@ref) selecting self-advection `u·∇u`: the</span>
 <span id="L7"><span class="lineNum">       7</span>              : velocity is the advected state itself, making the operator nonlinear.</span>
 <span id="L8"><span class="lineNum">       8</span>              : &quot;&quot;&quot;</span>
-<span id="L9"><span class="lineNum">       9</span> <span class="tlaGNC tlaBgGNC">           9 : struct SelfAdvection end</span></span>
+<span id="L9"><span class="lineNum">       9</span> <span class="tlaGNC tlaBgGNC">          19 : struct SelfAdvection end</span></span>
 <span id="L10"><span class="lineNum">      10</span>              : </span>
 <span id="L11"><span class="lineNum">      11</span>              : @inline function _adv_at(</span>
 <span id="L12"><span class="lineNum">      12</span>              :     u::AbstractArray{&lt;:Any,N}, v::AbstractArray{&lt;:Any,N}, I::CartesianIndex{N}, inv_h::NTuple{N}</span>
 <span id="L13"><span class="lineNum">      13</span>              : ) where {N}</span>
-<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC">       11260 :     terms = ntuple(Val(N)) do d</span></span>
-<span id="L15"><span class="lineNum">      15</span> <span class="tlaGNC">       21734 :         δ = _unitindex(Val(N), d)</span></span>
-<span id="L16"><span class="lineNum">      16</span> <span class="tlaGNC">       21734 :         @inbounds v[I][d] * ((u[I + δ] - u[I - δ]) * (inv_h[d] / 2))</span></span>
+<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC">       23932 :     terms = ntuple(Val(N)) do d</span></span>
+<span id="L15"><span class="lineNum">      15</span> <span class="tlaGNC">       47078 :         δ = _unitindex(Val(N), d)</span></span>
+<span id="L16"><span class="lineNum">      16</span> <span class="tlaGNC">       47078 :         @inbounds v[I][d] * ((u[I + δ] - u[I - δ]) * (inv_h[d] / 2))</span></span>
 <span id="L17"><span class="lineNum">      17</span>              :     end</span>
-<span id="L18"><span class="lineNum">      18</span> <span class="tlaGNC">       11260 :     return sum(terms)</span></span>
+<span id="L18"><span class="lineNum">      18</span> <span class="tlaGNC">       23932 :     return sum(terms)</span></span>
 <span id="L19"><span class="lineNum">      19</span>              : end</span>
 <span id="L20"><span class="lineNum">      20</span>              : </span>
 <span id="L21"><span class="lineNum">      21</span>              : &quot;&quot;&quot;</span>
@@ -89,103 +89,124 @@
 <span id="L27"><span class="lineNum">      27</span>              : (`u·∇u`). Construct with [`advection`](@ref).</span>
 <span id="L28"><span class="lineNum">      28</span>              : &quot;&quot;&quot;</span>
 <span id="L29"><span class="lineNum">      29</span>              : struct Advection{G&lt;:AbstractGrid,V} &lt;: AbstractOperator</span>
-<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">          20 :     grid::G</span></span>
+<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">         416 :     grid::G</span></span>
 <span id="L31"><span class="lineNum">      31</span>              :     velocity::V</span>
 <span id="L32"><span class="lineNum">      32</span>              : end</span>
 <span id="L33"><span class="lineNum">      33</span>              : </span>
 <span id="L34"><span class="lineNum">      34</span>              : &quot;&quot;&quot;</span>
 <span id="L35"><span class="lineNum">      35</span>              :     advection(g::AbstractGrid, velocity::Field) -&gt; Advection</span>
-<span id="L36"><span class="lineNum">      36</span>              :     advection(g::AbstractGrid, ::SelfAdvection) -&gt; Advection</span>
-<span id="L37"><span class="lineNum">      37</span>              : </span>
-<span id="L38"><span class="lineNum">      38</span>              : Build a matrix-free advection operator `v·∇` bound to `g`, with second-order</span>
-<span id="L39"><span class="lineNum">      39</span>              : central differences. A prescribed velocity must be an `SVector`-valued field with</span>
-<span id="L40"><span class="lineNum">      40</span>              : one component per grid dimension; the resulting operator is linear in the</span>
-<span id="L41"><span class="lineNum">      41</span>              : advected input and acts componentwise on scalar or vector inputs. With</span>
-<span id="L42"><span class="lineNum">      42</span>              : [`SelfAdvection`](@ref) the operator computes `u·∇u` of a vector field and is</span>
-<span id="L43"><span class="lineNum">      43</span>              : nonlinear — see [`linearize`](@ref) for its Jacobian.</span>
-<span id="L44"><span class="lineNum">      44</span>              : </span>
-<span id="L45"><span class="lineNum">      45</span>              : ### Examples</span>
-<span id="L46"><span class="lineNum">      46</span>              : </span>
-<span id="L47"><span class="lineNum">      47</span>              : ```julia</span>
-<span id="L48"><span class="lineNum">      48</span>              : g = CartesianGrid(((0.0, 2π), (0.0, 2π)), (32, 32);</span>
-<span id="L49"><span class="lineNum">      49</span>              :                   bc=((Periodic(), Periodic()), (Periodic(), Periodic())))</span>
-<span id="L50"><span class="lineNum">      50</span>              : v = set!(vector_field(g), x -&gt; SVector(1.0, 0.0))</span>
-<span id="L51"><span class="lineNum">      51</span>              : A = advection(g, v)                  # linear: passive transport by v</span>
-<span id="L52"><span class="lineNum">      52</span>              : B = advection(g, SelfAdvection())    # nonlinear: u·∇u</span>
-<span id="L53"><span class="lineNum">      53</span>              : ```</span>
-<span id="L54"><span class="lineNum">      54</span>              : &quot;&quot;&quot;</span>
-<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">           8 : function advection(g::AbstractGrid, velocity::Field)</span></span>
-<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">          10 :     eltype(velocity.data) &lt;: SVector || throw(</span></span>
-<span id="L57"><span class="lineNum">      57</span>              :         ArgumentError(</span>
-<span id="L58"><span class="lineNum">      58</span>              :             &quot;prescribed advection velocity must be an SVector-valued field, got eltype $(eltype(velocity.data))&quot;,</span>
-<span id="L59"><span class="lineNum">      59</span>              :         ),</span>
-<span id="L60"><span class="lineNum">      60</span>              :     )</span>
-<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">           9 :     ncomponents(velocity) == dimension(g) || throw(</span></span>
-<span id="L62"><span class="lineNum">      62</span>              :         ArgumentError(</span>
-<span id="L63"><span class="lineNum">      63</span>              :             &quot;velocity has $(ncomponents(velocity)) components but the grid is $(dimension(g))-D&quot;,</span>
-<span id="L64"><span class="lineNum">      64</span>              :         ),</span>
-<span id="L65"><span class="lineNum">      65</span>              :     )</span>
-<span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">           8 :     return Advection(g, velocity)</span></span>
-<span id="L67"><span class="lineNum">      67</span>              : end</span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">           9 : advection(g::AbstractGrid, velocity::SelfAdvection) = Advection(g, velocity)</span></span>
-<span id="L69"><span class="lineNum">      69</span>              : </span>
-<span id="L70"><span class="lineNum">      70</span> <span class="tlaUNC tlaBgUNC">           0 : islinear(::Advection{&lt;:AbstractGrid,&lt;:Field}) = true</span></span>
-<span id="L71"><span class="lineNum">      71</span> <span class="tlaUNC">           0 : islinear(::Advection{&lt;:AbstractGrid,SelfAdvection}) = false</span></span>
-<span id="L72"><span class="lineNum">      72</span> <span class="tlaUNC">           0 : isconstant(::Advection{&lt;:AbstractGrid,&lt;:Field}) = true</span></span>
-<span id="L73"><span class="lineNum">      73</span> <span class="tlaUNC">           0 : isconstant(::Advection{&lt;:AbstractGrid,SelfAdvection}) = false</span></span>
-<span id="L74"><span class="lineNum">      74</span> <span class="tlaUNC">           0 : operator_grid(L::Advection) = L.grid</span></span>
-<span id="L75"><span class="lineNum">      75</span>              : </span>
-<span id="L76"><span class="lineNum">      76</span>              : # Adjoint of passive transport, expressed in the operator algebra: the mechanical</span>
-<span id="L77"><span class="lineNum">      77</span>              : # transpose of Σ_d diag(v_d)·D_d is Σ_d D_dᵀ·diag(v_d).</span>
-<span id="L78"><span class="lineNum">      78</span>              : function adjoint_operator(L::Advection{&lt;:AbstractGrid,&lt;:Field})</span>
-<span id="L79"><span class="lineNum">      79</span> <span class="tlaGNC tlaBgGNC">           6 :     g = L.grid</span></span>
-<span id="L80"><span class="lineNum">      80</span> <span class="tlaGNC">           6 :     terms = ntuple(Val(dimension(g))) do d</span></span>
-<span id="L81"><span class="lineNum">      81</span> <span class="tlaGNC">           6 :         Composed(adjoint_operator(derivative(g, d)), scaling(component(L.velocity, d)))</span></span>
-<span id="L82"><span class="lineNum">      82</span>              :     end</span>
-<span id="L83"><span class="lineNum">      83</span> <span class="tlaGNC">           6 :     return reduce(Added, terms)</span></span>
-<span id="L84"><span class="lineNum">      84</span>              : end</span>
-<span id="L85"><span class="lineNum">      85</span>              : </span>
-<span id="L86"><span class="lineNum">      86</span>              : function apply!(</span>
-<span id="L87"><span class="lineNum">      87</span>              :     y::Field, L::Advection{&lt;:AbstractGrid,&lt;:Field}, x::Field, g::AbstractGrid, α, β</span>
-<span id="L88"><span class="lineNum">      88</span>              : )</span>
-<span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">          49 :     halo_update!(x, g)</span></span>
-<span id="L90"><span class="lineNum">      90</span> <span class="tlaGNC">          49 :     apply_bc!(x)</span></span>
-<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">          49 :     return _apply_raw!(y, L, x, g, α, β)</span></span>
-<span id="L92"><span class="lineNum">      92</span>              : end</span>
-<span id="L93"><span class="lineNum">      93</span>              : </span>
-<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC">          49 : function _apply_raw!(</span></span>
-<span id="L95"><span class="lineNum">      95</span>              :     y::Field, L::Advection{&lt;:AbstractGrid,&lt;:Field}, x::Field, g::AbstractGrid, α, β</span>
-<span id="L96"><span class="lineNum">      96</span>              : )</span>
-<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">          49 :     inv_h = _inv_spacing(g)</span></span>
-<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">          49 :     yi = interior(y)</span></span>
-<span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">          49 :     if iszero(β)</span></span>
-<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC">          92 :         yi .= α .* _adv_at.(Ref(x.data), Ref(L.velocity.data), interior(g), Ref(inv_h))</span></span>
-<span id="L101"><span class="lineNum">     101</span>              :     else</span>
-<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">           3 :         yi .= α .* _adv_at.(Ref(x.data), Ref(L.velocity.data), interior(g), Ref(inv_h)) .+ β .* yi</span></span>
+<span id="L36"><span class="lineNum">      36</span>              :     advection(g::BlockForest, velocity::AbstractBlockField) -&gt; Advection</span>
+<span id="L37"><span class="lineNum">      37</span>              :     advection(g::AbstractGrid, ::SelfAdvection) -&gt; Advection</span>
+<span id="L38"><span class="lineNum">      38</span>              : </span>
+<span id="L39"><span class="lineNum">      39</span>              : Build a matrix-free advection operator `v·∇` bound to `g`, with second-order</span>
+<span id="L40"><span class="lineNum">      40</span>              : central differences. A prescribed velocity must be an `SVector`-valued field with</span>
+<span id="L41"><span class="lineNum">      41</span>              : one component per grid dimension — on a [`BlockForest`](@ref) a block field on</span>
+<span id="L42"><span class="lineNum">      42</span>              : that same forest (matching the applied field's layout lets the forest-native</span>
+<span id="L43"><span class="lineNum">      43</span>              : kernel engage); the resulting operator is linear in the</span>
+<span id="L44"><span class="lineNum">      44</span>              : advected input and acts componentwise on scalar or vector inputs. With</span>
+<span id="L45"><span class="lineNum">      45</span>              : [`SelfAdvection`](@ref) the operator computes `u·∇u` of a vector field and is</span>
+<span id="L46"><span class="lineNum">      46</span>              : nonlinear — see [`linearize`](@ref) for its Jacobian.</span>
+<span id="L47"><span class="lineNum">      47</span>              : </span>
+<span id="L48"><span class="lineNum">      48</span>              : ### Examples</span>
+<span id="L49"><span class="lineNum">      49</span>              : </span>
+<span id="L50"><span class="lineNum">      50</span>              : ```julia</span>
+<span id="L51"><span class="lineNum">      51</span>              : g = CartesianGrid(((0.0, 2π), (0.0, 2π)), (32, 32);</span>
+<span id="L52"><span class="lineNum">      52</span>              :                   bc=((Periodic(), Periodic()), (Periodic(), Periodic())))</span>
+<span id="L53"><span class="lineNum">      53</span>              : v = set!(vector_field(g), x -&gt; SVector(1.0, 0.0))</span>
+<span id="L54"><span class="lineNum">      54</span>              : A = advection(g, v)                  # linear: passive transport by v</span>
+<span id="L55"><span class="lineNum">      55</span>              : B = advection(g, SelfAdvection())    # nonlinear: u·∇u</span>
+<span id="L56"><span class="lineNum">      56</span>              : ```</span>
+<span id="L57"><span class="lineNum">      57</span>              : &quot;&quot;&quot;</span>
+<span id="L58"><span class="lineNum">      58</span> <span class="tlaGNC">           8 : function advection(g::AbstractGrid, velocity::Field)</span></span>
+<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">          10 :     eltype(velocity.data) &lt;: SVector || throw(</span></span>
+<span id="L60"><span class="lineNum">      60</span>              :         ArgumentError(</span>
+<span id="L61"><span class="lineNum">      61</span>              :             &quot;prescribed advection velocity must be an SVector-valued field, got eltype $(eltype(velocity.data))&quot;,</span>
+<span id="L62"><span class="lineNum">      62</span>              :         ),</span>
+<span id="L63"><span class="lineNum">      63</span>              :     )</span>
+<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">           9 :     ncomponents(velocity) == dimension(g) || throw(</span></span>
+<span id="L65"><span class="lineNum">      65</span>              :         ArgumentError(</span>
+<span id="L66"><span class="lineNum">      66</span>              :             &quot;velocity has $(ncomponents(velocity)) components but the grid is $(dimension(g))-D&quot;,</span>
+<span id="L67"><span class="lineNum">      67</span>              :         ),</span>
+<span id="L68"><span class="lineNum">      68</span>              :     )</span>
+<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">           8 :     return Advection(g, velocity)</span></span>
+<span id="L70"><span class="lineNum">      70</span>              : end</span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">          19 : advection(g::AbstractGrid, velocity::SelfAdvection) = Advection(g, velocity)</span></span>
+<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">          13 : function advection(g::BlockForest, velocity::AbstractBlockField)</span></span>
+<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">          29 :     eltype(velocity) &lt;: SVector || throw(</span></span>
+<span id="L74"><span class="lineNum">      74</span>              :         ArgumentError(</span>
+<span id="L75"><span class="lineNum">      75</span>              :             &quot;prescribed advection velocity must be an SVector-valued field, got eltype $(eltype(velocity))&quot;,</span>
+<span id="L76"><span class="lineNum">      76</span>              :         ),</span>
+<span id="L77"><span class="lineNum">      77</span>              :     )</span>
+<span id="L78"><span class="lineNum">      78</span> <span class="tlaGNC">          29 :     ncomponents(velocity) == dimension(g) || throw(</span></span>
+<span id="L79"><span class="lineNum">      79</span>              :         ArgumentError(</span>
+<span id="L80"><span class="lineNum">      80</span>              :             &quot;velocity has $(ncomponents(velocity)) components but the grid is $(dimension(g))-D&quot;,</span>
+<span id="L81"><span class="lineNum">      81</span>              :         ),</span>
+<span id="L82"><span class="lineNum">      82</span>              :     )</span>
+<span id="L83"><span class="lineNum">      83</span>              :     # _leaf_op slices the velocity by this forest's leaf indices — a velocity</span>
+<span id="L84"><span class="lineNum">      84</span>              :     # bound to a different forest would alias the wrong leaves. Topology</span>
+<span id="L85"><span class="lineNum">      85</span>              :     # identity, not wrapper identity: adapted twins share the forest.</span>
+<span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">          29 :     velocity.grid.forest === g.forest ||</span></span>
+<span id="L87"><span class="lineNum">      87</span>              :         throw(ArgumentError(&quot;advection velocity must be a field on the same forest&quot;))</span>
+<span id="L88"><span class="lineNum">      88</span> <span class="tlaGNC">          29 :     return Advection(g, velocity)</span></span>
+<span id="L89"><span class="lineNum">      89</span>              : end</span>
+<span id="L90"><span class="lineNum">      90</span>              : </span>
+<span id="L91"><span class="lineNum">      91</span> <span class="tlaUNC tlaBgUNC">           0 : islinear(::Advection{&lt;:AbstractGrid,&lt;:AbstractField}) = true</span></span>
+<span id="L92"><span class="lineNum">      92</span> <span class="tlaUNC">           0 : islinear(::Advection{&lt;:AbstractGrid,SelfAdvection}) = false</span></span>
+<span id="L93"><span class="lineNum">      93</span> <span class="tlaUNC">           0 : isconstant(::Advection{&lt;:AbstractGrid,&lt;:AbstractField}) = true</span></span>
+<span id="L94"><span class="lineNum">      94</span> <span class="tlaUNC">           0 : isconstant(::Advection{&lt;:AbstractGrid,SelfAdvection}) = false</span></span>
+<span id="L95"><span class="lineNum">      95</span> <span class="tlaUNC">           0 : operator_grid(L::Advection) = L.grid</span></span>
+<span id="L96"><span class="lineNum">      96</span>              : </span>
+<span id="L97"><span class="lineNum">      97</span>              : # Adjoint of passive transport, expressed in the operator algebra: the mechanical</span>
+<span id="L98"><span class="lineNum">      98</span>              : # transpose of Σ_d diag(v_d)·D_d is Σ_d D_dᵀ·diag(v_d).</span>
+<span id="L99"><span class="lineNum">      99</span>              : function adjoint_operator(L::Advection{&lt;:AbstractGrid,&lt;:AbstractField})</span>
+<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC tlaBgGNC">          14 :     g = L.grid</span></span>
+<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">          14 :     terms = ntuple(Val(dimension(g))) do d</span></span>
+<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">          14 :         Composed(adjoint_operator(derivative(g, d)), scaling(component(L.velocity, d)))</span></span>
 <span id="L103"><span class="lineNum">     103</span>              :     end</span>
-<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">          49 :     return y</span></span>
+<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">          14 :     return reduce(Added, terms)</span></span>
 <span id="L105"><span class="lineNum">     105</span>              : end</span>
 <span id="L106"><span class="lineNum">     106</span>              : </span>
-<span id="L107"><span class="lineNum">     107</span> <span class="tlaGNC">          35 : function apply!(</span></span>
-<span id="L108"><span class="lineNum">     108</span>              :     y::Field, L::Advection{&lt;:AbstractGrid,SelfAdvection}, x::Field, g::AbstractGrid, α, β</span>
+<span id="L107"><span class="lineNum">     107</span> <span class="tlaGNC">         356 : function apply!(</span></span>
+<span id="L108"><span class="lineNum">     108</span>              :     y::Field, L::Advection{&lt;:AbstractGrid,&lt;:Field}, x::Field, g::AbstractGrid, α, β</span>
 <span id="L109"><span class="lineNum">     109</span>              : )</span>
-<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">          35 :     eltype(x.data) &lt;: SVector ||</span></span>
-<span id="L111"><span class="lineNum">     111</span>              :         throw(ArgumentError(&quot;self-advection u·∇u requires an SVector-valued field&quot;))</span>
-<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">          34 :     halo_update!(x, g)</span></span>
-<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC">          34 :     apply_bc!(x)</span></span>
-<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">          34 :     inv_h = _inv_spacing(g)</span></span>
-<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          34 :     yi = interior(y)</span></span>
-<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          34 :     if iszero(β)</span></span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          34 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h))</span></span>
-<span id="L118"><span class="lineNum">     118</span>              :     else</span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">           1 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h)) .+ β .* yi</span></span>
-<span id="L120"><span class="lineNum">     120</span>              :     end</span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">          34 :     return y</span></span>
-<span id="L122"><span class="lineNum">     122</span>              : end</span>
-<span id="L123"><span class="lineNum">     123</span>              : </span>
-<span id="L124"><span class="lineNum">     124</span>              : function Adapt.adapt_structure(to, L::Advection)</span>
-<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">           3 :     return Advection(Adapt.adapt(to, L.grid), Adapt.adapt(to, L.velocity))</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">         405 :     halo_update!(x, g)</span></span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">         405 :     apply_bc!(x)</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">         405 :     return _apply_raw!(y, L, x, g, α, β)</span></span>
+<span id="L113"><span class="lineNum">     113</span>              : end</span>
+<span id="L114"><span class="lineNum">     114</span>              : </span>
+<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">         405 : function _apply_raw!(</span></span>
+<span id="L116"><span class="lineNum">     116</span>              :     y::Field, L::Advection{&lt;:AbstractGrid,&lt;:Field}, x::Field, g::AbstractGrid, α, β</span>
+<span id="L117"><span class="lineNum">     117</span>              : )</span>
+<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">         405 :     inv_h = _inv_spacing(g)</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">         405 :     yi = interior(y)</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">         405 :     if iszero(β)</span></span>
+<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">         776 :         yi .= α .* _adv_at.(Ref(x.data), Ref(L.velocity.data), interior(g), Ref(inv_h))</span></span>
+<span id="L122"><span class="lineNum">     122</span>              :     else</span>
+<span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC">          17 :         yi .= α .* _adv_at.(Ref(x.data), Ref(L.velocity.data), interior(g), Ref(inv_h)) .+ β .* yi</span></span>
+<span id="L124"><span class="lineNum">     124</span>              :     end</span>
+<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">         405 :     return y</span></span>
 <span id="L126"><span class="lineNum">     126</span>              : end</span>
+<span id="L127"><span class="lineNum">     127</span>              : </span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">         175 : function apply!(</span></span>
+<span id="L129"><span class="lineNum">     129</span>              :     y::Field, L::Advection{&lt;:AbstractGrid,SelfAdvection}, x::Field, g::AbstractGrid, α, β</span>
+<span id="L130"><span class="lineNum">     130</span>              : )</span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">         175 :     eltype(x.data) &lt;: SVector ||</span></span>
+<span id="L132"><span class="lineNum">     132</span>              :         throw(ArgumentError(&quot;self-advection u·∇u requires an SVector-valued field&quot;))</span>
+<span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">         174 :     halo_update!(x, g)</span></span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">         174 :     apply_bc!(x)</span></span>
+<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">         174 :     inv_h = _inv_spacing(g)</span></span>
+<span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC">         174 :     yi = interior(y)</span></span>
+<span id="L137"><span class="lineNum">     137</span> <span class="tlaGNC">         174 :     if iszero(β)</span></span>
+<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">         286 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h))</span></span>
+<span id="L139"><span class="lineNum">     139</span>              :     else</span>
+<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">          15 :         yi .= α .* _adv_at.(Ref(x.data), Ref(x.data), interior(g), Ref(inv_h)) .+ β .* yi</span></span>
+<span id="L141"><span class="lineNum">     141</span>              :     end</span>
+<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">         174 :     return y</span></span>
+<span id="L143"><span class="lineNum">     143</span>              : end</span>
+<span id="L144"><span class="lineNum">     144</span>              : </span>
+<span id="L145"><span class="lineNum">     145</span>              : function Adapt.adapt_structure(to, L::Advection)</span>
+<span id="L146"><span class="lineNum">     146</span> <span class="tlaGNC">           3 :     return Advection(Adapt.adapt(to, L.grid), Adapt.adapt(to, L.velocity))</span></span>
+<span id="L147"><span class="lineNum">     147</span>              : end</span>
         </pre>
               </td>
             </tr>

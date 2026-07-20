@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryMed">89.3&nbsp;%</td>
+            <td class="headerCovTableEntryHi">90.3&nbsp;%</td>
+            <td class="headerCovTableEntry">62</td>
             <td class="headerCovTableEntry">56</td>
-            <td class="headerCovTableEntry">50</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-19 18:19:51</td>
+            <td class="headerValue">2026-07-20 18:24:23</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -79,13 +79,13 @@
 <span id="L17"><span class="lineNum">      17</span>              : Apply `L` over a block-structured forest: exchange inter-block halos once, then run</span>
 <span id="L18"><span class="lineNum">      18</span>              : the stencil sweep over every block.</span>
 <span id="L19"><span class="lineNum">      19</span>              : &quot;&quot;&quot;</span>
-<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC tlaBgGNC">         674 : function apply!(</span></span>
+<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC tlaBgGNC">         908 : function apply!(</span></span>
 <span id="L21"><span class="lineNum">      21</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L22"><span class="lineNum">      22</span>              : )</span>
-<span id="L23"><span class="lineNum">      23</span> <span class="tlaGNC">         682 :     _require_current(y)</span></span>
-<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC">         674 :     halo_update!(x, g)                  # also checks x's generation</span></span>
-<span id="L25"><span class="lineNum">      25</span> <span class="tlaGNC">         674 :     apply_bc!(x, g)                     # physical faces — leaf grids are all-Interface</span></span>
-<span id="L26"><span class="lineNum">      26</span> <span class="tlaGNC">         674 :     return _forest_sweep!(y, L, x, g, α, β)</span></span>
+<span id="L23"><span class="lineNum">      23</span> <span class="tlaGNC">         916 :     _require_current(y)</span></span>
+<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC">         908 :     halo_update!(x, g)                  # also checks x's generation</span></span>
+<span id="L25"><span class="lineNum">      25</span> <span class="tlaGNC">         908 :     apply_bc!(x, g)                     # physical faces — leaf grids are all-Interface</span></span>
+<span id="L26"><span class="lineNum">      26</span> <span class="tlaGNC">         908 :     return _forest_sweep!(y, L, x, g, α, β)</span></span>
 <span id="L27"><span class="lineNum">      27</span>              : end</span>
 <span id="L28"><span class="lineNum">      28</span>              : </span>
 <span id="L29"><span class="lineNum">      29</span>              : # The stencil sweep behind the halo/BC fills — the dispatch seam forest-native</span>
@@ -96,118 +96,146 @@
 <span id="L34"><span class="lineNum">      34</span>              : function _forest_sweep!(</span>
 <span id="L35"><span class="lineNum">      35</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L36"><span class="lineNum">      36</span>              : )</span>
-<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">        3071 :     return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
+<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">        3158 :     return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
 <span id="L38"><span class="lineNum">      38</span>              : end</span>
 <span id="L39"><span class="lineNum">      39</span>              : </span>
-<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">        3108 : function _forest_sweep_leaves!(</span></span>
+<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">        3405 : function _forest_sweep_leaves!(</span></span>
 <span id="L41"><span class="lineNum">      41</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L42"><span class="lineNum">      42</span>              : )</span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">        3116 :     for i in 1:nleaves(g)</span></span>
-<span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">       74286 :         lg = leaf_grid(g, i)</span></span>
-<span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">      147995 :         apply!(block(y, i, lg), L, block(x, i, lg), lg, α, β)</span></span>
-<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">      145464 :     end</span></span>
-<span id="L47"><span class="lineNum">      47</span> <span class="tlaGNC">        3108 :     return y</span></span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">        3413 :     for i in 1:nleaves(g)</span></span>
+<span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">       76584 :         lg = leaf_grid(g, i)</span></span>
+<span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">      151105 :         apply!(block(y, i, lg), _leaf_op(L, i, lg), block(x, i, lg), lg, α, β)</span></span>
+<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">      149761 :     end</span></span>
+<span id="L47"><span class="lineNum">      47</span> <span class="tlaGNC">        3403 :     return y</span></span>
 <span id="L48"><span class="lineNum">      48</span>              : end</span>
 <span id="L49"><span class="lineNum">      49</span>              : </span>
-<span id="L50"><span class="lineNum">      50</span>              : # Combinators recurse at the forest level (mirroring their Field methods in</span>
-<span id="L51"><span class="lineNum">      51</span>              : # algebra.jl): running a whole Added/Scaled tree per leaf would route any nested</span>
-<span id="L52"><span class="lineNum">      52</span>              : # AdjointOp through the per-leaf adjoint, silently dropping its interface-ghost</span>
-<span id="L53"><span class="lineNum">      53</span>              : # fold. Each operand re-exchanges halos — idempotent, since exchanges read only</span>
-<span id="L54"><span class="lineNum">      54</span>              : # interiors, which the operand applications never mutate.</span>
-<span id="L55"><span class="lineNum">      55</span>              : function apply!(y::AbstractBlockField, L::Added, x::AbstractBlockField, g::BlockForest, α, β)</span>
-<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">          21 :     apply!(y, L.a, x, g, α, β)</span></span>
-<span id="L57"><span class="lineNum">      57</span> <span class="tlaGNC">          21 :     apply!(y, L.b, x, g, α, true)</span></span>
-<span id="L58"><span class="lineNum">      58</span> <span class="tlaGNC">          21 :     return y</span></span>
-<span id="L59"><span class="lineNum">      59</span>              : end</span>
-<span id="L60"><span class="lineNum">      60</span>              : function apply!(y::AbstractBlockField, L::Scaled, x::AbstractBlockField, g::BlockForest, α, β)</span>
-<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">          12 :     return apply!(y, L.op, x, g, α * L.α, β)</span></span>
-<span id="L62"><span class="lineNum">      62</span>              : end</span>
-<span id="L63"><span class="lineNum">      63</span>              : # The intermediate is a whole BlockField (allocated per call, like the single-grid</span>
-<span id="L64"><span class="lineNum">      64</span>              : # pure path): the outer operand's forest apply! performs its own inter-block</span>
-<span id="L65"><span class="lineNum">      65</span>              : # exchange on it, which is what a per-leaf Composed application would miss.</span>
-<span id="L66"><span class="lineNum">      66</span>              : function apply!(y::AbstractBlockField, L::Composed, x::AbstractBlockField, g::BlockForest, α, β)</span>
-<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">          21 :     tmp = allocate_output(L.b, x)</span></span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">          21 :     apply!(tmp, L.b, x, g)</span></span>
-<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">          21 :     apply!(y, L.a, tmp, g, α, β)</span></span>
-<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">          21 :     return y</span></span>
+<span id="L50"><span class="lineNum">      50</span>              : # Per-leaf slicing of coefficient-carrying leaves: the reference sweeps see</span>
+<span id="L51"><span class="lineNum">      51</span>              : # ordinary single-grid operators whose coefficient is the leaf's block view.</span>
+<span id="L52"><span class="lineNum">      52</span>              : # block() re-checks the coefficient field's generation on every slice.</span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">      103690 : @inline _leaf_op(L::AbstractOperator, i, lg) = L</span></span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">         721 : @inline _leaf_op(S::ScalingOp{&lt;:AbstractBlockField}, i, lg) = ScalingOp(block(S.coeff, i, lg))</span></span>
+<span id="L55"><span class="lineNum">      55</span>              : @inline function _leaf_op(A::Advection{&lt;:BlockForest,&lt;:AbstractBlockField}, i, lg)</span>
+<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">         485 :     return Advection(lg, block(A.velocity, i, lg))</span></span>
+<span id="L57"><span class="lineNum">      57</span>              : end</span>
+<span id="L58"><span class="lineNum">      58</span>              : </span>
+<span id="L59"><span class="lineNum">      59</span>              : # Combinators recurse at the forest level (mirroring their Field methods in</span>
+<span id="L60"><span class="lineNum">      60</span>              : # algebra.jl): running a whole Added/Scaled tree per leaf would route any nested</span>
+<span id="L61"><span class="lineNum">      61</span>              : # AdjointOp through the per-leaf adjoint, silently dropping its interface-ghost</span>
+<span id="L62"><span class="lineNum">      62</span>              : # fold. Each operand re-exchanges halos — idempotent, since exchanges read only</span>
+<span id="L63"><span class="lineNum">      63</span>              : # interiors, which the operand applications never mutate.</span>
+<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">           8 : function apply!(y::AbstractBlockField, L::Added, x::AbstractBlockField, g::BlockForest, α, β)</span></span>
+<span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">          29 :     apply!(y, L.a, x, g, α, β)</span></span>
+<span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">          29 :     apply!(y, L.b, x, g, α, true)</span></span>
+<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">          29 :     return y</span></span>
+<span id="L68"><span class="lineNum">      68</span>              : end</span>
+<span id="L69"><span class="lineNum">      69</span>              : function apply!(y::AbstractBlockField, L::Scaled, x::AbstractBlockField, g::BlockForest, α, β)</span>
+<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">          12 :     return apply!(y, L.op, x, g, α * L.α, β)</span></span>
 <span id="L71"><span class="lineNum">      71</span>              : end</span>
-<span id="L72"><span class="lineNum">      72</span>              : </span>
-<span id="L73"><span class="lineNum">      73</span>              : # Lazy adjoint wrappers route through the forest adjoint action so interface-ghost</span>
-<span id="L74"><span class="lineNum">      74</span>              : # contributions are folded across blocks by halo_update_adjoint! (the per-leaf</span>
-<span id="L75"><span class="lineNum">      75</span>              : # AdjointOp path would silently drop them).</span>
-<span id="L76"><span class="lineNum">      76</span>              : function apply!(y::AbstractBlockField, L::AdjointOp, x::AbstractBlockField, g::BlockForest, α, β)</span>
-<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">          30 :     return apply_adjoint!(y, L.op, x, g, α, β)</span></span>
-<span id="L78"><span class="lineNum">      78</span>              : end</span>
-<span id="L79"><span class="lineNum">      79</span>              : function apply_adjoint!(</span>
-<span id="L80"><span class="lineNum">      80</span>              :     x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
-<span id="L81"><span class="lineNum">      81</span>              : )</span>
-<span id="L82"><span class="lineNum">      82</span> <span class="tlaGNC">           4 :     return apply!(x̄, L.op, ȳ, g, α, β)</span></span>
-<span id="L83"><span class="lineNum">      83</span>              : end</span>
-<span id="L84"><span class="lineNum">      84</span>              : </span>
-<span id="L85"><span class="lineNum">      85</span> <span class="tlaUNC tlaBgUNC">           0 : function apply_adjoint!(</span></span>
-<span id="L86"><span class="lineNum">      86</span>              :     x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
-<span id="L87"><span class="lineNum">      87</span>              : )</span>
-<span id="L88"><span class="lineNum">      88</span> <span class="tlaUNC">           0 :     apply_adjoint!(x̄, L.a, ȳ, g, α, β)</span></span>
-<span id="L89"><span class="lineNum">      89</span> <span class="tlaUNC">           0 :     apply_adjoint!(x̄, L.b, ȳ, g, α, true)</span></span>
-<span id="L90"><span class="lineNum">      90</span> <span class="tlaUNC">           0 :     return x̄</span></span>
-<span id="L91"><span class="lineNum">      91</span>              : end</span>
-<span id="L92"><span class="lineNum">      92</span> <span class="tlaUNC">           0 : function apply_adjoint!(</span></span>
-<span id="L93"><span class="lineNum">      93</span>              :     x̄::AbstractBlockField, L::Scaled, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
-<span id="L94"><span class="lineNum">      94</span>              : )</span>
-<span id="L95"><span class="lineNum">      95</span> <span class="tlaUNC">           0 :     return apply_adjoint!(x̄, L.op, ȳ, g, α * conj(L.α), β)</span></span>
-<span id="L96"><span class="lineNum">      96</span>              : end</span>
-<span id="L97"><span class="lineNum">      97</span>              : function apply_adjoint!(</span>
-<span id="L98"><span class="lineNum">      98</span>              :     x̄::AbstractBlockField, L::Composed, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
-<span id="L99"><span class="lineNum">      99</span>              : )</span>
-<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC tlaBgGNC">           3 :     tmp = allocate_input(L.a, ȳ)</span></span>
-<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">           3 :     apply_adjoint!(tmp, L.a, ȳ, g)</span></span>
-<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">           3 :     apply_adjoint!(x̄, L.b, tmp, g, α, β)</span></span>
-<span id="L103"><span class="lineNum">     103</span> <span class="tlaGNC">           3 :     return x̄</span></span>
-<span id="L104"><span class="lineNum">     104</span>              : end</span>
-<span id="L105"><span class="lineNum">     105</span>              : </span>
-<span id="L106"><span class="lineNum">     106</span>              : &quot;&quot;&quot;</span>
-<span id="L107"><span class="lineNum">     107</span>              :     apply_adjoint!(x̄::AbstractBlockField, L, ȳ::AbstractBlockField, g::BlockForest, α=true, β=false) -&gt; x̄</span>
-<span id="L108"><span class="lineNum">     108</span>              : </span>
-<span id="L109"><span class="lineNum">     109</span>              : Adjoint action over the forest. For a self-adjoint operator (e.g. the Laplacian on</span>
-<span id="L110"><span class="lineNum">     110</span>              : a uniform forest, whose same-level halo copy couples both neighbors symmetrically)</span>
-<span id="L111"><span class="lineNum">     111</span>              : this is the forward action. Otherwise it is the exact transpose of</span>
-<span id="L112"><span class="lineNum">     112</span>              : stencil ∘ BC fill ∘ halo exchange: per-leaf stencil-transpose gathers (leaving all</span>
-<span id="L113"><span class="lineNum">     113</span>              : ghost cotangents in place), the forest-level [`fold_bc!`](@ref) folding physical</span>
-<span id="L114"><span class="lineNum">     114</span>              : ghosts, then [`halo_update_adjoint!`](@ref) folding interface ghosts into the</span>
-<span id="L115"><span class="lineNum">     115</span>              : neighbor interiors.</span>
-<span id="L116"><span class="lineNum">     116</span>              : &quot;&quot;&quot;</span>
-<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          82 : function apply_adjoint!(</span></span>
-<span id="L118"><span class="lineNum">     118</span>              :     x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
-<span id="L119"><span class="lineNum">     119</span>              : )</span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">          82 :     _require_current(x̄)</span></span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">          82 :     _require_current(ȳ)</span></span>
-<span id="L122"><span class="lineNum">     122</span>              :     # Sound on a non-uniform forest too: isselfadjoint is grid-aware (false once</span>
-<span id="L123"><span class="lineNum">     123</span>              :     # coarse–fine coupling breaks the halo symmetry), so this only fires when the</span>
-<span id="L124"><span class="lineNum">     124</span>              :     # forward action IS the adjoint.</span>
-<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">          82 :     isselfadjoint(L) &amp;&amp; return apply!(x̄, L, ȳ, g, α, β)</span></span>
-<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">          65 :     if iszero(β)</span></span>
-<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">          48 :         for i in 1:nleaves(g)</span></span>
-<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        1086 :             lg = leaf_grid(g, i)</span></span>
-<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">        2132 :             apply_adjoint!(block(x̄, i, lg), L, block(ȳ, i, lg), lg, α, false)</span></span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">        2124 :         end</span></span>
-<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">          48 :         fold_bc!(x̄, g)</span></span>
-<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">          48 :         halo_update_adjoint!(x̄, g)</span></span>
-<span id="L133"><span class="lineNum">     133</span>              :     else</span>
-<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">          17 :         s = similar(x̄)</span></span>
-<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">          17 :         for i in 1:nleaves(g)</span></span>
-<span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC">          80 :             lg = leaf_grid(g, i)</span></span>
-<span id="L137"><span class="lineNum">     137</span> <span class="tlaGNC">         144 :             apply_adjoint!(block(s, i, lg), L, block(ȳ, i, lg), lg, true, false)</span></span>
-<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">         143 :         end</span></span>
-<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">          17 :         fold_bc!(s, g)</span></span>
-<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">          17 :         halo_update_adjoint!(s, g)</span></span>
-<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">          17 :         for i in 1:nleaves(g)</span></span>
-<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">          80 :             lg = leaf_grid(g, i)</span></span>
-<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">          80 :             xi = interior(block(x̄, i, lg))</span></span>
-<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">         160 :             xi .= α .* interior(block(s, i, lg)) .+ β .* xi</span></span>
-<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">          80 :         end</span></span>
-<span id="L146"><span class="lineNum">     146</span>              :     end</span>
-<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">          65 :     return x̄</span></span>
-<span id="L148"><span class="lineNum">     148</span>              : end</span>
+<span id="L72"><span class="lineNum">      72</span>              : # The intermediate is a whole BlockField (allocated per call, like the single-grid</span>
+<span id="L73"><span class="lineNum">      73</span>              : # pure path): the outer operand's forest apply! performs its own inter-block</span>
+<span id="L74"><span class="lineNum">      74</span>              : # exchange on it, which is what a per-leaf Composed application would miss.</span>
+<span id="L75"><span class="lineNum">      75</span>              : function apply!(y::AbstractBlockField, L::Composed, x::AbstractBlockField, g::BlockForest, α, β)</span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">          37 :     tmp = allocate_output(L.b, x)</span></span>
+<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">          37 :     apply!(tmp, L.b, x, g)</span></span>
+<span id="L78"><span class="lineNum">      78</span> <span class="tlaGNC">          37 :     apply!(y, L.a, tmp, g, α, β)</span></span>
+<span id="L79"><span class="lineNum">      79</span> <span class="tlaGNC">          37 :     return y</span></span>
+<span id="L80"><span class="lineNum">      80</span>              : end</span>
+<span id="L81"><span class="lineNum">      81</span>              : </span>
+<span id="L82"><span class="lineNum">      82</span>              : # Lazy adjoint wrappers route through the forest adjoint action so interface-ghost</span>
+<span id="L83"><span class="lineNum">      83</span>              : # contributions are folded across blocks by halo_update_adjoint! (the per-leaf</span>
+<span id="L84"><span class="lineNum">      84</span>              : # AdjointOp path would silently drop them).</span>
+<span id="L85"><span class="lineNum">      85</span>              : function apply!(y::AbstractBlockField, L::AdjointOp, x::AbstractBlockField, g::BlockForest, α, β)</span>
+<span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">          46 :     return apply_adjoint!(y, L.op, x, g, α, β)</span></span>
+<span id="L87"><span class="lineNum">      87</span>              : end</span>
+<span id="L88"><span class="lineNum">      88</span>              : function apply_adjoint!(</span>
+<span id="L89"><span class="lineNum">      89</span>              :     x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
+<span id="L90"><span class="lineNum">      90</span>              : )</span>
+<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">           4 :     return apply!(x̄, L.op, ȳ, g, α, β)</span></span>
+<span id="L92"><span class="lineNum">      92</span>              : end</span>
+<span id="L93"><span class="lineNum">      93</span>              : </span>
+<span id="L94"><span class="lineNum">      94</span> <span class="tlaUNC tlaBgUNC">           0 : function apply_adjoint!(</span></span>
+<span id="L95"><span class="lineNum">      95</span>              :     x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
+<span id="L96"><span class="lineNum">      96</span>              : )</span>
+<span id="L97"><span class="lineNum">      97</span> <span class="tlaUNC">           0 :     apply_adjoint!(x̄, L.a, ȳ, g, α, β)</span></span>
+<span id="L98"><span class="lineNum">      98</span> <span class="tlaUNC">           0 :     apply_adjoint!(x̄, L.b, ȳ, g, α, true)</span></span>
+<span id="L99"><span class="lineNum">      99</span> <span class="tlaUNC">           0 :     return x̄</span></span>
+<span id="L100"><span class="lineNum">     100</span>              : end</span>
+<span id="L101"><span class="lineNum">     101</span> <span class="tlaUNC">           0 : function apply_adjoint!(</span></span>
+<span id="L102"><span class="lineNum">     102</span>              :     x̄::AbstractBlockField, L::Scaled, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
+<span id="L103"><span class="lineNum">     103</span>              : )</span>
+<span id="L104"><span class="lineNum">     104</span> <span class="tlaUNC">           0 :     return apply_adjoint!(x̄, L.op, ȳ, g, α * conj(L.α), β)</span></span>
+<span id="L105"><span class="lineNum">     105</span>              : end</span>
+<span id="L106"><span class="lineNum">     106</span>              : function apply_adjoint!(</span>
+<span id="L107"><span class="lineNum">     107</span>              :     x̄::AbstractBlockField, L::Composed, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
+<span id="L108"><span class="lineNum">     108</span>              : )</span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC tlaBgGNC">           3 :     tmp = allocate_input(L.a, ȳ)</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">           3 :     apply_adjoint!(tmp, L.a, ȳ, g)</span></span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">           3 :     apply_adjoint!(x̄, L.b, tmp, g, α, β)</span></span>
+<span id="L112"><span class="lineNum">     112</span> <span class="tlaGNC">           3 :     return x̄</span></span>
+<span id="L113"><span class="lineNum">     113</span>              : end</span>
+<span id="L114"><span class="lineNum">     114</span>              : </span>
+<span id="L115"><span class="lineNum">     115</span>              : &quot;&quot;&quot;</span>
+<span id="L116"><span class="lineNum">     116</span>              :     apply_adjoint!(x̄::AbstractBlockField, L, ȳ::AbstractBlockField, g::BlockForest, α=true, β=false) -&gt; x̄</span>
+<span id="L117"><span class="lineNum">     117</span>              : </span>
+<span id="L118"><span class="lineNum">     118</span>              : Adjoint action over the forest. For a self-adjoint operator (e.g. the Laplacian on</span>
+<span id="L119"><span class="lineNum">     119</span>              : a uniform forest, whose same-level halo copy couples both neighbors symmetrically)</span>
+<span id="L120"><span class="lineNum">     120</span>              : this is the forward action. Otherwise it is the exact transpose of</span>
+<span id="L121"><span class="lineNum">     121</span>              : stencil ∘ BC fill ∘ halo exchange: per-leaf stencil-transpose gathers (leaving all</span>
+<span id="L122"><span class="lineNum">     122</span>              : ghost cotangents in place), the forest-level [`fold_bc!`](@ref) folding physical</span>
+<span id="L123"><span class="lineNum">     123</span>              : ghosts, then [`halo_update_adjoint!`](@ref) folding interface ghosts into the</span>
+<span id="L124"><span class="lineNum">     124</span>              : neighbor interiors.</span>
+<span id="L125"><span class="lineNum">     125</span>              : &quot;&quot;&quot;</span>
+<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">         136 : function apply_adjoint!(</span></span>
+<span id="L127"><span class="lineNum">     127</span>              :     x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, g::BlockForest, α, β</span>
+<span id="L128"><span class="lineNum">     128</span>              : )</span>
+<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">         136 :     _require_current(x̄)</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">         136 :     _require_current(ȳ)</span></span>
+<span id="L131"><span class="lineNum">     131</span>              :     # Sound on a non-uniform forest too: isselfadjoint is grid-aware (false once</span>
+<span id="L132"><span class="lineNum">     132</span>              :     # coarse–fine coupling breaks the halo symmetry), so this only fires when the</span>
+<span id="L133"><span class="lineNum">     133</span>              :     # forward action IS the adjoint.</span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">         136 :     isselfadjoint(L) &amp;&amp; return apply!(x̄, L, ȳ, g, α, β)</span></span>
+<span id="L135"><span class="lineNum">     135</span>              :     # Diagonal transposes are pointwise (no cross-block coupling) and their</span>
+<span id="L136"><span class="lineNum">     136</span>              :     # per-leaf adjoint writes interiors only — the gather + fold machinery below</span>
+<span id="L137"><span class="lineNum">     137</span>              :     # would fold x̄'s ghost scratch into interiors, so it must be skipped.</span>
+<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">         115 :     isdiagonal(L) &amp;&amp; return apply!(x̄, adjoint_operator(L), ȳ, g, α, β)</span></span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">         109 :     if iszero(β)</span></span>
+<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">          84 :         _forest_adjoint_sweep!(x̄, L, ȳ, g, α)</span></span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">          84 :         fold_bc!(x̄, g)</span></span>
+<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">          84 :         halo_update_adjoint!(x̄, g)</span></span>
+<span id="L143"><span class="lineNum">     143</span>              :     else</span>
+<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">          25 :         s = similar(x̄)</span></span>
+<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">          25 :         _forest_adjoint_sweep!(s, L, ȳ, g, true)</span></span>
+<span id="L146"><span class="lineNum">     146</span> <span class="tlaGNC">          25 :         fold_bc!(s, g)</span></span>
+<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">          25 :         halo_update_adjoint!(s, g)</span></span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">          25 :         for i in 1:nleaves(g)</span></span>
+<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">         136 :             lg = leaf_grid(g, i)</span></span>
+<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">         136 :             xi = interior(block(x̄, i, lg))</span></span>
+<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">         272 :             xi .= α .* interior(block(s, i, lg)) .+ β .* xi</span></span>
+<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">         136 :         end</span></span>
+<span id="L153"><span class="lineNum">     153</span>              :     end</span>
+<span id="L154"><span class="lineNum">     154</span> <span class="tlaGNC">         109 :     return x̄</span></span>
+<span id="L155"><span class="lineNum">     155</span>              : end</span>
+<span id="L156"><span class="lineNum">     156</span>              : </span>
+<span id="L157"><span class="lineNum">     157</span>              : # The adjoint stencil sweep behind the fold path — the dispatch seam packed</span>
+<span id="L158"><span class="lineNum">     158</span>              : # adjoint kernels override per (operator, layout), mirroring _forest_sweep!.</span>
+<span id="L159"><span class="lineNum">     159</span>              : # Overwrite-only contract (β = 0 gather into the target; callers blend): the</span>
+<span id="L160"><span class="lineNum">     160</span>              : # per-leaf reference runs the ordinary apply_adjoint!, whose leaf-level</span>
+<span id="L161"><span class="lineNum">     161</span>              : # fold_bc! is a no-op on the all-Interface leaf grids.</span>
+<span id="L162"><span class="lineNum">     162</span>              : function _forest_adjoint_sweep!(</span>
+<span id="L163"><span class="lineNum">     163</span>              :     x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, g::BlockForest, α</span>
+<span id="L164"><span class="lineNum">     164</span>              : )</span>
+<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">        1152 :     return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span></span>
+<span id="L166"><span class="lineNum">     166</span>              : end</span>
+<span id="L167"><span class="lineNum">     167</span>              : </span>
+<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">        1216 : function _forest_adjoint_sweep_leaves!(</span></span>
+<span id="L169"><span class="lineNum">     169</span>              :     x̄::AbstractBlockField, L::AbstractOperator, ȳ::AbstractBlockField, g::BlockForest, α</span>
+<span id="L170"><span class="lineNum">     170</span>              : )</span>
+<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">        1216 :     for i in 1:nleaves(g)</span></span>
+<span id="L172"><span class="lineNum">     172</span> <span class="tlaGNC">       27940 :         lg = leaf_grid(g, i)</span></span>
+<span id="L173"><span class="lineNum">     173</span> <span class="tlaGNC">       55402 :         apply_adjoint!(block(x̄, i, lg), _leaf_op(L, i, lg), block(ȳ, i, lg), lg, α, false)</span></span>
+<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">       54664 :     end</span></span>
+<span id="L175"><span class="lineNum">     175</span> <span class="tlaGNC">        1216 :     return x̄</span></span>
+<span id="L176"><span class="lineNum">     176</span>              : end</span>
         </pre>
               </td>
             </tr>
