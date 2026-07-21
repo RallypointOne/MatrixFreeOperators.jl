@@ -265,6 +265,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 
 
 <p>Welcome to the documentation for <strong>MatrixFreeOperators.jl</strong>.</p>
+<div class="quarto-figure quarto-figure-center">
+<figure class="figure">
+<p><img src="assets/monodomain_amr.gif" class="img-fluid figure-img" alt="Animated cardiac electrophysiology simulation: a spiral wave rotating on an adaptively refined block mesh whose fine blocks track the wavefront." width="512"></p>
+<figcaption>Aliev–Panfilov monodomain cardiac electrophysiology on an adaptive <code>BlockForest</code>. <code>regrid!</code> refines on |∇V|, so resolution tracks the depolarization wavefront and coarsens behind it while an S1–S2 protocol breaks a planar wave into a reentrant spiral. Source: <a href="https://github.com/RallypointOne/MatrixFreeOperators.jl/blob/main/examples/monodomain_amr.jl"><code>examples/monodomain_amr.jl</code></a>.</figcaption>
+</figure>
+</div>
 <section id="overview" class="level2">
 <h2 class="anchored" data-anchor-id="overview">Overview</h2>
 <p>MatrixFreeOperators.jl provides matrix-free linear (and some nonlinear) operators for solving PDEs on structured grids. Operators are lazy, composable symbols (<code>laplacian</code>, <code>gradient</code>, <code>divergence</code>, <code>scaling</code>, <code>advection</code>, …) combined with <code>+</code>, <code>-</code>, <code>*</code>, and scalar scaling. Leaves are written as array-level broadcasts, so the same operator runs on CPU and GPU arrays, differentiates automatically with Enzyme or Mooncake (including gradients w.r.t. operator parameters such as material-coefficient fields), and feeds Krylov.jl directly through <code>prepare</code> + <code>mul!</code> with zero steady-state allocations.</p>
@@ -709,7 +715,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       &nbsp;
     </div>   
     <div class="nav-footer-center">
-<p>Built on 2026-07-20</p>
+<p>Built on 2026-07-21</p>
 </div>
     <div class="nav-footer-right">
       &nbsp;
