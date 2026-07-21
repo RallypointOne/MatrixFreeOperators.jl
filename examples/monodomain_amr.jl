@@ -234,7 +234,15 @@ if get(ENV, "EP_GIF", "false") == "true"
     Colorbar(fig[1, 2], colorrange=(0, 1), colormap=:viridis, label="V")
     fig[2, 1:2] = level_legend(fig, MAXLEV)
     # mp4, not gif: at this frame count and figure size a gif lands around 60 MB,
-    # which no slide deck wants. Derive a gif from it with ffmpeg if one is needed.
+    # which no slide deck wants. The docs/README hero is derived from this mp4 —
+    # the spiral-formation window (t≈60-160), 8 fps, 512 px, 128-colour palette:
+    #   ffmpeg -ss 4.14 -t 6.89 -i monodomain_amr.mp4 \
+    #     -vf "fps=8,scale=512:-1:flags=lanczos,palettegen=max_colors=128:stats_mode=full" pal.png
+    #   ffmpeg -ss 4.14 -t 6.89 -i monodomain_amr.mp4 -i pal.png \
+    #     -lavfi "fps=8,scale=512:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" out.gif
+    #   gifsicle -O3 --lossy=60 out.gif -o ../docs/assets/monodomain_amr.gif
+    # dither=none is load-bearing: dither noise defeats inter-frame compression and
+    # more than doubles the file (2.5 MB -> 6 MB) for no visible gain on flat fields.
     vidpath = joinpath(@__DIR__, "monodomain_amr.mp4")
     record(fig, vidpath; framerate=20) do io
         simulate(; frame_every=120, on_frame=(V, bf, t) -> begin

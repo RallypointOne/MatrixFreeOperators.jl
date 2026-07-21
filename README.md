@@ -12,6 +12,16 @@ operator parameters for inverse problems and PDE-constrained optimization. The
 package exposes a composable operator algebra (`L1 * L2`, `L1 + L2`,
 `adjoint(L)`) and targets the Krylov.jl + OrdinaryDiffEq.jl solver stack.
 
+<p align="center">
+  <img src="docs/assets/monodomain_amr.gif" width="512"
+       alt="Cardiac monodomain simulation on an adaptive block forest: the mesh refines and coarsens to follow the depolarization wavefront as an S1-S2 protocol breaks a planar wave into a reentrant spiral.">
+  <br>
+  <sub><b>Refinement that follows the physics.</b> Aliev–Panfilov monodomain on a <code>BlockForest</code>:
+  <code>regrid!</code> refines on |∇V|, so resolution tracks the depolarization wavefront and coarsens
+  behind it while an S1–S2 protocol breaks a planar wave into a reentrant spiral.
+  — <a href="examples/monodomain_amr.jl">examples/monodomain_amr.jl</a></sub>
+</p>
+
 > Status: early development — the public API is not yet stable.
 
 ## Motivation

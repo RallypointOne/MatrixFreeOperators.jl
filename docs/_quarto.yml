@@ -1,6 +1,8 @@
 project:
   type: book
   output-dir: _site
+  resources:
+    - assets/monodomain_amr.gif
 
 engines: ['julia']
 julia:

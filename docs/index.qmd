@@ -4,6 +4,8 @@ title: "MatrixFreeOperators.jl"
 
 Welcome to the documentation for **MatrixFreeOperators.jl**.
 
+![Aliev–Panfilov monodomain cardiac electrophysiology on an adaptive `BlockForest`. `regrid!` refines on |∇V|, so resolution tracks the depolarization wavefront and coarsens behind it while an S1–S2 protocol breaks a planar wave into a reentrant spiral. Source: [`examples/monodomain_amr.jl`](https://github.com/RallypointOne/MatrixFreeOperators.jl/blob/main/examples/monodomain_amr.jl).](assets/monodomain_amr.gif){fig-alt="Animated cardiac electrophysiology simulation: a spiral wave rotating on an adaptively refined block mesh whose fine blocks track the wavefront." width=512}
+
 ## Overview
 
 MatrixFreeOperators.jl provides matrix-free linear (and some nonlinear) operators
