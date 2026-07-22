@@ -118,6 +118,33 @@ function prepare(L::AbstractOperator, x::AbstractBlockField)
     return PreparedForest(op, x.grid, xpad, ypad, similar(x), x.grid.forest.generation[])
 end
 
+"""
+    prepare_distributed(L::AbstractOperator, nparts::Integer; devices=nothing)
+
+Prepare `L` for a distributed multi-device solve: partition its grid into
+`nparts` slabs ([`partition_grid`](@ref)), build one [`prepare`](@ref)d operator
+per partition on its own device, and return a distributed prepared operator
+exposing `mul!`/`size`/`eltype` over device-partitioned vectors, with ghost
+slabs exchanged between partitions around each local apply.
+
+Implemented by package extensions; the function has no methods until one is
+loaded. The MDLA extension (load MultiDeviceLinearAlgebra.jl, CUDA.jl, and
+Krylov.jl) maps slabs onto one CUDA device each — `devices` optionally picks
+which (0-indexed, unique) — and returns an operator over MDLA
+`MultiDeviceVector`s.
+
+### Examples
+
+```julia
+using MultiDeviceLinearAlgebra, CUDA, Krylov
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))
+P = prepare_distributed(laplacian(g), 2)
+b = MultiDeviceVector(flatten(f), P.spec)
+u, stats = Krylov.cg(P, b)
+```
+"""
+function prepare_distributed end
+
 # Tree-walking buffer allocation: leaves pass through unchanged; Composed and
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
 # allocates.

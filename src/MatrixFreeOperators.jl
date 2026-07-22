@@ -24,7 +24,7 @@ export Advection, advection, SelfAdvection
 export Restriction, restriction, Prolongation, prolongation
 export Scaled, Added, Composed
 export LinearizedOp, linearize, linearize!
-export PreparedOperator, PreparedForest, prepare, boundary_rhs
+export PreparedOperator, PreparedForest, prepare, prepare_distributed, boundary_rhs
 export MultigridPreconditioner, MultigridSolver, solve, Jacobi, Chebyshev
 
 include("Grids.jl")

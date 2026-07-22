@@ -10,15 +10,22 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [weakdeps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
+MultiDeviceLinearAlgebra = "32bb5913-70e1-44ea-8d43-6c4dc56badf2"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [extensions]
+MatrixFreeOperatorsMDLAExt = ["MultiDeviceLinearAlgebra", "Krylov", "CUDA"]
 MatrixFreeOperatorsReactantExt = "Reactant"
 
 [compat]
 Adapt = "4"
+CUDA = "5"
 KernelAbstractions = "0.9"
+Krylov = "0.10"
 LinearAlgebra = "1"
+MultiDeviceLinearAlgebra = "0.0.1"
 Reactant = "0.2"
 StaticArrays = "1"
 julia = "1.10"
