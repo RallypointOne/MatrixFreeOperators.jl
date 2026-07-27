@@ -65,6 +65,14 @@ Array(dst)   # [10,20,30,40] = healthy;  [0,0,0,0] = broken P2P
 ```
 
 If it prints zeros, the failures are environmental, not MFO bugs — MDLA's own
-`test/test_ghost_exchange.jl` will fail too. The fix belongs upstream in MDLA
-(bounce the two cross-device copies through the host, as `_allgather_x!` already
-does) or in the host's IOMMU/ACS configuration.
+`test/test_ghost_exchange.jl` will fail too.
+
+**The fix is host-side.** This is almost always the IOMMU: PCIe P2P requires VT-d off or in
+passthrough (`intel_iommu=off` or `iommu=pt`). Under translation, peer copies silently return
+zeros or `nan` while `CUDA.can_access_peer` still reports `true` for every pair. Check ACS as
+well. This exact fault was diagnosed and fixed on `sasquatch` in July 2026.
+
+MDLA no longer relies on the host being correct: as of `53d8d07` it probes each ordered device
+pair at `GhostExchange` construction and, for any pair that fails the round-trip, falls back to
+host-staged transfers with a one-time warning. So an affected host now yields correct numbers
+plus a loud warning rather than silent zeros. That fallback is a safety net — fix the host.
