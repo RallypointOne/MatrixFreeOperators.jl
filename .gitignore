@@ -2,6 +2,7 @@
 *.jl.*.cov
 *.jl.mem
 coverage/
+.DS_Store
 docs/pages/lcov.info
 docs/pages/coverage/
 Manifest.toml
