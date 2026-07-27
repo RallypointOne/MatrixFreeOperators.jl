@@ -72,7 +72,8 @@ passthrough (`intel_iommu=off` or `iommu=pt`). Under translation, peer copies si
 zeros or `nan` while `CUDA.can_access_peer` still reports `true` for every pair. Check ACS as
 well. This exact fault was diagnosed and fixed on `sasquatch` in July 2026.
 
-MDLA no longer relies on the host being correct: as of `53d8d07` it probes each ordered device
-pair at `GhostExchange` construction and, for any pair that fails the round-trip, falls back to
-host-staged transfers with a one-time warning. So an affected host now yields correct numbers
+MDLA no longer relies on the host being correct: as of `8fddc9c`
+(kylebeggs/MultiDeviceLinearAlgebra.jl#22) it probes each ordered device pair at `GhostExchange`
+construction and, for any pair that fails the round-trip, falls back to host-staged transfers with
+a one-time warning. So an affected host now yields correct numbers
 plus a loud warning rather than silent zeros. That fallback is a safety net — fix the host.

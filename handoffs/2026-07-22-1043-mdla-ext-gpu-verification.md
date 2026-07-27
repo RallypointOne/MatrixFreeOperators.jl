@@ -1,10 +1,36 @@
 ---
 slug: mdla-ext-gpu-verification
 created: 2026-07-22-1043
-status: open
+closed: 2026-07-27
+status: done
 ---
 
 # Handoff: run the MDLA distributed GPU verification (issue #16, steps 3–5)
+
+## Result (2026-07-27) — done, nothing left to run
+
+Verified on the 9× A30 host (`sasquatch`):
+
+- `test/mdla.jl` — **34/34, zero skips**.
+- `test/multigpu/mdla_3partition.jl` — **23/23**.
+- Bitwise `==` forward parity held at both 2 and 3 partitions; it was not loosened.
+- **The extension needed no changes.** None of the three pre-agreed fallbacks below were used —
+  no stream `CUDA.synchronize()` insertion, no loosened CG iteration-count comparison
+  (`allequal(niters)` passed first try), and `Krylov.cg` routed to the `CgWorkspace` hook as
+  written.
+- The multi-partition failures seen mid-investigation were **environmental**, not MFO: the host
+  IOMMU fault behind kylebeggs/MultiDeviceLinearAlgebra.jl#21 (all 9 GPUs on `DMA-FQ`, peer copies
+  silently returning zeros/`nan` while `can_access_peer` reported `true`). Fixed host-side with
+  `intel_iommu=off` + reboot, revalidated 36/36 peer pairs. MDLA additionally now probes each
+  device pair at `GhostExchange` construction and host-stages any that fail
+  (kylebeggs/MultiDeviceLinearAlgebra.jl#22, merged as `8fddc9c`), so a similarly broken host
+  warns loudly instead of returning silent zeros.
+
+Follow-ups tracked separately: **#30** (instantiate `test/multigpu` in CI; also the
+`min(NGPUS_MDLA, 2)` cap in `test/mdla_gpu.jl`) and MDLA **#23** (upstream test caps, no
+cross-NUMA pair coverage).
+
+The rest of this document is the original brief, kept for context.
 
 ## Goal / why this matters
 
