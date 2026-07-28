@@ -8,7 +8,7 @@ using KernelAbstractions: @Const, @index, @kernel
 
 export AbstractGrid, CartesianGrid
 export dimension, spacing, local_size, halo_width, boundary_conditions
-export interior, padded_size, cell_center, coarsen, halo_update!
+export interior, padded_size, cell_center, coarsen, halo_update!, partition_grid
 export AbstractBC, Periodic, Dirichlet, Neumann, apply_bc!, fold_bc!
 export BlockForest, BlockField, PackedBlockField, pack, unpack
 export refine!, coarsen!, balance!, leaves, regrid!
@@ -24,7 +24,7 @@ export Advection, advection, SelfAdvection
 export Restriction, restriction, Prolongation, prolongation
 export Scaled, Added, Composed
 export LinearizedOp, linearize, linearize!
-export PreparedOperator, PreparedForest, prepare, boundary_rhs
+export PreparedOperator, PreparedForest, prepare, prepare_distributed, boundary_rhs
 export MultigridPreconditioner, MultigridSolver, solve, Jacobi, Chebyshev
 
 include("Grids.jl")
@@ -33,6 +33,7 @@ include("topology.jl")
 include("schedule.jl")
 include("BlockForest.jl")
 include("Fields.jl")
+include("partitioning.jl")
 include("blockfield.jl")
 include("packedfield.jl")
 include("transfer.jl")

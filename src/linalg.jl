@@ -14,6 +14,11 @@ boundary conditions and `halo_update!`, never solver unknowns. Each `mul!` copie
 the flat vector into a halo-padded scratch field, applies the operator, and
 copies the interior back out fused with the `α`/`β` axpby, so the solver's
 vectors are never mutated by halo or BC fills.
+
+`mul!` writes only the interior of `xpad`, deliberately leaving ghost cells as it
+found them: the distributed path ([`prepare_distributed`](@ref)) fills
+[`Interface`](@ref) ghost slabs from a neighbor exchange *before* calling `mul!`,
+and zeroing them here would silently discard that data.
 """
 struct PreparedOperator{O<:AbstractOperator,G<:AbstractGrid,FX<:AbstractField,FY<:AbstractField}
     op::O
@@ -117,6 +122,33 @@ function prepare(L::AbstractOperator, x::AbstractBlockField)
     _exchange_schedule(x.grid)   # warm the halo-exchange cache (build once, not on first mul!)
     return PreparedForest(op, x.grid, xpad, ypad, similar(x), x.grid.forest.generation[])
 end
+
+"""
+    prepare_distributed(L::AbstractOperator, nparts::Integer; devices=nothing)
+
+Prepare `L` for a distributed multi-device solve: partition its grid into
+`nparts` slabs ([`partition_grid`](@ref)), build one [`prepare`](@ref)d operator
+per partition on its own device, and return a distributed prepared operator
+exposing `mul!`/`size`/`eltype` over device-partitioned vectors, with ghost
+slabs exchanged between partitions around each local apply.
+
+Implemented by package extensions; the function has no methods until one is
+loaded. The MDLA extension (load MultiDeviceLinearAlgebra.jl, CUDA.jl, and
+Krylov.jl) maps slabs onto one CUDA device each — `devices` optionally picks
+which (0-indexed, unique) — and returns an operator over MDLA
+`MultiDeviceVector`s.
+
+### Examples
+
+```julia
+using MultiDeviceLinearAlgebra, CUDA, Krylov
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))
+P = prepare_distributed(laplacian(g), 2)
+b = MultiDeviceVector(flatten(f), P.spec)
+u, stats = Krylov.cg(P, b)
+```
+"""
+function prepare_distributed end
 
 # Tree-walking buffer allocation: leaves pass through unchanged; Composed and
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
@@ -428,6 +460,8 @@ Base.eltype(P::_AnyPrepared) = _scalar_eltype(eltype(P.xpad))
 function LinearAlgebra.mul!(
     y::AbstractVector, P::PreparedOperator, x::AbstractVector, α::Number, β::Number
 )
+    # Interior-only write, by contract: the MDLA extension unpacks exchanged
+    # ghost slabs into P.xpad before this call. Do not add zero_ghosts! here.
     flat_to_interior!(P.xpad, x)
     apply!(P.ypad, P.op, P.xpad, P.grid)
     interior_to_flat!(y, P.ypad, α, β)

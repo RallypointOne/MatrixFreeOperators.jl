@@ -518,9 +518,25 @@ finite-difference / complex-step on small grids.
 halo/ghost exchange, (2) applies the leaf per partition with device context, (3)
 writes the result partition-local. MDLA already supplies the distributed
 primitives we compose with — `PartitionSpec`, `MultiDeviceVector`,
-`GhostExchange`, `scatter!`/`reduce!`, and `mdla_solve` (Krylov-backed). Our
-`halo_update!` seam maps onto MDLA `scatter!`. (Confirm these names against MDLA
-source — see §11.)
+`GhostExchange`, `scatter!`/`reduce!`, and `mdla_solve` (Krylov-backed). All
+names confirmed against MDLA v0.0.1 source; `scatter!`/`reduce!(+)` is a
+verified exact adjoint pair in MDLA's own tests.
+
+*Built (issue #16, slice 1):* `partition_grid` cuts a `CartesianGrid` into
+last-dimension slabs with `Interface` cut faces (core, `src/partitioning.jl`,
+adjoint proven CPU-side against emulated exchange semantics), and
+`ext/MatrixFreeOperatorsMDLAExt.jl` implements `prepare_distributed` — one
+`prepare`d operator per slab per CUDA device, the operator-owned
+`GhostExchange` unpacked into `Interface` halo slabs before each local apply,
+`reduce!(+)` for the distributed adjoint, and a `Krylov.CgWorkspace` hook.
+Scope: scalar fields, `Laplacian`/`IdentityOp`/number-`ScalingOp` under
+`Scaled`/`Added`; `Composed` (needs a mid-tree exchange), `AdjointOp` (mid-tree
+reduction), `Field` coefficients, and distributed `boundary_rhs` assembly are
+rejected loudly and deferred. Inhomogeneous BCs meanwhile: assemble the lift on
+the global grid and split, `MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)`.
+CUDA-only by MDLA's nature (one partition per physical GPU — MDLA enforces
+unique device IDs, no CPU mode), so distributed tests are env-gated
+(`MFO_TEST_MDLA=true`, ≥ 2 GPUs for multi-partition testsets).
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
 - *Explicit* solvers (RK4, SSPRK, …): provide a trivial RHS adapter
@@ -952,6 +968,11 @@ underway, per testing convention):
    adapter; compare to a known solution.
 7. **(Seam smoke test)** — `halo_update!` no-op path returns unchanged field;
    stub a 2-partition MDLA `mul!` and verify it matches the single-device result.
+   *Built out beyond the stub:* `test/partitioning.jl` proves 2-/3-partition
+   forward parity (bitwise) and the distributed adjoint identity CPU-only via
+   emulated exchange semantics; `test/mdla_gpu.jl` (gated on `MFO_TEST_MDLA`)
+   re-proves both on real MDLA `scatter!`/`reduce!` plus distributed
+   `Krylov.cg` parity against single-device CG.
 
 ---
 

@@ -45,14 +45,16 @@ Neumann() = Neumann(0)
 """
     Interface()
 
-Inter-block interface "boundary" carried on every face of a
-[`BlockForest`](@ref) leaf grid. The homogeneous fill (`apply_bc!`/`fold_bc!`)
-and the inhomogeneous lift skip `Interface` faces: inter-block ghosts are filled
-by [`halo_update!`](@ref) and physical-boundary ghosts by the forest-level face
-passes, so per-leaf BC sweeps never touch a ghost slab. Internal (not exported):
-`leaf_grid` places it — in a user grid's bc it is rejected at `BlockForest`
-construction, and on a plain `CartesianGrid` it would leave ghosts silently
-unfilled.
+Inter-block interface "boundary" carried on faces whose ghost values are
+external inputs: every face of a [`BlockForest`](@ref) leaf grid, and the
+partition-cut faces of a [`partition_grid`](@ref) slab. The homogeneous fill
+(`apply_bc!`/`fold_bc!`) and the inhomogeneous lift skip `Interface` faces:
+those ghosts are filled by [`halo_update!`](@ref) (forest) or a distributed
+exchange (slabs), and physical-boundary ghosts by the forest-level face passes,
+so per-leaf BC sweeps never touch a ghost slab. Internal (not exported):
+`leaf_grid` and `partition_grid` place it — in a user grid's bc it is rejected
+at `BlockForest` construction, and hand-placed on a plain `CartesianGrid` it
+would leave ghosts silently unfilled.
 """
 struct Interface <: AbstractBC end
 
