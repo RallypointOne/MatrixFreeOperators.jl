@@ -194,13 +194,22 @@ Number of interior scalar DOFs in the flat (Krylov) representation of `f`:
 flat_length(f::Field) = prod(local_size(f.grid)) * ncomponents(f)
 
 """
-    flat_to_interior!(f::Field, v::AbstractVector) -> f
+    flat_to_interior!(f::Field, v::AbstractVector, α=true, β=false) -> f
 
-Copy the flat interior vector `v` (as produced by [`flatten`](@ref)) into the
-interior of `f`. Ghost cells are untouched.
+Fused axpby copy-in of the flat interior vector `v` (as produced by
+[`flatten`](@ref)) into the interior of `f`: `interior(f) = α * v + β * interior(f)`
+in one broadcast. Ghost cells are untouched — the mirror of
+[`interior_to_flat!`](@ref), and the reason the distributed path can stage
+exchanged ghosts before a local apply.
 """
-function flat_to_interior!(f::Field, v::AbstractVector)
-    interior(f) .= _as_eltype(eltype(f.data), v, local_size(f.grid))
+function flat_to_interior!(f::Field, v::AbstractVector, α::Number=true, β::Number=false)
+    vi = _as_eltype(eltype(f.data), v, local_size(f.grid))
+    fi = interior(f)
+    if iszero(β)
+        fi .= α .* vi
+    else
+        fi .= α .* vi .+ β .* fi
+    end
     return f
 end
 

@@ -26,8 +26,9 @@ KernelAbstractions = "0.9"
 Krylov = "0.10"
 LinearAlgebra = "1"
 # Pinned to one exact patch on purpose: MatrixFreeOperatorsMDLAExt reaches into
-# MDLA internals (_empty_mdv, spec.ranges/len/ndevices, ghost.local_x) and
-# replays its ghost-section ordering rule, none of which are public API.
+# MDLA internals (_empty_mdv, copy_exchange, spec.ranges/len/ndevices,
+# ghost.local_x) and replays its ghost-section ordering rule, none of which are
+# public API.
 MultiDeviceLinearAlgebra = "0.0.1"
 Reactant = "0.2"
 StaticArrays = "1"

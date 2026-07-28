@@ -53,6 +53,7 @@ include("operators/forest.jl")
 include("operators/forest_packed.jl")
 include("operators/linearize.jl")
 include("linalg.jl")
+include("distributed.jl")
 include("amr.jl")
 include("multigrid.jl")
 
