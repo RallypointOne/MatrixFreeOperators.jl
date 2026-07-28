@@ -168,3 +168,56 @@ function _slab_ghost_layout(
     end
     return ghost_globals, plans
 end
+
+#--------------------------------------------------------------------------------# Ghost staging (padded-field side of the exchange)
+
+# The two halves of a ghost exchange, expressed on a partition's padded scratch
+# field. A backend supplies the transport (MDLA scatter!/reduce!, or the plain
+# global indexing the CPU tests use); these translate between its flat
+# [owned | ghost] section and the Interface halo slabs, per the `plans` emitted
+# by _slab_ghost_layout. Kept in core so the CPU proof and the MDLA extension
+# stage ghosts through exactly the same code.
+
+# View of one cut-dimension halo plane at transverse-interior positions — the
+# slab a ghost chunk fills (forward) or is packed from (adjoint). Corner cells
+# are deliberately excluded: apply_bc! fills them dimension-1-first and fold_bc!
+# folds them back dimension-N-first, so they are never exchanged.
+_halo_plane_view(f::Field, plane::Int) = _halo_plane_view(f.data, f.grid, plane)
+function _halo_plane_view(data, g::AbstractGrid{N}, plane::Int) where {N}
+    h = halo_width(g)
+    n = local_size(g)
+    idx = ntuple(d -> d == N ? (plane:plane) : ((h[d] + 1):(h[d] + n[d])), Val(N))
+    return view(data, idx...)
+end
+
+"""
+    _unpack_ghosts!(xpad, local_x, nowned, plans) -> xpad
+
+Copy the ghost section of a partition's flat `[owned | ghost]` vector into the
+[`Interface`](@ref) halo slabs of its padded scratch field (internal). The
+inverse of [`_pack_local_x!`](@ref).
+"""
+function _unpack_ghosts!(xpad::Field, local_x, nowned::Int, plans)
+    for (rng, plane) in plans
+        dst = _halo_plane_view(xpad, plane)
+        dst .= _as_eltype(eltype(xpad.data), view(local_x, nowned .+ rng), size(dst))
+    end
+    return xpad
+end
+
+"""
+    _pack_local_x!(local_x, x̄pad, nowned, plans) -> local_x
+
+Pack a partition's adjoint result into its flat `[owned | ghost]` vector
+(internal): interior cotangents first, then the [`Interface`](@ref) halo slabs
+holding the neighbor-owned contributions `fold_bc!` migrated there. The exact
+transpose of [`_unpack_ghosts!`](@ref) — a ghost-reducing backend consumes this.
+"""
+function _pack_local_x!(local_x, x̄pad::Field, nowned::Int, plans)
+    interior_to_flat!(view(local_x, 1:nowned), x̄pad)
+    for (rng, plane) in plans
+        src = _halo_plane_view(x̄pad, plane)
+        _as_eltype(eltype(x̄pad.data), view(local_x, nowned .+ rng), size(src)) .= src
+    end
+    return local_x
+end

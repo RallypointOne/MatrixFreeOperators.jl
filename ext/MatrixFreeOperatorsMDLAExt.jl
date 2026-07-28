@@ -8,9 +8,9 @@ using MatrixFreeOperators, MultiDeviceLinearAlgebra, CUDA, Krylov
 using LinearAlgebra: LinearAlgebra, mul!
 import Adapt
 import MatrixFreeOperators:
-    AbstractGrid, AbstractOperator, Field, IdentityOp, Laplacian, PreparedOperator,
-    ScalingOp, Scaled, Added, _owned_flat_range, _require_grid, _slab_ghost_layout,
-    zero_ghosts!, prepare_distributed
+    AbstractGrid, AbstractOperator, Field, PreparedOperator,
+    _check_distributable, _owned_flat_range, _pack_local_x!, _require_grid,
+    _slab_ghost_layout, _unpack_ghosts!, zero_ghosts!, prepare_distributed
 import MultiDeviceLinearAlgebra: _empty_mdv
 
 #--------------------------------------------------------------------------------# Distributed prepared operator
@@ -41,26 +41,8 @@ Base.size(P::MDLAPreparedOperator) = (P.spec.len, P.spec.len)
 Base.size(P::MDLAPreparedOperator, d::Integer) = size(P)[d]
 Base.eltype(::MDLAPreparedOperator{T}) where {T} = T
 
-# The slice-1 whitelist: constant-coefficient pointwise leaves and stencil
-# leaves whose ghost needs are one halo exchange. Composed would need a
-# mid-tree exchange for its intermediate (its Interface ghosts would be stale
-# zeros — silently wrong), AdjointOp a mid-tree reduction, and Field
-# coefficients their own partitioning; all deferred, all rejected loudly.
-_distributable(::Laplacian) = true
-_distributable(::IdentityOp) = true
-_distributable(S::ScalingOp) = S.coeff isa Number
-_distributable(L::Scaled) = _distributable(L.op)
-_distributable(L::Added) = _distributable(L.a) && _distributable(L.b)
-_distributable(::AbstractOperator) = false
-
 function prepare_distributed(L::AbstractOperator, nparts::Integer; devices=nothing)
-    _distributable(L) || throw(
-        ArgumentError(
-            "prepare_distributed supports Laplacian, IdentityOp, number-coefficient " *
-            "ScalingOp, and their Scaled/Added combinations; got $(sprint(show, L)). " *
-            "Composed, adjoints, and Field coefficients are not yet distributable.",
-        ),
-    )
+    _check_distributable(L)
     g = _require_grid(L)
     g isa CartesianGrid ||
         throw(ArgumentError("prepare_distributed requires a CartesianGrid, got $(nameof(typeof(g)))"))
@@ -92,27 +74,6 @@ end
 
 #--------------------------------------------------------------------------------# Forward action
 
-# View of one cut-dimension halo plane at transverse-interior positions.
-function _halo_plane_view(f::Field, plane::Int)
-    return _halo_plane_view(f.data, f.grid, plane)
-end
-function _halo_plane_view(data, g::AbstractGrid{N}, plane::Int) where {N}
-    h = halo_width(g)
-    n = local_size(g)
-    idx = ntuple(d -> d == N ? (plane:plane) : ((h[d] + 1):(h[d] + n[d])), Val(N))
-    return view(data, idx...)
-end
-
-# Copy the ghost section of local_x (laid out per the _slab_ghost_layout plans)
-# into the Interface halo slabs of the partition's padded scratch field.
-function _unpack_ghosts!(xpad::Field, local_x, nowned::Int, plans)
-    for (rng, plane) in plans
-        dst = _halo_plane_view(xpad, plane)
-        dst .= reshape(view(local_x, nowned .+ rng), size(dst))
-    end
-    return xpad
-end
-
 function LinearAlgebra.mul!(
     y::MultiDeviceVector{T}, P::MDLAPreparedOperator{T}, x::MultiDeviceVector{T},
     α::Number, β::Number,
@@ -135,18 +96,6 @@ function LinearAlgebra.mul!(
 end
 
 #--------------------------------------------------------------------------------# Adjoint action
-
-# Pack a partition's adjoint result into its local_x = [owned | ghost] section:
-# interior cotangents first, then the Interface halo slabs holding the
-# neighbor-owned contributions fold_bc! migrated there.
-function _pack_local_x!(local_x, x̄pad::Field, nowned::Int, plans)
-    interior_to_flat!(view(local_x, 1:nowned), x̄pad)
-    for (rng, plane) in plans
-        src = _halo_plane_view(x̄pad, plane)
-        reshape(view(local_x, nowned .+ rng), size(src)) .= src
-    end
-    return local_x
-end
 
 # Distributed adjoint: per-partition mechanical transpose (apply_adjoint! on an
 # Interface-faced grid leaves neighbor-owned cotangents in the ghost slabs),

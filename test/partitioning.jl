@@ -12,15 +12,9 @@ end
 
 owned_flat_range(g, lg) = MatrixFreeOperators._owned_flat_range(g, lg)
 
-# View of one cut-dimension halo plane at transverse-interior positions — the
-# slab a ghost chunk fills (forward) or is packed from (adjoint).
-function halo_plane_view(f::Field, plane::Int)
-    N = dimension(f.grid)
-    h = halo_width(f.grid)
-    n = local_size(f.grid)
-    idx = ntuple(d -> d == N ? (plane:plane) : ((h[d] + 1):(h[d] + n[d])), N)
-    return view(f.data, idx...)
-end
+# The plane-view geometry is core's (src/partitioning.jl), shared verbatim with
+# the MDLA extension — re-deriving it here would let the two silently decouple.
+halo_plane_view(f::Field, plane::Int) = MatrixFreeOperators._halo_plane_view(f, plane)
 
 function dist_apply_emulated(L, g, parts, ghost_globals, plans, xflat)
     T = eltype(xflat)
@@ -309,5 +303,78 @@ end
         end
         @test A_fwd == materialize(prepare(L))
         @test A_adj ≈ A_fwd'
+    end
+
+    # The distributability whitelist is the whole defense against a silently
+    # wrong distributed answer, so it is tested here — on CPU, in CI — not only
+    # behind the GPU gate in test/mdla_gpu.jl.
+    @testset "distributability guards" begin
+        distributable = MatrixFreeOperators._distributable
+        check = MatrixFreeOperators._check_distributable
+
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+        gc = coarsen(g)
+
+        @testset "accepted" begin
+            @test distributable(laplacian(g))
+            @test distributable(identity_op())
+            @test distributable(scaling(2.5))
+            @test distributable(-1.5 * laplacian(g))
+            @test distributable(0.5 * laplacian(g) + 2.0 * identity_op())
+            L = 0.5 * laplacian(g) + 2.0 * identity_op()
+            @test check(L) === L      # passes the operator through, does not throw
+        end
+
+        @testset "rejected: field-valued parameters" begin
+            κ = set!(scalar_field(g), x -> 1 + x[1])
+            @test !distributable(scaling(κ))
+            @test !distributable(scaling(κ) + laplacian(g))
+            v = set!(vector_field(g), x -> SVector(1.0, 0.0))
+            @test !distributable(advection(g, v))
+            # the message must name the reason, not just the type
+            err = try
+                check(scaling(κ))
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin("global grid", err.msg)
+        end
+
+        @testset "rejected: transfer operators span two grids" begin
+            @test !distributable(restriction(g, gc))
+            @test !distributable(prolongation(gc, g))
+            err = try
+                check(restriction(g, gc))
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin("partitioning", err.msg)
+        end
+
+        @testset "rejected: rank changers are non-square" begin
+            @test !distributable(gradient(g))
+            @test !distributable(divergence(g))
+            err = try
+                check(gradient(g))
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin("non-square", err.msg)
+        end
+
+        # The error points at the offending node, not merely at the tree root.
+        @testset "message names the culprit inside a tree" begin
+            κ = set!(scalar_field(g), x -> 1 + x[1])
+            err = try
+                check(laplacian(g) + 2.0 * scaling(κ))
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin("ScalingOp", err.msg)
+        end
     end
 end
