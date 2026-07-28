@@ -2,7 +2,7 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.9.38">
+<meta name="generator" content="quarto-1.10.18">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
@@ -12,10 +12,13 @@
 /* Default styles provided by pandoc.
 ** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
 */
-code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
-div.columns{display: flex; gap: min(4vw, 1.5em);}
-div.column{flex: auto; overflow-x: auto;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
 div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
 ul.task-list{list-style: none;}
 ul.task-list li input[type="checkbox"] {
@@ -76,10 +79,10 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
 <script src="../site_libs/quarto-html/anchor.min.js"></script>
 <link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="../site_libs/quarto-html/quarto-syntax-highlighting-3793a09f727e4166f67f05d827e59191.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-095245003bb80bd2beb305de39928752.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-987265e5dec9c87e0ebed6b216ef880f.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-3901d0d75e475d87cb004cd3e7ef4c9e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -595,6 +598,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb33"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb33-1"><a href="#cb33-1" aria-hidden="true" tabindex="-1"></a>PreparedOperator</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>A linear operator bound to pre-allocated scratch fields, exposing the flat <code>mul!</code>/<code>size</code>/<code>eltype</code> interface Krylov solvers need. Built with <a href="@ref"><code>prepare</code></a>; after warm-up, <code>mul!</code> runs without steady-state allocations on single-grid <a href="@ref"><code>Field</code></a>s. The <a href="@ref"><code>BlockField</code></a> path uses the sibling <a href="@ref"><code>PreparedForest</code></a>.</p>
 <p>The flat vectors span interior DOFs only — ghost cells are determined by boundary conditions and <code>halo_update!</code>, never solver unknowns. Each <code>mul!</code> copies the flat vector into a halo-padded scratch field, applies the operator, and copies the interior back out fused with the <code>α</code>/<code>β</code> axpby, so the solver’s vectors are never mutated by halo or BC fills.</p>
+<p><code>mul!</code> writes only the interior of <code>xpad</code>, deliberately leaving ghost cells as it found them: the distributed path (<a href="@ref"><code>prepare_distributed</code></a>) fills <a href="@ref"><code>Interface</code></a> ghost slabs from a neighbor exchange <em>before</em> calling <code>mul!</code>, and zeroing them here would silently discard that data.</p>
 </div>
 </div>
 <div class="card mb-3">
@@ -1119,23 +1123,58 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </div>
 </div>
 <div class="card mb-3">
+<section id="partition_grid" class="level4 card-header api-item-header">
+<h4 class="anchored" data-anchor-id="partition_grid"><code>partition_grid</code></h4>
+</section>
+<div class="card-body">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb101"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a><span class="fu">partition_grid</span>(g<span class="op">::</span><span class="dt">CartesianGrid{N}</span>, nparts<span class="op">::</span><span class="dt">Integer</span>) <span class="op">-&gt;</span> <span class="dt">Vector</span>{CartesianGrid{N}}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Split <code>g</code> into <code>nparts</code> slab partitions along dimension <code>N</code> — the memory-contiguous dimension, so each partition owns a contiguous range of global flat interior DOFs. Cell counts split evenly with the remainder going to the first partitions.</p>
+<p>Each local grid keeps the global spacing verbatim, gets <a href="@ref"><code>Interface</code></a> faces on partition cuts (both cut-dimension faces on every partition when the global cut-dimension BC is <a href="@ref"><code>Periodic</code></a>), and records its global plane range in <code>local_range</code>. <code>Interface</code> ghost slabs are filled by a distributed exchange (e.g.&nbsp;the MDLA extension), never by <code>apply_bc!</code>.</p>
+<p>Every slab must have at least <code>halo</code> planes along the cut dimension (twice that for a periodic cut into exactly two partitions, where both of a partition’s ghost stacks come from the same neighbor), so each ghost slab has a single owner and ghost requests are duplicate-free. <code>partition_grid(g, 1)</code> returns <code>[g]</code> unchanged.</p>
+<section id="examples-18" class="level3">
+<h3 class="anchored" data-anchor-id="examples-18">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb102"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb102-1"><a href="#cb102-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">32</span>, <span class="fl">32</span>))</span>
+<span id="cb102-2"><a href="#cb102-2" aria-hidden="true" tabindex="-1"></a>parts <span class="op">=</span> <span class="fu">partition_grid</span>(g, <span class="fl">2</span>)    <span class="co"># two 32×16 slabs cut along dimension 2</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>See also: <a href="@ref"><code>halo_update!</code></a>, <a href="@ref"><code>prepare</code></a>.</p>
+</section>
+</div>
+</div>
+<div class="card mb-3">
 <section id="prepare" class="level4 card-header api-item-header">
 <h4 class="anchored" data-anchor-id="prepare"><code>prepare</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb101"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb101-1"><a href="#cb101-1" aria-hidden="true" tabindex="-1"></a><span class="fu">prepare</span>(L<span class="op">::</span><span class="dt">AbstractOperator</span>, x<span class="op">::</span><span class="dt">Field</span>) <span class="op">-&gt;</span> PreparedOperator</span>
-<span id="cb101-2"><a href="#cb101-2" aria-hidden="true" tabindex="-1"></a><span class="fu">prepare</span>(L<span class="op">::</span><span class="dt">AbstractOperator</span>) <span class="op">-&gt;</span> PreparedOperator</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb103"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a><span class="fu">prepare</span>(L<span class="op">::</span><span class="dt">AbstractOperator</span>, x<span class="op">::</span><span class="dt">Field</span>) <span class="op">-&gt;</span> PreparedOperator</span>
+<span id="cb103-2"><a href="#cb103-2" aria-hidden="true" tabindex="-1"></a><span class="fu">prepare</span>(L<span class="op">::</span><span class="dt">AbstractOperator</span>) <span class="op">-&gt;</span> PreparedOperator</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Walk the operator tree once, allocating the scratch buffers every node needs, and return a <a href="@ref"><code>PreparedOperator</code></a> — or a <a href="@ref"><code>PreparedForest</code></a> for a <a href="@ref"><code>BlockField</code></a> prototype. <code>mul!</code> is then allocation-free in steady state on a single grid; on a block forest the residual cost is the per-leaf stencil apply. <code>x</code> is a prototype of the input field (contents are ignored); the one-argument form assumes a scalar field on the operator’s grid.</p>
 <p>The prepared operator is stateful and single-threaded — prepare once per concurrent solve. Requires <code>islinear(L)</code>; linearize nonlinear operators first with <a href="@ref"><code>linearize</code></a>.</p>
-<section id="examples-18" class="level3">
-<h3 class="anchored" data-anchor-id="examples-18">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb102"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb102-1"><a href="#cb102-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>),), (<span class="fl">64</span>,))</span>
-<span id="cb102-2"><a href="#cb102-2" aria-hidden="true" tabindex="-1"></a>A <span class="op">=</span> <span class="fu">prepare</span>(<span class="fu">laplacian</span>(g))</span>
-<span id="cb102-3"><a href="#cb102-3" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> <span class="fu">flatten</span>(<span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fu">sin</span>(<span class="cn">π</span> <span class="op">*</span> x[<span class="fl">1</span>])))</span>
-<span id="cb102-4"><a href="#cb102-4" aria-hidden="true" tabindex="-1"></a>u, stats <span class="op">=</span> Krylov.<span class="fu">minres</span>(A, b)</span>
-<span id="cb102-5"><a href="#cb102-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb102-6"><a href="#cb102-6" aria-hidden="true" tabindex="-1"></a><span class="co"># explicit time stepping (OrdinaryDiffEq-style RHS closure):</span></span>
-<span id="cb102-7"><a href="#cb102-7" aria-hidden="true" tabindex="-1"></a><span class="fu">f!</span>(du, u, p, t) <span class="op">=</span> <span class="fu">mul!</span>(du, A, u)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-19" class="level3">
+<h3 class="anchored" data-anchor-id="examples-19">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb104"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb104-1"><a href="#cb104-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>),), (<span class="fl">64</span>,))</span>
+<span id="cb104-2"><a href="#cb104-2" aria-hidden="true" tabindex="-1"></a>A <span class="op">=</span> <span class="fu">prepare</span>(<span class="fu">laplacian</span>(g))</span>
+<span id="cb104-3"><a href="#cb104-3" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> <span class="fu">flatten</span>(<span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fu">sin</span>(<span class="cn">π</span> <span class="op">*</span> x[<span class="fl">1</span>])))</span>
+<span id="cb104-4"><a href="#cb104-4" aria-hidden="true" tabindex="-1"></a>u, stats <span class="op">=</span> Krylov.<span class="fu">minres</span>(A, b)</span>
+<span id="cb104-5"><a href="#cb104-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb104-6"><a href="#cb104-6" aria-hidden="true" tabindex="-1"></a><span class="co"># explicit time stepping (OrdinaryDiffEq-style RHS closure):</span></span>
+<span id="cb104-7"><a href="#cb104-7" aria-hidden="true" tabindex="-1"></a><span class="fu">f!</span>(du, u, p, t) <span class="op">=</span> <span class="fu">mul!</span>(du, A, u)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</section>
+</div>
+</div>
+<div class="card mb-3">
+<section id="prepare_distributed" class="level4 card-header api-item-header">
+<h4 class="anchored" data-anchor-id="prepare_distributed"><code>prepare_distributed</code></h4>
+</section>
+<div class="card-body">
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb105"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a><span class="fu">prepare_distributed</span>(L<span class="op">::</span><span class="dt">AbstractOperator</span>, nparts<span class="op">::</span><span class="dt">Integer</span>; devices<span class="op">=</span><span class="cn">nothing</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p>Prepare <code>L</code> for a distributed multi-device solve: partition its grid into <code>nparts</code> slabs (<a href="@ref"><code>partition_grid</code></a>), build one <a href="@ref"><code>prepare</code></a>d operator per partition on its own device, and return a distributed prepared operator exposing <code>mul!</code>/<code>size</code>/<code>eltype</code> over device-partitioned vectors, with ghost slabs exchanged between partitions around each local apply.</p>
+<p>Implemented by package extensions; the function has no methods until one is loaded. The MDLA extension (load MultiDeviceLinearAlgebra.jl, CUDA.jl, and Krylov.jl) maps slabs onto one CUDA device each — <code>devices</code> optionally picks which (0-indexed, unique) — and returns an operator over MDLA <code>MultiDeviceVector</code>s.</p>
+<section id="examples-20" class="level3">
+<h3 class="anchored" data-anchor-id="examples-20">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb106"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb106-1"><a href="#cb106-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">MultiDeviceLinearAlgebra</span>, <span class="bu">CUDA</span>, <span class="bu">Krylov</span></span>
+<span id="cb106-2"><a href="#cb106-2" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">256</span>, <span class="fl">256</span>))</span>
+<span id="cb106-3"><a href="#cb106-3" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prepare_distributed</span>(<span class="fu">laplacian</span>(g), <span class="fl">2</span>)</span>
+<span id="cb106-4"><a href="#cb106-4" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> <span class="fu">MultiDeviceVector</span>(<span class="fu">flatten</span>(f), P.spec)</span>
+<span id="cb106-5"><a href="#cb106-5" aria-hidden="true" tabindex="-1"></a>u, stats <span class="op">=</span> Krylov.<span class="fu">cg</span>(P, b)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </div>
 </div>
@@ -1144,14 +1183,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="prolongation"><code>prolongation</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb103"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb103-1"><a href="#cb103-1" aria-hidden="true" tabindex="-1"></a><span class="fu">prolongation</span>(coarse<span class="op">::</span><span class="dt">CartesianGrid</span>, fine<span class="op">::</span><span class="dt">CartesianGrid</span>) <span class="op">-&gt;</span> Prolongation</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb107"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="fu">prolongation</span>(coarse<span class="op">::</span><span class="dt">CartesianGrid</span>, fine<span class="op">::</span><span class="dt">CartesianGrid</span>) <span class="op">-&gt;</span> Prolongation</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Build the coarse-to-fine linear interpolation operator for a 2:1 grid pair. The grids must share extent, boundary-condition kinds, and device.</p>
-<section id="examples-19" class="level3">
-<h3 class="anchored" data-anchor-id="examples-19">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb104"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb104-1"><a href="#cb104-1" aria-hidden="true" tabindex="-1"></a>gf <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">64</span>, <span class="fl">64</span>))</span>
-<span id="cb104-2"><a href="#cb104-2" aria-hidden="true" tabindex="-1"></a>gc <span class="op">=</span> <span class="fu">coarsen</span>(gf)</span>
-<span id="cb104-3"><a href="#cb104-3" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prolongation</span>(gc, gf)      <span class="co"># coarse -&gt; fine</span></span>
-<span id="cb104-4"><a href="#cb104-4" aria-hidden="true" tabindex="-1"></a>R <span class="op">=</span> <span class="fu">restriction</span>(gf, gc)       <span class="co"># fine -&gt; coarse, R = 2⁻ᴺ·Pᵀ</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-21" class="level3">
+<h3 class="anchored" data-anchor-id="examples-21">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb108"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb108-1"><a href="#cb108-1" aria-hidden="true" tabindex="-1"></a>gf <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">64</span>, <span class="fl">64</span>))</span>
+<span id="cb108-2"><a href="#cb108-2" aria-hidden="true" tabindex="-1"></a>gc <span class="op">=</span> <span class="fu">coarsen</span>(gf)</span>
+<span id="cb108-3"><a href="#cb108-3" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prolongation</span>(gc, gf)      <span class="co"># coarse -&gt; fine</span></span>
+<span id="cb108-4"><a href="#cb108-4" aria-hidden="true" tabindex="-1"></a>R <span class="op">=</span> <span class="fu">restriction</span>(gf, gc)       <span class="co"># fine -&gt; coarse, R = 2⁻ᴺ·Pᵀ</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See also: <a href="@ref"><code>restriction</code></a>, <a href="@ref"><code>coarsen</code></a>.</p>
 </section>
 </div>
@@ -1161,9 +1200,9 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="refine-refine"><code>refine!</code> {#refine!}</h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb105"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb105-1"><a href="#cb105-1" aria-hidden="true" tabindex="-1"></a><span class="fu">refine!</span>(forest<span class="op">::</span><span class="dt">Forest</span>, should_refine) <span class="op">-&gt;</span> forest</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb109"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a><span class="fu">refine!</span>(forest<span class="op">::</span><span class="dt">Forest</span>, should_refine) <span class="op">-&gt;</span> forest</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Replace every leaf <code>key</code> (below <code>maxlevel</code>) for which <code>should_refine(key)</code> is true with its <code>2ᴺ</code> children, then re-establish 2:1 balance via <a href="@ref"><code>balance!</code></a>.</p>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb106"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb106-1"><a href="#cb106-1" aria-hidden="true" tabindex="-1"></a><span class="fu">refine!</span>(bf<span class="op">::</span><span class="dt">BlockForest</span>, predicate) <span class="op">-&gt;</span> bf</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb110"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb110-1"><a href="#cb110-1" aria-hidden="true" tabindex="-1"></a><span class="fu">refine!</span>(bf<span class="op">::</span><span class="dt">BlockForest</span>, predicate) <span class="op">-&gt;</span> bf</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Refine every leaf whose center satisfies <code>predicate(center::SVector)</code> (and is below <code>maxlevel</code>), then re-establish 2:1 balance. Fields must be (re)allocated after a regrid — block storage is tied to the leaf set at allocation time.</p>
 </div>
 </div>
@@ -1172,31 +1211,31 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="regrid-regrid"><code>regrid!</code> {#regrid!}</h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb107"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb107-1"><a href="#cb107-1" aria-hidden="true" tabindex="-1"></a><span class="fu">regrid!</span>(u<span class="op">::</span><span class="dt">BlockField</span>, more<span class="op">::</span><span class="dt">BlockField...</span>; refine, coarsen<span class="op">=</span><span class="fu">Returns</span>(<span class="cn">false</span>))</span>
-<span id="cb107-2"><a href="#cb107-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">-&gt;</span> u′ <span class="op">|</span> (u′, more′<span class="op">...</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb111"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a><span class="fu">regrid!</span>(u<span class="op">::</span><span class="dt">BlockField</span>, more<span class="op">::</span><span class="dt">BlockField...</span>; refine, coarsen<span class="op">=</span><span class="fu">Returns</span>(<span class="cn">false</span>))</span>
+<span id="cb111-2"><a href="#cb111-2" aria-hidden="true" tabindex="-1"></a>    <span class="op">-&gt;</span> u′ <span class="op">|</span> (u′, more′<span class="op">...</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Adapt the forest to the current solution and carry the field(s) across the regrid. Evaluates the criteria on every leaf of <code>u</code> — each receives the leaf block as an ordinary <a href="@ref"><code>Field</code></a> (data plus leaf grid), so a criterion is typically a reduction like <code>b -&gt; maximum(abs, interior(b)) &gt; τ</code> — then edits the topology in a single pass (refine-marked leaves split, complete fully-marked sibling families coarsen, refine wins conflicts), re-establishes 2:1 balance, and returns freshly allocated field(s) on the new leaf set. Refine marks at <code>maxlevel</code> and coarsen marks on level-0 or incomplete families are silently ignored, matching <a href="@ref"><code>refine!</code></a>/<a href="@ref"><code>coarsen!</code></a>.</p>
 <p>Solution transfer is interior-only and keyed by leaf identity: an unchanged leaf is copied, a refined leaf is filled by per-dimension linear interpolation from its old parent (one-sided at the parent-block edges), and a coarsened leaf by the conservative <code>2⁻ᴺ</code> mean of its old children. Ghost cells of the returned fields are zero — they are scratch, filled by <code>halo_update!</code>/<code>apply_bc!</code> on the next operator application — so boundary data re-enters through the next solve.</p>
 <p>Additional fields passed as <code>more</code> ride the same transfer (results are returned in input order). Because a regrid invalidates every field allocated on the old leaf set, any field needed afterwards — coefficients, or a precomputed indicator — must be passed here; compute indicator fields <em>before</em> calling.</p>
 <p>When the marks change nothing, the forest generation is untouched and the <em>input</em> field(s) are returned unchanged — existing <a href="@ref"><code>prepare</code></a>d operators remain valid. After a real regrid, stale fields and <code>PreparedForest</code>s throw on use; re-run <a href="@ref"><code>prepare</code></a> on the returned field.</p>
-<section id="examples-20" class="level3">
-<h3 class="anchored" data-anchor-id="examples-20">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb108"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb108-1"><a href="#cb108-1" aria-hidden="true" tabindex="-1"></a>base <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">32</span>, <span class="fl">32</span>);</span>
-<span id="cb108-2"><a href="#cb108-2" aria-hidden="true" tabindex="-1"></a>                     bc<span class="op">=</span>((<span class="fu">Dirichlet</span>(), <span class="fu">Dirichlet</span>()), (<span class="fu">Dirichlet</span>(), <span class="fu">Dirichlet</span>())))</span>
-<span id="cb108-3"><a href="#cb108-3" aria-hidden="true" tabindex="-1"></a>bf   <span class="op">=</span> <span class="fu">BlockForest</span>(base; blocksize<span class="op">=</span>(<span class="fl">8</span>, <span class="fl">8</span>), maxlevel<span class="op">=</span><span class="fl">3</span>)</span>
-<span id="cb108-4"><a href="#cb108-4" aria-hidden="true" tabindex="-1"></a>u    <span class="op">=</span> <span class="fu">scalar_field</span>(bf)</span>
-<span id="cb108-5"><a href="#cb108-5" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb108-6"><a href="#cb108-6" aria-hidden="true" tabindex="-1"></a><span class="co"># canonical adaptive solve loop</span></span>
-<span id="cb108-7"><a href="#cb108-7" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> cycle <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span>ncycles</span>
-<span id="cb108-8"><a href="#cb108-8" aria-hidden="true" tabindex="-1"></a>    L <span class="op">=</span> <span class="fu">laplacian</span>(bf)</span>
-<span id="cb108-9"><a href="#cb108-9" aria-hidden="true" tabindex="-1"></a>    P <span class="op">=</span> <span class="fu">prepare</span>(L, u)</span>
-<span id="cb108-10"><a href="#cb108-10" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> <span class="fu">flatten</span>(f) <span class="op">.-</span> <span class="fu">flatten</span>(<span class="fu">boundary_rhs</span>(L, u))</span>
-<span id="cb108-11"><a href="#cb108-11" aria-hidden="true" tabindex="-1"></a>    sol, stats <span class="op">=</span> Krylov.<span class="fu">cg</span>(P, b)</span>
-<span id="cb108-12"><a href="#cb108-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">flat_to_interior!</span>(u, sol)</span>
-<span id="cb108-13"><a href="#cb108-13" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb108-14"><a href="#cb108-14" aria-hidden="true" tabindex="-1"></a>    η <span class="op">=</span> <span class="fu">magnitude_of</span>(<span class="fu">gradient</span>(bf) <span class="op">*</span> u)          <span class="co"># indicator, computed pre-regrid</span></span>
-<span id="cb108-15"><a href="#cb108-15" aria-hidden="true" tabindex="-1"></a>    η, u <span class="op">=</span> <span class="fu">regrid!</span>(η, u; refine  <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&gt;</span> τ,</span>
-<span id="cb108-16"><a href="#cb108-16" aria-hidden="true" tabindex="-1"></a>                         coarsen <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&lt;</span> τ <span class="op">/</span> <span class="fl">10</span>)</span>
-<span id="cb108-17"><a href="#cb108-17" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-22" class="level3">
+<h3 class="anchored" data-anchor-id="examples-22">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb112"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb112-1"><a href="#cb112-1" aria-hidden="true" tabindex="-1"></a>base <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">32</span>, <span class="fl">32</span>);</span>
+<span id="cb112-2"><a href="#cb112-2" aria-hidden="true" tabindex="-1"></a>                     bc<span class="op">=</span>((<span class="fu">Dirichlet</span>(), <span class="fu">Dirichlet</span>()), (<span class="fu">Dirichlet</span>(), <span class="fu">Dirichlet</span>())))</span>
+<span id="cb112-3"><a href="#cb112-3" aria-hidden="true" tabindex="-1"></a>bf   <span class="op">=</span> <span class="fu">BlockForest</span>(base; blocksize<span class="op">=</span>(<span class="fl">8</span>, <span class="fl">8</span>), maxlevel<span class="op">=</span><span class="fl">3</span>)</span>
+<span id="cb112-4"><a href="#cb112-4" aria-hidden="true" tabindex="-1"></a>u    <span class="op">=</span> <span class="fu">scalar_field</span>(bf)</span>
+<span id="cb112-5"><a href="#cb112-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb112-6"><a href="#cb112-6" aria-hidden="true" tabindex="-1"></a><span class="co"># canonical adaptive solve loop</span></span>
+<span id="cb112-7"><a href="#cb112-7" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> cycle <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span>ncycles</span>
+<span id="cb112-8"><a href="#cb112-8" aria-hidden="true" tabindex="-1"></a>    L <span class="op">=</span> <span class="fu">laplacian</span>(bf)</span>
+<span id="cb112-9"><a href="#cb112-9" aria-hidden="true" tabindex="-1"></a>    P <span class="op">=</span> <span class="fu">prepare</span>(L, u)</span>
+<span id="cb112-10"><a href="#cb112-10" aria-hidden="true" tabindex="-1"></a>    b <span class="op">=</span> <span class="fu">flatten</span>(f) <span class="op">.-</span> <span class="fu">flatten</span>(<span class="fu">boundary_rhs</span>(L, u))</span>
+<span id="cb112-11"><a href="#cb112-11" aria-hidden="true" tabindex="-1"></a>    sol, stats <span class="op">=</span> Krylov.<span class="fu">cg</span>(P, b)</span>
+<span id="cb112-12"><a href="#cb112-12" aria-hidden="true" tabindex="-1"></a>    <span class="fu">flat_to_interior!</span>(u, sol)</span>
+<span id="cb112-13"><a href="#cb112-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb112-14"><a href="#cb112-14" aria-hidden="true" tabindex="-1"></a>    η <span class="op">=</span> <span class="fu">magnitude_of</span>(<span class="fu">gradient</span>(bf) <span class="op">*</span> u)          <span class="co"># indicator, computed pre-regrid</span></span>
+<span id="cb112-15"><a href="#cb112-15" aria-hidden="true" tabindex="-1"></a>    η, u <span class="op">=</span> <span class="fu">regrid!</span>(η, u; refine  <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&gt;</span> τ,</span>
+<span id="cb112-16"><a href="#cb112-16" aria-hidden="true" tabindex="-1"></a>                         coarsen <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&lt;</span> τ <span class="op">/</span> <span class="fl">10</span>)</span>
+<span id="cb112-17"><a href="#cb112-17" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See also: <a href="@ref"><code>refine!</code></a>, <a href="@ref"><code>coarsen!</code></a>, <a href="@ref"><code>prepare</code></a>.</p>
 </section>
 </div>
@@ -1206,13 +1245,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="restriction"><code>restriction</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb109"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb109-1"><a href="#cb109-1" aria-hidden="true" tabindex="-1"></a><span class="fu">restriction</span>(fine<span class="op">::</span><span class="dt">CartesianGrid</span>, coarse<span class="op">::</span><span class="dt">CartesianGrid</span>=<span class="fu">coarsen</span>(fine)) <span class="op">-&gt;</span> Restriction</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb113"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a><span class="fu">restriction</span>(fine<span class="op">::</span><span class="dt">CartesianGrid</span>, coarse<span class="op">::</span><span class="dt">CartesianGrid</span>=<span class="fu">coarsen</span>(fine)) <span class="op">-&gt;</span> Restriction</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Build the fine-to-coarse full-weighting operator for a 2:1 grid pair. The grids must share extent, boundary-condition kinds, and device.</p>
-<section id="examples-21" class="level3">
-<h3 class="anchored" data-anchor-id="examples-21">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb110"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb110-1"><a href="#cb110-1" aria-hidden="true" tabindex="-1"></a>gf <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">64</span>, <span class="fl">64</span>))</span>
-<span id="cb110-2"><a href="#cb110-2" aria-hidden="true" tabindex="-1"></a>R <span class="op">=</span> <span class="fu">restriction</span>(gf)                  <span class="co"># to coarsen(gf)</span></span>
-<span id="cb110-3"><a href="#cb110-3" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prolongation</span>(<span class="fu">coarsen</span>(gf), gf)    <span class="co"># its adjoint partner: Rᵀ = 2⁻ᴺ·P</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-23" class="level3">
+<h3 class="anchored" data-anchor-id="examples-23">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb114"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb114-1"><a href="#cb114-1" aria-hidden="true" tabindex="-1"></a>gf <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">64</span>, <span class="fl">64</span>))</span>
+<span id="cb114-2"><a href="#cb114-2" aria-hidden="true" tabindex="-1"></a>R <span class="op">=</span> <span class="fu">restriction</span>(gf)                  <span class="co"># to coarsen(gf)</span></span>
+<span id="cb114-3"><a href="#cb114-3" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prolongation</span>(<span class="fu">coarsen</span>(gf), gf)    <span class="co"># its adjoint partner: Rᵀ = 2⁻ᴺ·P</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See also: <a href="@ref"><code>prolongation</code></a>, <a href="@ref"><code>coarsen</code></a>.</p>
 </section>
 </div>
@@ -1222,13 +1261,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="scalar_field"><code>scalar_field</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb111"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb111-1"><a href="#cb111-1" aria-hidden="true" tabindex="-1"></a><span class="fu">scalar_field</span>(g<span class="op">::</span><span class="dt">AbstractGrid</span>, T<span class="op">=</span><span class="fu">eltype</span>(<span class="fu">spacing</span>(g))) <span class="op">-&gt;</span> Field</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb115"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a><span class="fu">scalar_field</span>(g<span class="op">::</span><span class="dt">AbstractGrid</span>, T<span class="op">=</span><span class="fu">eltype</span>(<span class="fu">spacing</span>(g))) <span class="op">-&gt;</span> Field</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Allocate a zeroed cell-centered scalar field on the grid’s device.</p>
-<section id="examples-22" class="level3">
-<h3 class="anchored" data-anchor-id="examples-22">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb112"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb112-1"><a href="#cb112-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>),), (<span class="fl">64</span>,))</span>
-<span id="cb112-2"><a href="#cb112-2" aria-hidden="true" tabindex="-1"></a>u <span class="op">=</span> <span class="fu">scalar_field</span>(g)</span>
-<span id="cb112-3"><a href="#cb112-3" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> <span class="fu">scalar_field</span>(g, <span class="dt">Float32</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-24" class="level3">
+<h3 class="anchored" data-anchor-id="examples-24">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb116"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb116-1"><a href="#cb116-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>),), (<span class="fl">64</span>,))</span>
+<span id="cb116-2"><a href="#cb116-2" aria-hidden="true" tabindex="-1"></a>u <span class="op">=</span> <span class="fu">scalar_field</span>(g)</span>
+<span id="cb116-3"><a href="#cb116-3" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> <span class="fu">scalar_field</span>(g, <span class="dt">Float32</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See also: <a href="@ref"><code>vector_field</code></a>, <a href="@ref"><code>set!</code></a>.</p>
 </section>
 </div>
@@ -1238,13 +1277,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="scaling"><code>scaling</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb113"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb113-1"><a href="#cb113-1" aria-hidden="true" tabindex="-1"></a><span class="fu">scaling</span>(κ) <span class="op">-&gt;</span> ScalingOp</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb117"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a><span class="fu">scaling</span>(κ) <span class="op">-&gt;</span> ScalingOp</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Build a pointwise scaling operator <code>x ↦ κ ⊙ x</code> from a <code>Number</code> or a scalar-eltype coefficient field (<a href="@ref"><code>Field</code></a> on a single grid, <a href="@ref"><code>BlockField</code></a>/ <a href="@ref"><code>PackedBlockField</code></a> on a forest — the coefficient’s layout should match the field the operator is applied to for the forest-native kernel to engage). Diagonal and (for real coefficients) self-adjoint — the natural Jacobi-smoother target. Variable-coefficient diffusion composes as <code>divergence(g) * scaling(κ) * gradient(g)</code>.</p>
-<section id="examples-23" class="level3">
-<h3 class="anchored" data-anchor-id="examples-23">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb114"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb114-1"><a href="#cb114-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>),), (<span class="fl">64</span>,))</span>
-<span id="cb114-2"><a href="#cb114-2" aria-hidden="true" tabindex="-1"></a>κ <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fl">1</span> <span class="op">+</span> x[<span class="fl">1</span>]<span class="op">^</span><span class="fl">2</span>)</span>
-<span id="cb114-3"><a href="#cb114-3" aria-hidden="true" tabindex="-1"></a>K <span class="op">=</span> <span class="fu">divergence</span>(g) <span class="op">*</span> <span class="fu">scaling</span>(κ) <span class="op">*</span> <span class="fu">gradient</span>(g)     <span class="co"># ∇·(κ∇u)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-25" class="level3">
+<h3 class="anchored" data-anchor-id="examples-25">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb118"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb118-1"><a href="#cb118-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>),), (<span class="fl">64</span>,))</span>
+<span id="cb118-2"><a href="#cb118-2" aria-hidden="true" tabindex="-1"></a>κ <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fl">1</span> <span class="op">+</span> x[<span class="fl">1</span>]<span class="op">^</span><span class="fl">2</span>)</span>
+<span id="cb118-3"><a href="#cb118-3" aria-hidden="true" tabindex="-1"></a>K <span class="op">=</span> <span class="fu">divergence</span>(g) <span class="op">*</span> <span class="fu">scaling</span>(κ) <span class="op">*</span> <span class="fu">gradient</span>(g)     <span class="co"># ∇·(κ∇u)</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See also: <a href="@ref"><code>gradient</code></a>, <a href="@ref"><code>divergence</code></a>, <a href="@ref"><code>identity_op</code></a>.</p>
 </section>
 </div>
@@ -1254,12 +1293,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="set-set"><code>set!</code> {#set!}</h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb115"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb115-1"><a href="#cb115-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set!</span>(f<span class="op">::</span><span class="dt">Field</span>, fun) <span class="op">-&gt;</span> f</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb119"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb119-1"><a href="#cb119-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set!</span>(f<span class="op">::</span><span class="dt">Field</span>, fun) <span class="op">-&gt;</span> f</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Set the interior of <code>f</code> to <code>fun(x)</code> evaluated at cell centers, where <code>x</code> is the <code>SVector</code> of physical coordinates.</p>
-<section id="examples-24" class="level3">
-<h3 class="anchored" data-anchor-id="examples-24">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb116"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb116-1"><a href="#cb116-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">2</span>π),), (<span class="fl">64</span>,))</span>
-<span id="cb116-2"><a href="#cb116-2" aria-hidden="true" tabindex="-1"></a>u <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fu">sin</span>(x[<span class="fl">1</span>]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-26" class="level3">
+<h3 class="anchored" data-anchor-id="examples-26">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb120"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb120-1"><a href="#cb120-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">2</span>π),), (<span class="fl">64</span>,))</span>
+<span id="cb120-2"><a href="#cb120-2" aria-hidden="true" tabindex="-1"></a>u <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fu">sin</span>(x[<span class="fl">1</span>]))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </div>
 </div>
@@ -1268,12 +1307,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="solve"><code>solve</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb117"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb117-1"><a href="#cb117-1" aria-hidden="true" tabindex="-1"></a><span class="fu">solve</span>(s<span class="op">::</span><span class="dt">MultigridSolver</span>, b<span class="op">::</span><span class="dt">AbstractVector</span>; rtol<span class="op">=</span><span class="fl">1e-8</span>, atol<span class="op">=</span><span class="fl">0</span>) <span class="op">-&gt;</span> u</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb121"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a><span class="fu">solve</span>(s<span class="op">::</span><span class="dt">MultigridSolver</span>, b<span class="op">::</span><span class="dt">AbstractVector</span>; rtol<span class="op">=</span><span class="fl">1e-8</span>, atol<span class="op">=</span><span class="fl">0</span>) <span class="op">-&gt;</span> u</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Solve <code>A·u = b</code> by multigrid V-cycle iteration on flat interior-DOF vectors (the <a href="@ref"><code>flatten</code></a> layout), from a zero initial guess, until <code>‖b - A·u‖ ≤ max(rtol·‖b‖, atol)</code> or <code>maxiter</code> cycles. Warns and returns the current iterate if the tolerance is not reached.</p>
 <p>Note: other packages (CommonSolve/SciML) also export a <code>solve</code>; qualify as <code>MatrixFreeOperators.solve</code> when both are loaded.</p>
-<section id="examples-25" class="level3">
-<h3 class="anchored" data-anchor-id="examples-25">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb118"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb118-1"><a href="#cb118-1" aria-hidden="true" tabindex="-1"></a>u <span class="op">=</span> <span class="fu">solve</span>(<span class="fu">MultigridSolver</span>(<span class="fu">-laplacian</span>(g)), <span class="fu">flatten</span>(f); rtol<span class="op">=</span><span class="fl">1e-10</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-27" class="level3">
+<h3 class="anchored" data-anchor-id="examples-27">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb122"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb122-1"><a href="#cb122-1" aria-hidden="true" tabindex="-1"></a>u <span class="op">=</span> <span class="fu">solve</span>(<span class="fu">MultigridSolver</span>(<span class="fu">-laplacian</span>(g)), <span class="fu">flatten</span>(f); rtol<span class="op">=</span><span class="fl">1e-10</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </section>
 </div>
 </div>
@@ -1282,7 +1321,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="spacing"><code>spacing</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb119"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb119-1"><a href="#cb119-1" aria-hidden="true" tabindex="-1"></a><span class="fu">spacing</span>(g<span class="op">::</span><span class="dt">AbstractGrid</span>) <span class="op">-&gt;</span> <span class="dt">NTuple</span>{N}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb123"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb123-1"><a href="#cb123-1" aria-hidden="true" tabindex="-1"></a><span class="fu">spacing</span>(g<span class="op">::</span><span class="dt">AbstractGrid</span>) <span class="op">-&gt;</span> <span class="dt">NTuple</span>{N}</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Cell spacing per dimension.</p>
 </div>
 </div>
@@ -1291,7 +1330,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="unpack"><code>unpack</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb120"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb120-1"><a href="#cb120-1" aria-hidden="true" tabindex="-1"></a><span class="fu">unpack</span>(f<span class="op">::</span><span class="dt">PackedBlockField</span>) <span class="op">-&gt;</span> BlockField</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb124"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb124-1"><a href="#cb124-1" aria-hidden="true" tabindex="-1"></a><span class="fu">unpack</span>(f<span class="op">::</span><span class="dt">PackedBlockField</span>) <span class="op">-&gt;</span> BlockField</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Copy packed storage back into the vector-of-blocks reference layout — the <a href="@ref"><code>BlockField</code></a> that AD, Reactant, and <a href="@ref"><code>regrid!</code></a> consume.</p>
 <p>See also: <a href="@ref"><code>pack</code></a>.</p>
 </div>
@@ -1301,12 +1340,12 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="vector_field"><code>vector_field</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb121"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb121-1"><a href="#cb121-1" aria-hidden="true" tabindex="-1"></a><span class="fu">vector_field</span>(g<span class="op">::</span><span class="dt">AbstractGrid{N}</span>, T<span class="op">=</span><span class="fu">eltype</span>(<span class="fu">spacing</span>(g))) <span class="op">-&gt;</span> Field</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb125"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb125-1"><a href="#cb125-1" aria-hidden="true" tabindex="-1"></a><span class="fu">vector_field</span>(g<span class="op">::</span><span class="dt">AbstractGrid{N}</span>, T<span class="op">=</span><span class="fu">eltype</span>(<span class="fu">spacing</span>(g))) <span class="op">-&gt;</span> Field</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Allocate a zeroed cell-centered vector field with element type <code>SVector{N,T}</code>. Operators written generically over the element type act componentwise on it.</p>
-<section id="examples-26" class="level3">
-<h3 class="anchored" data-anchor-id="examples-26">Examples</h3>
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb122"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb122-1"><a href="#cb122-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">32</span>, <span class="fl">32</span>))</span>
-<span id="cb122-2"><a href="#cb122-2" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> <span class="fu">vector_field</span>(g)        <span class="co"># eltype SVector{2,Float64}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<section id="examples-28" class="level3">
+<h3 class="anchored" data-anchor-id="examples-28">Examples</h3>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb126"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb126-1"><a href="#cb126-1" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">32</span>, <span class="fl">32</span>))</span>
+<span id="cb126-2"><a href="#cb126-2" aria-hidden="true" tabindex="-1"></a>v <span class="op">=</span> <span class="fu">vector_field</span>(g)        <span class="co"># eltype SVector{2,Float64}</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>See also: <a href="@ref"><code>scalar_field</code></a>, <a href="@ref"><code>component</code></a>.</p>
 </section>
 </div>
@@ -1735,7 +1774,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       &nbsp;
     </div>   
     <div class="nav-footer-center">
-<p>Built on 2026-07-21</p>
+<p>Built on 2026-07-28</p>
 </div>
     <div class="nav-footer-right">
       &nbsp;

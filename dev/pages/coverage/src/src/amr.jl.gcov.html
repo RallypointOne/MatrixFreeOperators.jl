@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-21 16:50:04</td>
+            <td class="headerValue">2026-07-28 17:56:00</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -193,7 +193,7 @@
 <span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">          31 :     keys = Set(forest.leaves)</span></span>
 <span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">          31 :     for key in forest.leaves</span></span>
 <span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">         862 :         if key in refine_marks &amp;&amp; key.level &lt; forest.maxlevel</span></span>
-<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">         210 :             delete!(keys, key)</span></span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">         226 :             delete!(keys, key)</span></span>
 <span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">         160 :             for c in children(key)</span></span>
 <span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC">         640 :                 push!(keys, c)</span></span>
 <span id="L137"><span class="lineNum">     137</span> <span class="tlaGNC">         640 :             end</span></span>
@@ -209,7 +209,7 @@
 <span id="L147"><span class="lineNum">     147</span>              :         # already covers the refine-wins conflict rule.</span>
 <span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">          53 :         length(sibs) == 1 &lt;&lt; N || continue</span></span>
 <span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">          48 :         for s in sibs</span></span>
-<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">         317 :             delete!(keys, s)</span></span>
+<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">         316 :             delete!(keys, s)</span></span>
 <span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">         192 :         end</span></span>
 <span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">          48 :         push!(keys, p)</span></span>
 <span id="L153"><span class="lineNum">     153</span> <span class="tlaGNC">          98 :     end</span></span>
