@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 17:56:00</td>
+            <td class="headerValue">2026-07-28 22:14:58</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -73,7 +73,7 @@
 <span id="L11"><span class="lineNum">      11</span>              : boundary lift is identically zero. Construct with [`restriction`](@ref).</span>
 <span id="L12"><span class="lineNum">      12</span>              : &quot;&quot;&quot;</span>
 <span id="L13"><span class="lineNum">      13</span>              : struct Restriction{GF&lt;:CartesianGrid,GC&lt;:CartesianGrid} &lt;: AbstractOperator</span>
-<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC tlaBgGNC">          60 :     fine::GF</span></span>
+<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC tlaBgGNC">          63 :     fine::GF</span></span>
 <span id="L15"><span class="lineNum">      15</span>              :     coarse::GC</span>
 <span id="L16"><span class="lineNum">      16</span>              : end</span>
 <span id="L17"><span class="lineNum">      17</span>              : </span>
@@ -93,9 +93,9 @@
 <span id="L31"><span class="lineNum">      31</span>              : </span>
 <span id="L32"><span class="lineNum">      32</span>              : See also: [`prolongation`](@ref), [`coarsen`](@ref).</span>
 <span id="L33"><span class="lineNum">      33</span>              : &quot;&quot;&quot;</span>
-<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">          14 : function restriction(fine::CartesianGrid{N}, coarse::CartesianGrid{N}) where {N}</span></span>
-<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">          55 :     _validate_transfer(fine, coarse)</span></span>
-<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">          52 :     return Restriction(fine, coarse)</span></span>
+<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">          17 : function restriction(fine::CartesianGrid{N}, coarse::CartesianGrid{N}) where {N}</span></span>
+<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">          58 :     _validate_transfer(fine, coarse)</span></span>
+<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">          55 :     return Restriction(fine, coarse)</span></span>
 <span id="L37"><span class="lineNum">      37</span>              : end</span>
 <span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">           6 : restriction(fine::CartesianGrid) = restriction(fine, coarsen(fine))</span></span>
 <span id="L39"><span class="lineNum">      39</span>              : </span>

@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 17:56:00</td>
+            <td class="headerValue">2026-07-28 22:14:58</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -89,7 +89,7 @@
 <span id="L27"><span class="lineNum">      27</span>              : (`u·∇u`). Construct with [`advection`](@ref).</span>
 <span id="L28"><span class="lineNum">      28</span>              : &quot;&quot;&quot;</span>
 <span id="L29"><span class="lineNum">      29</span>              : struct Advection{G&lt;:AbstractGrid,V} &lt;: AbstractOperator</span>
-<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">         416 :     grid::G</span></span>
+<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">         417 :     grid::G</span></span>
 <span id="L31"><span class="lineNum">      31</span>              :     velocity::V</span>
 <span id="L32"><span class="lineNum">      32</span>              : end</span>
 <span id="L33"><span class="lineNum">      33</span>              : </span>
@@ -117,18 +117,18 @@
 <span id="L55"><span class="lineNum">      55</span>              : B = advection(g, SelfAdvection())    # nonlinear: u·∇u</span>
 <span id="L56"><span class="lineNum">      56</span>              : ```</span>
 <span id="L57"><span class="lineNum">      57</span>              : &quot;&quot;&quot;</span>
-<span id="L58"><span class="lineNum">      58</span> <span class="tlaGNC">           8 : function advection(g::AbstractGrid, velocity::Field)</span></span>
-<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">          10 :     eltype(velocity.data) &lt;: SVector || throw(</span></span>
+<span id="L58"><span class="lineNum">      58</span> <span class="tlaGNC">           9 : function advection(g::AbstractGrid, velocity::Field)</span></span>
+<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">          11 :     eltype(velocity.data) &lt;: SVector || throw(</span></span>
 <span id="L60"><span class="lineNum">      60</span>              :         ArgumentError(</span>
 <span id="L61"><span class="lineNum">      61</span>              :             &quot;prescribed advection velocity must be an SVector-valued field, got eltype $(eltype(velocity.data))&quot;,</span>
 <span id="L62"><span class="lineNum">      62</span>              :         ),</span>
 <span id="L63"><span class="lineNum">      63</span>              :     )</span>
-<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">           9 :     ncomponents(velocity) == dimension(g) || throw(</span></span>
+<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">          10 :     ncomponents(velocity) == dimension(g) || throw(</span></span>
 <span id="L65"><span class="lineNum">      65</span>              :         ArgumentError(</span>
 <span id="L66"><span class="lineNum">      66</span>              :             &quot;velocity has $(ncomponents(velocity)) components but the grid is $(dimension(g))-D&quot;,</span>
 <span id="L67"><span class="lineNum">      67</span>              :         ),</span>
 <span id="L68"><span class="lineNum">      68</span>              :     )</span>
-<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">           8 :     return Advection(g, velocity)</span></span>
+<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">           9 :     return Advection(g, velocity)</span></span>
 <span id="L70"><span class="lineNum">      70</span>              : end</span>
 <span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">          19 : advection(g::AbstractGrid, velocity::SelfAdvection) = Advection(g, velocity)</span></span>
 <span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">          13 : function advection(g::BlockForest, velocity::AbstractBlockField)</span></span>

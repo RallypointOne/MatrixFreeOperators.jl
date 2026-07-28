@@ -1,0 +1,529 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - on branch main - src/src/distributed.jl</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">src/src</a> - distributed.jl<span style="font-size: 80%;"> (source / <a href="distributed.jl.func-c.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">on branch main</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryMed">86.1&nbsp;%</td>
+            <td class="headerCovTableEntry">122</td>
+            <td class="headerCovTableEntry">105</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">2026-07-28 22:14:58</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryHi">-</td>
+            <td class="headerCovTableEntry">0</td>
+            <td class="headerCovTableEntry">0</td>
+          </tr>
+                  <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">            Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>              : #--------------------------------------------------------------------------------# Distributability guards</span>
+<span id="L2"><span class="lineNum">       2</span>              : </span>
+<span id="L3"><span class="lineNum">       3</span>              : # The whitelist behind prepare_distributed. It lives in core, not in the MDLA</span>
+<span id="L4"><span class="lineNum">       4</span>              : # extension, because these guards are the entire defense against a silently</span>
+<span id="L5"><span class="lineNum">       5</span>              : # wrong distributed answer — and an extension-only guard is only tested where a</span>
+<span id="L6"><span class="lineNum">       6</span>              : # GPU is present, which CI is not. Everything here is CPU-reachable.</span>
+<span id="L7"><span class="lineNum">       7</span>              : #</span>
+<span id="L8"><span class="lineNum">       8</span>              : # The rule is the package's &quot;traits default to the weaker claim&quot; invariant: an</span>
+<span id="L9"><span class="lineNum">       9</span>              : # operator is distributable only if it says so. A forgotten declaration falls to</span>
+<span id="L10"><span class="lineNum">      10</span>              : # the ::AbstractOperator fallback and throws, never returns a wrong answer.</span>
+<span id="L11"><span class="lineNum">      11</span>              : </span>
+<span id="L12"><span class="lineNum">      12</span>              : &quot;&quot;&quot;</span>
+<span id="L13"><span class="lineNum">      13</span>              :     _distributable(L::AbstractOperator) -&gt; Bool</span>
+<span id="L14"><span class="lineNum">      14</span>              : </span>
+<span id="L15"><span class="lineNum">      15</span>              : Whether `L`'s ghost needs are met by the slab exchange machinery (internal).</span>
+<span id="L16"><span class="lineNum">      16</span>              : </span>
+<span id="L17"><span class="lineNum">      17</span>              : Stencil and pointwise leaves qualify; combinators propagate explicitly. An</span>
+<span id="L18"><span class="lineNum">      18</span>              : operator that reads a field-valued parameter does not, because that parameter is</span>
+<span id="L19"><span class="lineNum">      19</span>              : bound to the *global* grid and would silently broadcast against a slab interior.</span>
+<span id="L20"><span class="lineNum">      20</span>              : Transfer operators do not, because their factors live on two different grids</span>
+<span id="L21"><span class="lineNum">      21</span>              : that would each need their own consistent partitioning.</span>
+<span id="L22"><span class="lineNum">      22</span>              : &quot;&quot;&quot;</span>
+<span id="L23"><span class="lineNum">      23</span> <span class="tlaUNC tlaBgUNC">           0 : _distributable(::Laplacian) = true</span></span>
+<span id="L24"><span class="lineNum">      24</span>              : # Same shape as Laplacian — a constant-coefficient stencil that reads spacing and</span>
+<span id="L25"><span class="lineNum">      25</span>              : # indices from the grid it is passed, and whose adjoint branches on</span>
+<span id="L26"><span class="lineNum">      26</span>              : # _has_interface. It is also the only whitelisted leaf that is not self-adjoint,</span>
+<span id="L27"><span class="lineNum">      27</span>              : # so it is what makes an AdjointOp node reachable at all.</span>
+<span id="L28"><span class="lineNum">      28</span> <span class="tlaUNC">           0 : _distributable(::Derivative) = true</span></span>
+<span id="L29"><span class="lineNum">      29</span> <span class="tlaUNC">           0 : _distributable(::IdentityOp) = true</span></span>
+<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC tlaBgGNC">           7 : _distributable(S::ScalingOp) = S.coeff isa Number</span></span>
+<span id="L31"><span class="lineNum">      31</span> <span class="tlaGNC">          22 : _distributable(L::Scaled) = _distributable(L.op)</span></span>
+<span id="L32"><span class="lineNum">      32</span> <span class="tlaGNC">          33 : _distributable(L::Added) = _distributable(L.a) &amp;&amp; _distributable(L.b)</span></span>
+<span id="L33"><span class="lineNum">      33</span> <span class="tlaGNC">          24 : _distributable(L::AdjointOp) = _distributable(L.op)</span></span>
+<span id="L34"><span class="lineNum">      34</span> <span class="tlaUNC tlaBgUNC">           0 : _distributable(::AbstractOperator) = false</span></span>
+<span id="L35"><span class="lineNum">      35</span>              : </span>
+<span id="L36"><span class="lineNum">      36</span>              : # A composition additionally needs both factors on the SAME grid: its</span>
+<span id="L37"><span class="lineNum">      37</span>              : # intermediate is exchanged on the slabs of that one partitioning, and a</span>
+<span id="L38"><span class="lineNum">      38</span>              : # transfer chain's two grids would each need their own consistent cut.</span>
+<span id="L39"><span class="lineNum">      39</span> <span class="tlaGNC tlaBgGNC">           2 : function _distributable(L::Composed)</span></span>
+<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">          44 :     (_distributable(L.a) &amp;&amp; _distributable(L.b)) || return false</span></span>
+<span id="L41"><span class="lineNum">      41</span> <span class="tlaGNC">          41 :     ga, gb = operator_grid(L.a), operator_grid(L.b)</span></span>
+<span id="L42"><span class="lineNum">      42</span> <span class="tlaGNC">          41 :     return ga === nothing || gb === nothing || ga === gb</span></span>
+<span id="L43"><span class="lineNum">      43</span>              : end</span>
+<span id="L44"><span class="lineNum">      44</span>              : </span>
+<span id="L45"><span class="lineNum">      45</span>              : # Why each rejected case is rejected, for an error message that names the reason</span>
+<span id="L46"><span class="lineNum">      46</span>              : # rather than just the type. Anything without an entry gets the generic tail.</span>
+<span id="L47"><span class="lineNum">      47</span> <span class="tlaUNC tlaBgUNC">           0 : _undistributable_reason(::Restriction) =</span></span>
+<span id="L48"><span class="lineNum">      48</span>              :     &quot;transfer operators compose grids that would each need their own consistent partitioning&quot;</span>
+<span id="L49"><span class="lineNum">      49</span> <span class="tlaUNC">           0 : _undistributable_reason(::Prolongation) =</span></span>
+<span id="L50"><span class="lineNum">      50</span>              :     &quot;transfer operators compose grids that would each need their own consistent partitioning&quot;</span>
+<span id="L51"><span class="lineNum">      51</span> <span class="tlaUNC">           0 : _undistributable_reason(S::ScalingOp) =</span></span>
+<span id="L52"><span class="lineNum">      52</span>              :     &quot;a field-valued coefficient is bound to the global grid; it must be partitioned onto the slabs first&quot;</span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaUNC">           0 : _undistributable_reason(::Advection) =</span></span>
+<span id="L54"><span class="lineNum">      54</span>              :     &quot;the velocity field is bound to the global grid; it must be partitioned onto the slabs first&quot;</span>
+<span id="L55"><span class="lineNum">      55</span> <span class="tlaUNC">           0 : _undistributable_reason(::Gradient) =</span></span>
+<span id="L56"><span class="lineNum">      56</span>              :     &quot;a rank-changing operator is non-square, so it needs two partition specs; use it inside a composition whose result is scalar&quot;</span>
+<span id="L57"><span class="lineNum">      57</span> <span class="tlaUNC">           0 : _undistributable_reason(::Divergence) =</span></span>
+<span id="L58"><span class="lineNum">      58</span>              :     &quot;a rank-changing operator is non-square, so it needs two partition specs; use it inside a composition whose result is scalar&quot;</span>
+<span id="L59"><span class="lineNum">      59</span> <span class="tlaUNC">           0 : _undistributable_reason(L::Composed) =</span></span>
+<span id="L60"><span class="lineNum">      60</span>              :     _distributable(L.a) &amp;&amp; _distributable(L.b) ?</span>
+<span id="L61"><span class="lineNum">      61</span>              :     &quot;its factors live on different grids, which would each need their own consistent partitioning&quot; :</span>
+<span id="L62"><span class="lineNum">      62</span>              :     nothing</span>
+<span id="L63"><span class="lineNum">      63</span> <span class="tlaUNC">           0 : _undistributable_reason(::AbstractOperator) = nothing</span></span>
+<span id="L64"><span class="lineNum">      64</span>              : </span>
+<span id="L65"><span class="lineNum">      65</span>              : # Walk to the first undistributable node so the message points at the actual</span>
+<span id="L66"><span class="lineNum">      66</span>              : # culprit rather than at the root of a large tree.</span>
+<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC tlaBgGNC">           1 : _first_undistributable(L::Scaled) = _first_undistributable(L.op)</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaUNC tlaBgUNC">           0 : _first_undistributable(L::AdjointOp) = _first_undistributable(L.op)</span></span>
+<span id="L69"><span class="lineNum">      69</span>              : function _first_undistributable(L::Added)</span>
+<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC tlaBgGNC">           1 :     a = _first_undistributable(L.a)</span></span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">           1 :     return a === nothing ? _first_undistributable(L.b) : a</span></span>
+<span id="L72"><span class="lineNum">      72</span>              : end</span>
+<span id="L73"><span class="lineNum">      73</span>              : function _first_undistributable(L::Composed)</span>
+<span id="L74"><span class="lineNum">      74</span> <span class="tlaGNC">           1 :     _distributable(L) &amp;&amp; return nothing</span></span>
+<span id="L75"><span class="lineNum">      75</span> <span class="tlaGNC">           1 :     a = _first_undistributable(L.a)</span></span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">           1 :     a === nothing || return a</span></span>
+<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">           1 :     b = _first_undistributable(L.b)</span></span>
+<span id="L78"><span class="lineNum">      78</span>              :     # Both factors fine individually ⇒ the composition itself is the culprit</span>
+<span id="L79"><span class="lineNum">      79</span>              :     # (mismatched grids), so report the node rather than descending past it.</span>
+<span id="L80"><span class="lineNum">      80</span> <span class="tlaGNC">           1 :     return b === nothing ? L : b</span></span>
+<span id="L81"><span class="lineNum">      81</span>              : end</span>
+<span id="L82"><span class="lineNum">      82</span> <span class="tlaGNC">           7 : _first_undistributable(L::AbstractOperator) = _distributable(L) ? nothing : L</span></span>
+<span id="L83"><span class="lineNum">      83</span>              : </span>
+<span id="L84"><span class="lineNum">      84</span> <span class="tlaGNC">          46 : function _check_distributable(L::AbstractOperator)</span></span>
+<span id="L85"><span class="lineNum">      85</span> <span class="tlaGNC">          88 :     _distributable(L) &amp;&amp; return L</span></span>
+<span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">           5 :     culprit = something(_first_undistributable(L), L)</span></span>
+<span id="L87"><span class="lineNum">      87</span> <span class="tlaGNC">           5 :     reason = _undistributable_reason(culprit)</span></span>
+<span id="L88"><span class="lineNum">      88</span> <span class="tlaGNC">           5 :     detail = reason === nothing ? &quot;&quot; : &quot; — $reason&quot;</span></span>
+<span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">           5 :     throw(</span></span>
+<span id="L90"><span class="lineNum">      90</span>              :         ArgumentError(</span>
+<span id="L91"><span class="lineNum">      91</span>              :             &quot;prepare_distributed cannot distribute $(nameof(typeof(culprit)))$detail. &quot; *</span>
+<span id="L92"><span class="lineNum">      92</span>              :             &quot;Supported: Laplacian, Derivative, IdentityOp, number-coefficient ScalingOp, &quot; *</span>
+<span id="L93"><span class="lineNum">      93</span>              :             &quot;and their Scaled/Added/Composed/adjoint combinations on one grid; &quot; *</span>
+<span id="L94"><span class="lineNum">      94</span>              :             &quot;got $(sprint(show, L)).&quot;,</span>
+<span id="L95"><span class="lineNum">      95</span>              :         ),</span>
+<span id="L96"><span class="lineNum">      96</span>              :     )</span>
+<span id="L97"><span class="lineNum">      97</span>              : end</span>
+<span id="L98"><span class="lineNum">      98</span>              : </span>
+<span id="L99"><span class="lineNum">      99</span>              : #--------------------------------------------------------------------------------# Adjoint normalization</span>
+<span id="L100"><span class="lineNum">     100</span>              : </span>
+<span id="L101"><span class="lineNum">     101</span>              : &quot;&quot;&quot;</span>
+<span id="L102"><span class="lineNum">     102</span>              :     _push_adjoints(L::AbstractOperator) -&gt; AbstractOperator</span>
+<span id="L103"><span class="lineNum">     103</span>              : </span>
+<span id="L104"><span class="lineNum">     104</span>              : Push `AdjointOp` nodes down toward the leaves, exactly as `Base.adjoint` does</span>
+<span id="L105"><span class="lineNum">     105</span>              : (`adjoint_operator`, `src/operators/algebra.jl`), and return the rewritten tree</span>
+<span id="L106"><span class="lineNum">     106</span>              : (internal).</span>
+<span id="L107"><span class="lineNum">     107</span>              : </span>
+<span id="L108"><span class="lineNum">     108</span>              : `prepare` does not recurse into an `AdjointOp` — `_prepare_tree` turns the whole</span>
+<span id="L109"><span class="lineNum">     109</span>              : subtree into a single `PreparedAdjoint` — so `AdjointOp(Composed(a, b))` would</span>
+<span id="L110"><span class="lineNum">     110</span>              : run a per-partition `aᵀ` then `bᵀ` with **no reduction in between**, dropping the</span>
+<span id="L111"><span class="lineNum">     111</span>              : intermediate's `Interface` cotangents on the floor. Silently wrong, and exactly</span>
+<span id="L112"><span class="lineNum">     112</span>              : the failure mode the distributability guards exist to prevent.</span>
+<span id="L113"><span class="lineNum">     113</span>              : </span>
+<span id="L114"><span class="lineNum">     114</span>              : Rewriting first turns it into `Composed(bᵀ, aᵀ)`, which the distributed walk</span>
+<span id="L115"><span class="lineNum">     115</span>              : handles node by node. `Base.adjoint` never builds the nested form, but a user can</span>
+<span id="L116"><span class="lineNum">     116</span>              : write `AdjointOp(A * B)` directly.</span>
+<span id="L117"><span class="lineNum">     117</span>              : &quot;&quot;&quot;</span>
+<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">           2 : function _push_adjoints(L::AdjointOp)</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">          28 :     inner = _push_adjoints(L.op)</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">          54 :     a = adjoint_operator(inner)</span></span>
+<span id="L121"><span class="lineNum">     121</span>              :     # A leaf with no cheaper adjoint reports AdjointOp(inner) — the fixed point.</span>
+<span id="L122"><span class="lineNum">     122</span>              :     # Recursing on it unguarded would not terminate.</span>
+<span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC">          28 :     return (a isa AdjointOp &amp;&amp; a.op === inner) ? a : _push_adjoints(a)</span></span>
+<span id="L124"><span class="lineNum">     124</span>              : end</span>
+<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">          29 : _push_adjoints(L::Added) = Added(_push_adjoints(L.a), _push_adjoints(L.b))</span></span>
+<span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">          16 : _push_adjoints(L::Scaled) = Scaled(_push_adjoints(L.op), L.α)</span></span>
+<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">          43 : _push_adjoints(L::Composed) = Composed(_push_adjoints(L.a), _push_adjoints(L.b))</span></span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">         157 : _push_adjoints(L::AbstractOperator) = L</span></span>
+<span id="L129"><span class="lineNum">     129</span>              : </span>
+<span id="L130"><span class="lineNum">     130</span>              : #--------------------------------------------------------------------------------# Backend primitives (no methods in core)</span>
+<span id="L131"><span class="lineNum">     131</span>              : </span>
+<span id="L132"><span class="lineNum">     132</span>              : # The four seams a distributed backend fills in, following the prepare_distributed</span>
+<span id="L133"><span class="lineNum">     133</span>              : # pattern: declared here, implemented by whoever owns the transport. The MDLA</span>
+<span id="L134"><span class="lineNum">     134</span>              : # extension implements them with scatter!/reduce! over MultiDeviceVectors; the CPU</span>
+<span id="L135"><span class="lineNum">     135</span>              : # proof in test/partitioning.jl implements them with plain-Vector global indexing.</span>
+<span id="L136"><span class="lineNum">     136</span>              : # Core therefore never sees a backend type, and both implementations drive the</span>
+<span id="L137"><span class="lineNum">     137</span>              : # *same* walk instead of each emulating it.</span>
+<span id="L138"><span class="lineNum">     138</span>              : </span>
+<span id="L139"><span class="lineNum">     139</span>              : &quot;&quot;&quot;</span>
+<span id="L140"><span class="lineNum">     140</span>              :     _dist_map!(f, ctx)</span>
+<span id="L141"><span class="lineNum">     141</span>              : </span>
+<span id="L142"><span class="lineNum">     142</span>              : Run `f(p)` for every partition `p`, on that partition's device, and return once</span>
+<span id="L143"><span class="lineNum">     143</span>              : all have completed (internal; backend-supplied). The device-context idiom</span>
+<span id="L144"><span class="lineNum">     144</span>              : (`CUDA.device!` inside `@sync`/`@async`, or a plain loop on CPU) is the backend's</span>
+<span id="L145"><span class="lineNum">     145</span>              : business, so core cannot write this loop itself.</span>
+<span id="L146"><span class="lineNum">     146</span>              : &quot;&quot;&quot;</span>
+<span id="L147"><span class="lineNum">     147</span>              : function _dist_map! end</span>
+<span id="L148"><span class="lineNum">     148</span>              : </span>
+<span id="L149"><span class="lineNum">     149</span>              : &quot;&quot;&quot;</span>
+<span id="L150"><span class="lineNum">     150</span>              :     _dist_scatter!(xch, fields, ctx)</span>
+<span id="L151"><span class="lineNum">     151</span>              : </span>
+<span id="L152"><span class="lineNum">     152</span>              : Fill the [`Interface`](@ref) halo slabs of every `fields[p]` from its neighbours'</span>
+<span id="L153"><span class="lineNum">     153</span>              : interiors (internal; backend-supplied).</span>
+<span id="L154"><span class="lineNum">     154</span>              : </span>
+<span id="L155"><span class="lineNum">     155</span>              : Contract — on entry each `fields[p]` interior is valid; on exit its interior is</span>
+<span id="L156"><span class="lineNum">     156</span>              : unchanged and its `Interface` ghosts hold the neighbour-owned values. Other ghost</span>
+<span id="L157"><span class="lineNum">     157</span>              : cells (physical-BC faces and corners) are left alone: the next `apply!` refills</span>
+<span id="L158"><span class="lineNum">     158</span>              : them via `apply_bc!`. Implementations stage through</span>
+<span id="L159"><span class="lineNum">     159</span>              : [`_unpack_ghosts!`](@ref).</span>
+<span id="L160"><span class="lineNum">     160</span>              : </span>
+<span id="L161"><span class="lineNum">     161</span>              : The exact transpose of [`_dist_reduce!`](@ref); the distributed adjoint identity</span>
+<span id="L162"><span class="lineNum">     162</span>              : ⟨Lx,y⟩ = ⟨x,Lᵀy⟩ rests on that pairing.</span>
+<span id="L163"><span class="lineNum">     163</span>              : &quot;&quot;&quot;</span>
+<span id="L164"><span class="lineNum">     164</span>              : function _dist_scatter! end</span>
+<span id="L165"><span class="lineNum">     165</span>              : </span>
+<span id="L166"><span class="lineNum">     166</span>              : &quot;&quot;&quot;</span>
+<span id="L167"><span class="lineNum">     167</span>              :     _dist_reduce!(xch, fields, ctx)</span>
+<span id="L168"><span class="lineNum">     168</span>              : </span>
+<span id="L169"><span class="lineNum">     169</span>              : Accumulate every `fields[p]`'s [`Interface`](@ref) ghost cotangents into the</span>
+<span id="L170"><span class="lineNum">     170</span>              : partitions that own those cells, then leave each `fields[p]` holding the summed</span>
+<span id="L171"><span class="lineNum">     171</span>              : owned cotangents in its interior and **zeros in its ghosts** (internal;</span>
+<span id="L172"><span class="lineNum">     172</span>              : backend-supplied).</span>
+<span id="L173"><span class="lineNum">     173</span>              : </span>
+<span id="L174"><span class="lineNum">     174</span>              : Contract — on entry each `fields[p]` holds interior cotangents plus the</span>
+<span id="L175"><span class="lineNum">     175</span>              : neighbour-owned contributions `fold_bc!` migrated into its `Interface` slabs; on</span>
+<span id="L176"><span class="lineNum">     176</span>              : exit interiors are complete and ghosts are cleared. Clearing is not cosmetic: a</span>
+<span id="L177"><span class="lineNum">     177</span>              : following pointwise leaf writes interiors only, so a leftover contribution would</span>
+<span id="L178"><span class="lineNum">     178</span>              : be packed into the *next* reduction and double-counted at every cut plane.</span>
+<span id="L179"><span class="lineNum">     179</span>              : Implementations stage through [`_pack_local_x!`](@ref).</span>
+<span id="L180"><span class="lineNum">     180</span>              : </span>
+<span id="L181"><span class="lineNum">     181</span>              : The exact transpose of [`_dist_scatter!`](@ref). The two differ only on ghost</span>
+<span id="L182"><span class="lineNum">     182</span>              : cells outside the `Interface` slabs (physical-BC faces and corners), which every</span>
+<span id="L183"><span class="lineNum">     183</span>              : consumer annihilates anyway — `adjoint_gather!` opens with `zero_ghosts!` and</span>
+<span id="L184"><span class="lineNum">     184</span>              : `fold_bc!` zeroes what it folds — so the pairing holds on the space that matters.</span>
+<span id="L185"><span class="lineNum">     185</span>              : &quot;&quot;&quot;</span>
+<span id="L186"><span class="lineNum">     186</span>              : function _dist_reduce! end</span>
+<span id="L187"><span class="lineNum">     187</span>              : </span>
+<span id="L188"><span class="lineNum">     188</span>              : #--------------------------------------------------------------------------------# Distributed operator tree</span>
+<span id="L189"><span class="lineNum">     189</span>              : </span>
+<span id="L190"><span class="lineNum">     190</span>              : # The distributed twin of the prepared tree. `prepare` already hoisted every</span>
+<span id="L191"><span class="lineNum">     191</span>              : # buffer a node needs (`PreparedComposed.tmp`, `PreparedAdjoint.scratch`), once</span>
+<span id="L192"><span class="lineNum">     192</span>              : # per partition; these nodes gather those per-partition buffers into one</span>
+<span id="L193"><span class="lineNum">     193</span>              : # structure so the walk visits each structural position exactly once and fires a</span>
+<span id="L194"><span class="lineNum">     194</span>              : # *collective* exchange between the local applies.</span>
+<span id="L195"><span class="lineNum">     195</span>              : #</span>
+<span id="L196"><span class="lineNum">     196</span>              : # This is the distributed analogue of `_forest_capply!`/`_forest_capply_adjoint!`</span>
+<span id="L197"><span class="lineNum">     197</span>              : # in linalg.jl, which solves the same mid-tree-exchange problem for a block</span>
+<span id="L198"><span class="lineNum">     198</span>              : # forest by recursing at the forest level.</span>
+<span id="L199"><span class="lineNum">     199</span>              : #</span>
+<span id="L200"><span class="lineNum">     200</span>              : # Node types are device-independent and concrete: `_prepare_tree` leaves leaf</span>
+<span id="L201"><span class="lineNum">     201</span>              : # operators untouched, and leaves read the grid they are *passed* rather than the</span>
+<span id="L202"><span class="lineNum">     202</span>              : # one they carry, so every partition shares the same leaf object. Only the</span>
+<span id="L203"><span class="lineNum">     203</span>              : # buffers differ, and those are held in per-partition vectors whose element type</span>
+<span id="L204"><span class="lineNum">     204</span>              : # is necessarily abstract (slab grids differ in their BC type parameters by</span>
+<span id="L205"><span class="lineNum">     205</span>              : # construction). One dynamic dispatch per node per partition against a full grid</span>
+<span id="L206"><span class="lineNum">     206</span>              : # sweep is not a cost worth chasing.</span>
+<span id="L207"><span class="lineNum">     207</span>              : </span>
+<span id="L208"><span class="lineNum">     208</span>              : abstract type DistNode end</span>
+<span id="L209"><span class="lineNum">     209</span>              : </span>
+<span id="L210"><span class="lineNum">     210</span>              : struct DistLeaf{O&lt;:AbstractOperator} &lt;: DistNode</span>
+<span id="L211"><span class="lineNum">     211</span> <span class="tlaGNC">         127 :     op::O</span></span>
+<span id="L212"><span class="lineNum">     212</span>              : end</span>
+<span id="L213"><span class="lineNum">     213</span>              : </span>
+<span id="L214"><span class="lineNum">     214</span>              : struct DistAdded{A&lt;:DistNode,B&lt;:DistNode} &lt;: DistNode</span>
+<span id="L215"><span class="lineNum">     215</span> <span class="tlaGNC">          29 :     a::A</span></span>
+<span id="L216"><span class="lineNum">     216</span>              :     b::B</span>
+<span id="L217"><span class="lineNum">     217</span>              : end</span>
+<span id="L218"><span class="lineNum">     218</span>              : </span>
+<span id="L219"><span class="lineNum">     219</span>              : struct DistScaled{A&lt;:DistNode,T&lt;:Number} &lt;: DistNode</span>
+<span id="L220"><span class="lineNum">     220</span> <span class="tlaGNC">          16 :     node::A</span></span>
+<span id="L221"><span class="lineNum">     221</span>              :     α::T</span>
+<span id="L222"><span class="lineNum">     222</span>              : end</span>
+<span id="L223"><span class="lineNum">     223</span>              : </span>
+<span id="L224"><span class="lineNum">     224</span>              : # `tmps` are the per-partition intermediates; `xch` is the exchange for them, or</span>
+<span id="L225"><span class="lineNum">     225</span>              : # `nothing` when the outer factor reads no ghosts (then the forward scatter and</span>
+<span id="L226"><span class="lineNum">     226</span>              : # the adjoint reduce are both no-ops — see `_reads_ghosts`).</span>
+<span id="L227"><span class="lineNum">     227</span>              : struct DistComposed{A&lt;:DistNode,B&lt;:DistNode,F&lt;:AbstractVector,X} &lt;: DistNode</span>
+<span id="L228"><span class="lineNum">     228</span> <span class="tlaGNC">          41 :     a::A</span></span>
+<span id="L229"><span class="lineNum">     229</span>              :     b::B</span>
+<span id="L230"><span class="lineNum">     230</span>              :     tmps::F</span>
+<span id="L231"><span class="lineNum">     231</span>              :     xch::X</span>
+<span id="L232"><span class="lineNum">     232</span>              : end</span>
+<span id="L233"><span class="lineNum">     233</span>              : </span>
+<span id="L234"><span class="lineNum">     234</span>              : # `ins` is this node's own copy of its input. It is not an optimization: the</span>
+<span id="L235"><span class="lineNum">     235</span>              : # adjoint gather opens with `zero_ghosts!` on its input (`adjoint_gather!` in</span>
+<span id="L236"><span class="lineNum">     236</span>              : # operators/abstract.jl), so handing it the enclosing segment's field would</span>
+<span id="L237"><span class="lineNum">     237</span>              : # destroy exchanged ghosts a *sibling* under the same `Added` still needs —</span>
+<span id="L238"><span class="lineNum">     238</span>              : # making the result depend on term order, silently. `outs` is the gather target</span>
+<span id="L239"><span class="lineNum">     239</span>              : # (`PreparedAdjoint.scratch`).</span>
+<span id="L240"><span class="lineNum">     240</span>              : struct DistAdjoint{O&lt;:AbstractOperator,FI&lt;:AbstractVector,FO&lt;:AbstractVector,X} &lt;: DistNode</span>
+<span id="L241"><span class="lineNum">     241</span> <span class="tlaGNC">          24 :     op::O</span></span>
+<span id="L242"><span class="lineNum">     242</span>              :     ins::FI</span>
+<span id="L243"><span class="lineNum">     243</span>              :     outs::FO</span>
+<span id="L244"><span class="lineNum">     244</span>              :     xch::X</span>
+<span id="L245"><span class="lineNum">     245</span>              : end</span>
+<span id="L246"><span class="lineNum">     246</span>              : </span>
+<span id="L247"><span class="lineNum">     247</span>              : &quot;&quot;&quot;</span>
+<span id="L248"><span class="lineNum">     248</span>              :     _reads_ghosts(node::DistNode) -&gt; Bool</span>
+<span id="L249"><span class="lineNum">     249</span>              : </span>
+<span id="L250"><span class="lineNum">     250</span>              : Whether applying `node` forward consumes its input's [`Interface`](@ref) ghosts</span>
+<span id="L251"><span class="lineNum">     251</span>              : (internal).</span>
+<span id="L252"><span class="lineNum">     252</span>              : </span>
+<span id="L253"><span class="lineNum">     253</span>              : Used to skip an exchange that would move no information — and it must gate the</span>
+<span id="L254"><span class="lineNum">     254</span>              : forward scatter and the adjoint reduce **together**. The two are equivalent:</span>
+<span id="L255"><span class="lineNum">     255</span>              : reading a neighbour's value forward is exactly what writes a contribution to that</span>
+<span id="L256"><span class="lineNum">     256</span>              : neighbour's cotangent in the transpose. Gating one direction and not the other</span>
+<span id="L257"><span class="lineNum">     257</span>              : breaks the adjoint identity.</span>
+<span id="L258"><span class="lineNum">     258</span>              : &quot;&quot;&quot;</span>
+<span id="L259"><span class="lineNum">     259</span> <span class="tlaGNC">          34 : _reads_ghosts(node::DistLeaf) = !isdiagonal(node.op)</span></span>
+<span id="L260"><span class="lineNum">     260</span> <span class="tlaUNC tlaBgUNC">           0 : _reads_ghosts(node::DistAdded) = _reads_ghosts(node.a) || _reads_ghosts(node.b)</span></span>
+<span id="L261"><span class="lineNum">     261</span> <span class="tlaUNC">           0 : _reads_ghosts(node::DistScaled) = _reads_ghosts(node.node)</span></span>
+<span id="L262"><span class="lineNum">     262</span> <span class="tlaUNC">           0 : _reads_ghosts(node::DistComposed) = _reads_ghosts(node.b)   # `b` consumes the input</span></span>
+<span id="L263"><span class="lineNum">     263</span>              : # The forward action is an adjoint gather, which zeroes its input's ghosts and</span>
+<span id="L264"><span class="lineNum">     264</span>              : # reads interiors only; its transpose is a forward `apply!`, which writes</span>
+<span id="L265"><span class="lineNum">     265</span>              : # interiors only. Neither touches the enclosing intermediate's ghosts.</span>
+<span id="L266"><span class="lineNum">     266</span> <span class="tlaUNC">           0 : _reads_ghosts(::DistAdjoint) = false</span></span>
+<span id="L267"><span class="lineNum">     267</span>              : </span>
+<span id="L268"><span class="lineNum">     268</span>              : &quot;&quot;&quot;</span>
+<span id="L269"><span class="lineNum">     269</span>              :     _dist_tree(nodes, protos, mkxch) -&gt; DistNode</span>
+<span id="L270"><span class="lineNum">     270</span>              : </span>
+<span id="L271"><span class="lineNum">     271</span>              : Build the distributed walk tree from the per-partition prepared operator trees</span>
+<span id="L272"><span class="lineNum">     272</span>              : `nodes` (all structurally identical) and their per-partition input field</span>
+<span id="L273"><span class="lineNum">     273</span>              : prototypes `protos` (internal). `mkxch(proto)` is the backend's exchange</span>
+<span id="L274"><span class="lineNum">     274</span>              : constructor, called once per node that needs one.</span>
+<span id="L275"><span class="lineNum">     275</span>              : &quot;&quot;&quot;</span>
+<span id="L276"><span class="lineNum">     276</span> <span class="tlaGNC tlaBgGNC">         236 : _dist_tree(nodes::AbstractVector, protos::AbstractVector, mkxch) =</span></span>
+<span id="L277"><span class="lineNum">     277</span>              :     _dist_tree(first(nodes), nodes, protos, mkxch)</span>
+<span id="L278"><span class="lineNum">     278</span>              : </span>
+<span id="L279"><span class="lineNum">     279</span> <span class="tlaGNC">         127 : _dist_tree(::AbstractOperator, nodes, protos, mkxch) = DistLeaf(first(nodes))</span></span>
+<span id="L280"><span class="lineNum">     280</span>              : </span>
+<span id="L281"><span class="lineNum">     281</span> <span class="tlaGNC">          29 : _dist_tree(::Added, nodes, protos, mkxch) = DistAdded(</span></span>
+<span id="L282"><span class="lineNum">     282</span>              :     _dist_tree([n.a for n in nodes], protos, mkxch),</span>
+<span id="L283"><span class="lineNum">     283</span>              :     _dist_tree([n.b for n in nodes], protos, mkxch),</span>
+<span id="L284"><span class="lineNum">     284</span>              : )</span>
+<span id="L285"><span class="lineNum">     285</span>              : </span>
+<span id="L286"><span class="lineNum">     286</span> <span class="tlaGNC">          16 : _dist_tree(proto::Scaled, nodes, protos, mkxch) =</span></span>
+<span id="L287"><span class="lineNum">     287</span>              :     DistScaled(_dist_tree([n.op for n in nodes], protos, mkxch), proto.α)</span>
+<span id="L288"><span class="lineNum">     288</span>              : </span>
+<span id="L289"><span class="lineNum">     289</span> <span class="tlaGNC">          40 : function _dist_tree(::PreparedComposed, nodes, protos, mkxch)</span></span>
+<span id="L290"><span class="lineNum">     290</span> <span class="tlaGNC">          40 :     tmps = AbstractField[n.tmp for n in nodes]</span></span>
+<span id="L291"><span class="lineNum">     291</span> <span class="tlaGNC">          40 :     b = _dist_tree([n.b for n in nodes], protos, mkxch)</span></span>
+<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">          40 :     a = _dist_tree([n.a for n in nodes], tmps, mkxch)</span></span>
+<span id="L293"><span class="lineNum">     293</span> <span class="tlaGNC">          40 :     xch = _reads_ghosts(a) ? mkxch(first(tmps)) : nothing</span></span>
+<span id="L294"><span class="lineNum">     294</span> <span class="tlaGNC">          40 :     return DistComposed(a, b, tmps, xch)</span></span>
+<span id="L295"><span class="lineNum">     295</span>              : end</span>
+<span id="L296"><span class="lineNum">     296</span>              : </span>
+<span id="L297"><span class="lineNum">     297</span> <span class="tlaGNC">          24 : function _dist_tree(proto::PreparedAdjoint, nodes, protos, mkxch)</span></span>
+<span id="L298"><span class="lineNum">     298</span> <span class="tlaGNC">          24 :     ins = AbstractField[zero_ghosts!(similar(p)) for p in protos]</span></span>
+<span id="L299"><span class="lineNum">     299</span> <span class="tlaGNC">          24 :     outs = AbstractField[n.scratch for n in nodes]</span></span>
+<span id="L300"><span class="lineNum">     300</span> <span class="tlaGNC">          24 :     xch = isdiagonal(proto.op) ? nothing : mkxch(first(outs))</span></span>
+<span id="L301"><span class="lineNum">     301</span> <span class="tlaGNC">          24 :     return DistAdjoint(proto.op, ins, outs, xch)</span></span>
+<span id="L302"><span class="lineNum">     302</span>              : end</span>
+<span id="L303"><span class="lineNum">     303</span>              : </span>
+<span id="L304"><span class="lineNum">     304</span>              : # α/β blend of one field's interior into another's — the pattern PreparedAdjoint</span>
+<span id="L305"><span class="lineNum">     305</span>              : # uses in linalg.jl, shared by the distributed nodes that must apply β *after* a</span>
+<span id="L306"><span class="lineNum">     306</span>              : # collective step rather than through it.</span>
+<span id="L307"><span class="lineNum">     307</span> <span class="tlaGNC">         547 : function _blend_interior!(y::AbstractField, s::AbstractField, α::Number, β::Number)</span></span>
+<span id="L308"><span class="lineNum">     308</span> <span class="tlaGNC">         547 :     yi = interior(y)</span></span>
+<span id="L309"><span class="lineNum">     309</span> <span class="tlaGNC">         547 :     if iszero(β)</span></span>
+<span id="L310"><span class="lineNum">     310</span> <span class="tlaGNC">        1074 :         yi .= α .* interior(s)</span></span>
+<span id="L311"><span class="lineNum">     311</span>              :     else</span>
+<span id="L312"><span class="lineNum">     312</span> <span class="tlaGNC">          10 :         yi .= α .* interior(s) .+ β .* yi</span></span>
+<span id="L313"><span class="lineNum">     313</span>              :     end</span>
+<span id="L314"><span class="lineNum">     314</span> <span class="tlaGNC">         547 :     return y</span></span>
+<span id="L315"><span class="lineNum">     315</span>              : end</span>
+<span id="L316"><span class="lineNum">     316</span>              : </span>
+<span id="L317"><span class="lineNum">     317</span>              : #--------------------------------------------------------------------------------# Forward action</span>
+<span id="L318"><span class="lineNum">     318</span>              : </span>
+<span id="L319"><span class="lineNum">     319</span>              : &quot;&quot;&quot;</span>
+<span id="L320"><span class="lineNum">     320</span>              :     _dist_capply!(ys, node, xs, ctx, α, β) -&gt; ys</span>
+<span id="L321"><span class="lineNum">     321</span>              : </span>
+<span id="L322"><span class="lineNum">     322</span>              : Apply `node` across every partition, exchanging ghosts wherever the tree needs</span>
+<span id="L323"><span class="lineNum">     323</span>              : them (internal).</span>
+<span id="L324"><span class="lineNum">     324</span>              : </span>
+<span id="L325"><span class="lineNum">     325</span>              : Contract — on entry every `xs[p]` has a valid interior **and** valid</span>
+<span id="L326"><span class="lineNum">     326</span>              : [`Interface`](@ref) ghosts; on exit every `ys[p]` interior is valid and its</span>
+<span id="L327"><span class="lineNum">     327</span>              : ghosts are undefined. Other ghost cells of an intermediate are left stale on</span>
+<span id="L328"><span class="lineNum">     328</span>              : purpose: every ghost-reading leaf opens with `apply_bc!`, which refills the</span>
+<span id="L329"><span class="lineNum">     329</span>              : physical-BC faces and the corners from the interior.</span>
+<span id="L330"><span class="lineNum">     330</span>              : </span>
+<span id="L331"><span class="lineNum">     331</span>              : The transpose is [`_dist_capply_adjoint!`](@ref).</span>
+<span id="L332"><span class="lineNum">     332</span>              : &quot;&quot;&quot;</span>
+<span id="L333"><span class="lineNum">     333</span>              : function _dist_capply!(ys, node::DistLeaf, xs, ctx, α, β)</span>
+<span id="L334"><span class="lineNum">     334</span> <span class="tlaGNC">        1469 :     _dist_map!(ctx) do p</span></span>
+<span id="L335"><span class="lineNum">     335</span> <span class="tlaGNC">        1469 :         apply!(ys[p], node.op, xs[p], xs[p].grid, α, β)</span></span>
+<span id="L336"><span class="lineNum">     336</span>              :     end</span>
+<span id="L337"><span class="lineNum">     337</span> <span class="tlaGNC">         575 :     return ys</span></span>
+<span id="L338"><span class="lineNum">     338</span>              : end</span>
+<span id="L339"><span class="lineNum">     339</span>              : </span>
+<span id="L340"><span class="lineNum">     340</span> <span class="tlaGNC">          32 : function _dist_capply!(ys, node::DistAdded, xs, ctx, α, β)</span></span>
+<span id="L341"><span class="lineNum">     341</span> <span class="tlaGNC">          96 :     _dist_capply!(ys, node.a, xs, ctx, α, β)</span></span>
+<span id="L342"><span class="lineNum">     342</span> <span class="tlaGNC">          98 :     _dist_capply!(ys, node.b, xs, ctx, α, true)</span></span>
+<span id="L343"><span class="lineNum">     343</span> <span class="tlaGNC">          42 :     return ys</span></span>
+<span id="L344"><span class="lineNum">     344</span>              : end</span>
+<span id="L345"><span class="lineNum">     345</span>              : </span>
+<span id="L346"><span class="lineNum">     346</span> <span class="tlaGNC">          40 : _dist_capply!(ys, node::DistScaled, xs, ctx, α, β) =</span></span>
+<span id="L347"><span class="lineNum">     347</span>              :     _dist_capply!(ys, node.node, xs, ctx, α * node.α, β)</span>
+<span id="L348"><span class="lineNum">     348</span>              : </span>
+<span id="L349"><span class="lineNum">     349</span>              : # The mid-tree exchange, and the reason this walk exists: `b`'s result is only</span>
+<span id="L350"><span class="lineNum">     350</span>              : # interior-valid, so `a` would read stale zeros across every cut plane.</span>
+<span id="L351"><span class="lineNum">     351</span> <span class="tlaGNC">         199 : function _dist_capply!(ys, node::DistComposed, xs, ctx, α, β)</span></span>
+<span id="L352"><span class="lineNum">     352</span> <span class="tlaGNC">         780 :     _dist_capply!(node.tmps, node.b, xs, ctx, true, false)</span></span>
+<span id="L353"><span class="lineNum">     353</span> <span class="tlaGNC">         316 :     node.xch === nothing || _dist_scatter!(node.xch, node.tmps, ctx)</span></span>
+<span id="L354"><span class="lineNum">     354</span> <span class="tlaGNC">         624 :     _dist_capply!(ys, node.a, node.tmps, ctx, α, β)</span></span>
+<span id="L355"><span class="lineNum">     355</span> <span class="tlaGNC">         316 :     return ys</span></span>
+<span id="L356"><span class="lineNum">     356</span>              : end</span>
+<span id="L357"><span class="lineNum">     357</span>              : </span>
+<span id="L358"><span class="lineNum">     358</span>              : # The mid-tree reduction. `α`/`β` are applied *after* it, never through it:</span>
+<span id="L359"><span class="lineNum">     359</span>              : # a reduction overwrites the owned section before accumulating neighbour</span>
+<span id="L360"><span class="lineNum">     360</span>              : # contributions, so a pending `β·y_old` staged into it would be destroyed.</span>
+<span id="L361"><span class="lineNum">     361</span> <span class="tlaGNC">         221 : function _dist_capply!(ys, node::DistAdjoint, xs, ctx, α, β)</span></span>
+<span id="L362"><span class="lineNum">     362</span> <span class="tlaGNC">         547 :     _dist_map!(ctx) do p</span></span>
+<span id="L363"><span class="lineNum">     363</span> <span class="tlaGNC">         547 :         interior(node.ins[p]) .= interior(xs[p])</span></span>
+<span id="L364"><span class="lineNum">     364</span> <span class="tlaGNC">         547 :         zero_ghosts!(node.outs[p])</span></span>
+<span id="L365"><span class="lineNum">     365</span> <span class="tlaGNC">         547 :         apply_adjoint!(node.outs[p], node.op, node.ins[p], node.ins[p].grid)</span></span>
+<span id="L366"><span class="lineNum">     366</span>              :     end</span>
+<span id="L367"><span class="lineNum">     367</span> <span class="tlaGNC">         221 :     node.xch === nothing || _dist_reduce!(node.xch, node.outs, ctx)</span></span>
+<span id="L368"><span class="lineNum">     368</span> <span class="tlaGNC">         547 :     _dist_map!(ctx) do p</span></span>
+<span id="L369"><span class="lineNum">     369</span> <span class="tlaGNC">         547 :         _blend_interior!(ys[p], node.outs[p], α, β)</span></span>
+<span id="L370"><span class="lineNum">     370</span>              :     end</span>
+<span id="L371"><span class="lineNum">     371</span> <span class="tlaGNC">         221 :     return ys</span></span>
+<span id="L372"><span class="lineNum">     372</span>              : end</span>
+<span id="L373"><span class="lineNum">     373</span>              : </span>
+<span id="L374"><span class="lineNum">     374</span>              : #--------------------------------------------------------------------------------# Adjoint action</span>
+<span id="L375"><span class="lineNum">     375</span>              : </span>
+<span id="L376"><span class="lineNum">     376</span>              : &quot;&quot;&quot;</span>
+<span id="L377"><span class="lineNum">     377</span>              :     _dist_adjoint_segment!(x̄s, node, ȳs, ctx) -&gt; x̄s</span>
+<span id="L378"><span class="lineNum">     378</span>              : </span>
+<span id="L379"><span class="lineNum">     379</span>              : Run one adjoint segment — the span between two collective steps — clearing the</span>
+<span id="L380"><span class="lineNum">     380</span>              : target's ghosts exactly once before the walk (internal).</span>
+<span id="L381"><span class="lineNum">     381</span>              : </span>
+<span id="L382"><span class="lineNum">     382</span>              : Once, and here, is the only correct placement. Per leaf, the second term of an</span>
+<span id="L383"><span class="lineNum">     383</span>              : `Added` would wipe the first term's `Interface` cotangents before they reach the</span>
+<span id="L384"><span class="lineNum">     384</span>              : reduction. Omitted, a pointwise leaf's interior-only adjoint would leave the</span>
+<span id="L385"><span class="lineNum">     385</span>              : *previous* call's ghosts in place for the accumulating (`β ≠ 0`) sibling to add</span>
+<span id="L386"><span class="lineNum">     386</span>              : in.</span>
+<span id="L387"><span class="lineNum">     387</span>              : &quot;&quot;&quot;</span>
+<span id="L388"><span class="lineNum">     388</span> <span class="tlaGNC">         187 : function _dist_adjoint_segment!(x̄s, node::DistNode, ȳs, ctx)</span></span>
+<span id="L389"><span class="lineNum">     389</span> <span class="tlaGNC">        1786 :     _dist_map!(ctx) do p</span></span>
+<span id="L390"><span class="lineNum">     390</span> <span class="tlaGNC">        1786 :         zero_ghosts!(x̄s[p])</span></span>
+<span id="L391"><span class="lineNum">     391</span>              :     end</span>
+<span id="L392"><span class="lineNum">     392</span> <span class="tlaGNC">         994 :     _dist_capply_adjoint!(x̄s, node, ȳs, ctx, true, false)</span></span>
+<span id="L393"><span class="lineNum">     393</span> <span class="tlaGNC">         700 :     return x̄s</span></span>
+<span id="L394"><span class="lineNum">     394</span>              : end</span>
+<span id="L395"><span class="lineNum">     395</span>              : </span>
+<span id="L396"><span class="lineNum">     396</span>              : &quot;&quot;&quot;</span>
+<span id="L397"><span class="lineNum">     397</span>              :     _dist_capply_adjoint!(x̄s, node, ȳs, ctx, α, β) -&gt; x̄s</span>
+<span id="L398"><span class="lineNum">     398</span>              : </span>
+<span id="L399"><span class="lineNum">     399</span>              : Transpose of [`_dist_capply!`](@ref): the same walk with every scatter replaced</span>
+<span id="L400"><span class="lineNum">     400</span>              : by a reduction and vice versa (internal).</span>
+<span id="L401"><span class="lineNum">     401</span>              : </span>
+<span id="L402"><span class="lineNum">     402</span>              : Contract — on entry every `ȳs[p]` interior is valid; on exit every `x̄s[p]` holds</span>
+<span id="L403"><span class="lineNum">     403</span>              : interior cotangents plus the neighbour-owned contributions `fold_bc!` migrated</span>
+<span id="L404"><span class="lineNum">     404</span>              : into its `Interface` slabs, awaiting the caller's reduction. Ghost clearing is</span>
+<span id="L405"><span class="lineNum">     405</span>              : the segment's job, not this function's — see [`_dist_adjoint_segment!`](@ref).</span>
+<span id="L406"><span class="lineNum">     406</span>              : &quot;&quot;&quot;</span>
+<span id="L407"><span class="lineNum">     407</span>              : function _dist_capply_adjoint!(x̄s, node::DistLeaf, ȳs, ctx, α, β)</span>
+<span id="L408"><span class="lineNum">     408</span>              :     # No isselfadjoint/isdiagonal shortcut here, deliberately, unlike the forest</span>
+<span id="L409"><span class="lineNum">     409</span>              :     # walk in linalg.jl. `_selfadjoint_grid` is true for any CartesianGrid, so</span>
+<span id="L410"><span class="lineNum">     410</span>              :     # the trait still claims self-adjointness on a slab whose cut faces are</span>
+<span id="L411"><span class="lineNum">     411</span>              :     # Interface; the leaf ignores it and branches on `_has_interface` instead.</span>
+<span id="L412"><span class="lineNum">     412</span>              :     # Taking the shortcut would route to the forward action, whose contract wants</span>
+<span id="L413"><span class="lineNum">     413</span>              :     # scattered ghosts that the adjoint contract does not deliver — and mid-tree</span>
+<span id="L414"><span class="lineNum">     414</span>              :     # it would flip a reduction into a scatter and lose the transpose.</span>
+<span id="L415"><span class="lineNum">     415</span> <span class="tlaGNC">        1343 :     _dist_map!(ctx) do p</span></span>
+<span id="L416"><span class="lineNum">     416</span> <span class="tlaGNC">        1343 :         apply_adjoint!(x̄s[p], node.op, ȳs[p], ȳs[p].grid, α, β)</span></span>
+<span id="L417"><span class="lineNum">     417</span>              :     end</span>
+<span id="L418"><span class="lineNum">     418</span> <span class="tlaGNC">         521 :     return x̄s</span></span>
+<span id="L419"><span class="lineNum">     419</span>              : end</span>
+<span id="L420"><span class="lineNum">     420</span>              : </span>
+<span id="L421"><span class="lineNum">     421</span> <span class="tlaGNC">          28 : function _dist_capply_adjoint!(x̄s, node::DistAdded, ȳs, ctx, α, β)</span></span>
+<span id="L422"><span class="lineNum">     422</span> <span class="tlaGNC">          70 :     _dist_capply_adjoint!(x̄s, node.a, ȳs, ctx, α, β)</span></span>
+<span id="L423"><span class="lineNum">     423</span> <span class="tlaGNC">          70 :     _dist_capply_adjoint!(x̄s, node.b, ȳs, ctx, α, true)</span></span>
+<span id="L424"><span class="lineNum">     424</span> <span class="tlaGNC">          28 :     return x̄s</span></span>
+<span id="L425"><span class="lineNum">     425</span>              : end</span>
+<span id="L426"><span class="lineNum">     426</span>              : </span>
+<span id="L427"><span class="lineNum">     427</span>              : # conj, mirroring the forest adjoint in linalg.jl: the forward path scales by α,</span>
+<span id="L428"><span class="lineNum">     428</span>              : # its transpose by conj(α).</span>
+<span id="L429"><span class="lineNum">     429</span> <span class="tlaGNC">          30 : _dist_capply_adjoint!(x̄s, node::DistScaled, ȳs, ctx, α, β) =</span></span>
+<span id="L430"><span class="lineNum">     430</span>              :     _dist_capply_adjoint!(x̄s, node.node, ȳs, ctx, α * conj(node.α), β)</span>
+<span id="L431"><span class="lineNum">     431</span>              : </span>
+<span id="L432"><span class="lineNum">     432</span>              : # (a∘b)ᵀ = bᵀ∘aᵀ. The mid reduction is the exact transpose of the forward</span>
+<span id="L433"><span class="lineNum">     433</span>              : # mid scatter, and is gated by the same predicate so the pair stays matched.</span>
+<span id="L434"><span class="lineNum">     434</span> <span class="tlaGNC">         296 : function _dist_capply_adjoint!(x̄s, node::DistComposed, ȳs, ctx, α, β)</span></span>
+<span id="L435"><span class="lineNum">     435</span> <span class="tlaGNC">         476 :     _dist_adjoint_segment!(node.tmps, node.a, ȳs, ctx)</span></span>
+<span id="L436"><span class="lineNum">     436</span> <span class="tlaGNC">         296 :     node.xch === nothing || _dist_reduce!(node.xch, node.tmps, ctx)</span></span>
+<span id="L437"><span class="lineNum">     437</span> <span class="tlaGNC">         740 :     _dist_capply_adjoint!(x̄s, node.b, node.tmps, ctx, α, β)</span></span>
+<span id="L438"><span class="lineNum">     438</span> <span class="tlaGNC">         296 :     return x̄s</span></span>
+<span id="L439"><span class="lineNum">     439</span>              : end</span>
+<span id="L440"><span class="lineNum">     440</span>              : </span>
+<span id="L441"><span class="lineNum">     441</span>              : # Transpose of the forward node: its reduction becomes a scatter, and the</span>
+<span id="L442"><span class="lineNum">     442</span>              : # wrapped operator runs forward. Writes interiors only, so it contributes</span>
+<span id="L443"><span class="lineNum">     443</span>              : # nothing to the enclosing segment's ghosts — matching `_reads_ghosts`.</span>
+<span id="L444"><span class="lineNum">     444</span> <span class="tlaGNC">         207 : function _dist_capply_adjoint!(x̄s, node::DistAdjoint, ȳs, ctx, α, β)</span></span>
+<span id="L445"><span class="lineNum">     445</span> <span class="tlaGNC">         513 :     _dist_map!(ctx) do p</span></span>
+<span id="L446"><span class="lineNum">     446</span> <span class="tlaGNC">         513 :         interior(node.outs[p]) .= interior(ȳs[p])</span></span>
+<span id="L447"><span class="lineNum">     447</span>              :     end</span>
+<span id="L448"><span class="lineNum">     448</span> <span class="tlaGNC">         207 :     node.xch === nothing || _dist_scatter!(node.xch, node.outs, ctx)</span></span>
+<span id="L449"><span class="lineNum">     449</span> <span class="tlaGNC">         513 :     _dist_map!(ctx) do p</span></span>
+<span id="L450"><span class="lineNum">     450</span> <span class="tlaGNC">         513 :         apply!(x̄s[p], node.op, node.outs[p], node.outs[p].grid, α, β)</span></span>
+<span id="L451"><span class="lineNum">     451</span>              :     end</span>
+<span id="L452"><span class="lineNum">     452</span> <span class="tlaGNC">         207 :     return x̄s</span></span>
+<span id="L453"><span class="lineNum">     453</span>              : end</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com//linux-test-project/lcov" target="_parent">LCOV version 2.0-1</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>

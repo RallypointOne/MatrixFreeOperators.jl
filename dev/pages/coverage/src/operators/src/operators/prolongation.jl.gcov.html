@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 17:56:00</td>
+            <td class="headerValue">2026-07-28 22:14:58</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -73,30 +73,30 @@
 <span id="L11"><span class="lineNum">      11</span> <span class="tlaUNC">           0 : _same_bc_kind(::Dirichlet, ::Dirichlet) = true</span></span>
 <span id="L12"><span class="lineNum">      12</span> <span class="tlaUNC">           0 : _same_bc_kind(::Neumann, ::Neumann) = true</span></span>
 <span id="L13"><span class="lineNum">      13</span>              : </span>
-<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC tlaBgGNC">         104 : function _validate_transfer(fine::CartesianGrid{N}, coarse::CartesianGrid{N}) where {N}</span></span>
-<span id="L15"><span class="lineNum">      15</span> <span class="tlaGNC">         217 :     ntuple(d -&gt; 2 * local_size(coarse)[d], Val(N)) == local_size(fine) || throw(</span></span>
+<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC tlaBgGNC">         108 : function _validate_transfer(fine::CartesianGrid{N}, coarse::CartesianGrid{N}) where {N}</span></span>
+<span id="L15"><span class="lineNum">      15</span> <span class="tlaGNC">         225 :     ntuple(d -&gt; 2 * local_size(coarse)[d], Val(N)) == local_size(fine) || throw(</span></span>
 <span id="L16"><span class="lineNum">      16</span>              :         ArgumentError(</span>
 <span id="L17"><span class="lineNum">      17</span>              :             &quot;transfer requires a 2:1 grid pair, got fine $(local_size(fine)) vs coarse $(local_size(coarse))&quot;,</span>
 <span id="L18"><span class="lineNum">      18</span>              :         ),</span>
 <span id="L19"><span class="lineNum">      19</span>              :     )</span>
-<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC">         108 :     fine.extent == coarse.extent ||</span></span>
+<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC">         112 :     fine.extent == coarse.extent ||</span></span>
 <span id="L21"><span class="lineNum">      21</span>              :         throw(ArgumentError(&quot;transfer grids must share their extent&quot;))</span>
-<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">         189 :     (_has_interface(fine) || _has_interface(coarse)) &amp;&amp; throw(</span></span>
+<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">         197 :     (_has_interface(fine) || _has_interface(coarse)) &amp;&amp; throw(</span></span>
 <span id="L23"><span class="lineNum">      23</span>              :         ArgumentError(</span>
 <span id="L24"><span class="lineNum">      24</span>              :             &quot;transfer operators do not support Interface faces (forest leaves)&quot;</span>
 <span id="L25"><span class="lineNum">      25</span>              :         ),</span>
 <span id="L26"><span class="lineNum">      26</span>              :     )</span>
-<span id="L27"><span class="lineNum">      27</span> <span class="tlaGNC">         106 :     for d in 1:N, side in 1:2</span></span>
-<span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC">         387 :         _same_bc_kind(boundary_conditions(fine)[d][side], boundary_conditions(coarse)[d][side]) ||</span></span>
+<span id="L27"><span class="lineNum">      27</span> <span class="tlaGNC">         110 :     for d in 1:N, side in 1:2</span></span>
+<span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC">         403 :         _same_bc_kind(boundary_conditions(fine)[d][side], boundary_conditions(coarse)[d][side]) ||</span></span>
 <span id="L29"><span class="lineNum">      29</span>              :             throw(</span>
 <span id="L30"><span class="lineNum">      30</span>              :                 ArgumentError(</span>
 <span id="L31"><span class="lineNum">      31</span>              :                     &quot;transfer grids must agree on the boundary-condition kind of every face&quot;,</span>
 <span id="L32"><span class="lineNum">      32</span>              :                 ),</span>
 <span id="L33"><span class="lineNum">      33</span>              :             )</span>
-<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">         495 :     end</span></span>
-<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">         105 :     fine.device == coarse.device ||</span></span>
+<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">         515 :     end</span></span>
+<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">         109 :     fine.device == coarse.device ||</span></span>
 <span id="L36"><span class="lineNum">      36</span>              :         throw(ArgumentError(&quot;transfer grids must live on the same device&quot;))</span>
-<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">         105 :     return nothing</span></span>
+<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">         109 :     return nothing</span></span>
 <span id="L38"><span class="lineNum">      38</span>              : end</span>
 <span id="L39"><span class="lineNum">      39</span>              : </span>
 <span id="L40"><span class="lineNum">      40</span>              : # Fine-interior value of the linear tensor-product interpolant: fine child f of</span>
@@ -167,7 +167,7 @@
 <span id="L105"><span class="lineNum">     105</span>              : [`prolongation`](@ref).</span>
 <span id="L106"><span class="lineNum">     106</span>              : &quot;&quot;&quot;</span>
 <span id="L107"><span class="lineNum">     107</span>              : struct Prolongation{GC&lt;:CartesianGrid,GF&lt;:CartesianGrid} &lt;: AbstractOperator</span>
-<span id="L108"><span class="lineNum">     108</span> <span class="tlaGNC">          61 :     coarse::GC</span></span>
+<span id="L108"><span class="lineNum">     108</span> <span class="tlaGNC">          62 :     coarse::GC</span></span>
 <span id="L109"><span class="lineNum">     109</span>              :     fine::GF</span>
 <span id="L110"><span class="lineNum">     110</span>              : end</span>
 <span id="L111"><span class="lineNum">     111</span>              : </span>
@@ -188,9 +188,9 @@
 <span id="L126"><span class="lineNum">     126</span>              : </span>
 <span id="L127"><span class="lineNum">     127</span>              : See also: [`restriction`](@ref), [`coarsen`](@ref).</span>
 <span id="L128"><span class="lineNum">     128</span>              : &quot;&quot;&quot;</span>
-<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">          22 : function prolongation(coarse::CartesianGrid{N}, fine::CartesianGrid{N}) where {N}</span></span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">          57 :     _validate_transfer(fine, coarse)</span></span>
-<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">          53 :     return Prolongation(coarse, fine)</span></span>
+<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">          23 : function prolongation(coarse::CartesianGrid{N}, fine::CartesianGrid{N}) where {N}</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">          58 :     _validate_transfer(fine, coarse)</span></span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">          54 :     return Prolongation(coarse, fine)</span></span>
 <span id="L132"><span class="lineNum">     132</span>              : end</span>
 <span id="L133"><span class="lineNum">     133</span>              : </span>
 <span id="L134"><span class="lineNum">     134</span> <span class="tlaUNC tlaBgUNC">           0 : islinear(::Prolongation) = true</span></span>

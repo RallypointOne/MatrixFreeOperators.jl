@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryHi">98.0&nbsp;%</td>
-            <td class="headerCovTableEntry">51</td>
-            <td class="headerCovTableEntry">50</td>
+            <td class="headerCovTableEntryHi">98.2&nbsp;%</td>
+            <td class="headerCovTableEntry">55</td>
+            <td class="headerCovTableEntry">54</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 17:56:00</td>
+            <td class="headerValue">2026-07-28 22:14:58</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -102,17 +102,17 @@
 <span id="L40"><span class="lineNum">      40</span>              :     grid::G</span>
 <span id="L41"><span class="lineNum">      41</span>              : </span>
 <span id="L42"><span class="lineNum">      42</span> <span class="tlaGNC tlaBgGNC">          11 :     function Field{L}(data::A, grid::G) where {L,A&lt;:AbstractArray,G&lt;:AbstractGrid}</span></span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">      775752 :         if size(data) != padded_size(grid)</span></span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">      778113 :         if size(data) != padded_size(grid)</span></span>
 <span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">          23 :             throw(</span></span>
 <span id="L45"><span class="lineNum">      45</span>              :                 DimensionMismatch(</span>
 <span id="L46"><span class="lineNum">      46</span>              :                     &quot;field data size $(size(data)) must equal padded grid size $(padded_size(grid))&quot;,</span>
 <span id="L47"><span class="lineNum">      47</span>              :                 ),</span>
 <span id="L48"><span class="lineNum">      48</span>              :             )</span>
 <span id="L49"><span class="lineNum">      49</span>              :         end</span>
-<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">      387945 :         return new{L,A,G}(data, grid)</span></span>
+<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">      389172 :         return new{L,A,G}(data, grid)</span></span>
 <span id="L51"><span class="lineNum">      51</span>              :     end</span>
 <span id="L52"><span class="lineNum">      52</span>              : end</span>
-<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">        3629 : Field(data::AbstractArray, grid::AbstractGrid) = Field{Center}(data, grid)</span></span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">        4405 : Field(data::AbstractArray, grid::AbstractGrid) = Field{Center}(data, grid)</span></span>
 <span id="L54"><span class="lineNum">      54</span>              : </span>
 <span id="L55"><span class="lineNum">      55</span>              : &quot;&quot;&quot;</span>
 <span id="L56"><span class="lineNum">      56</span>              :     scalar_field(g::AbstractGrid, T=eltype(spacing(g))) -&gt; Field</span>
@@ -129,9 +129,9 @@
 <span id="L67"><span class="lineNum">      67</span>              : </span>
 <span id="L68"><span class="lineNum">      68</span>              : See also: [`vector_field`](@ref), [`set!`](@ref).</span>
 <span id="L69"><span class="lineNum">      69</span>              : &quot;&quot;&quot;</span>
-<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">         781 : function scalar_field(g::AbstractGrid, ::Type{T}=eltype(spacing(g))) where {T&lt;:Number}</span></span>
-<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">        2397 :     data = KernelAbstractions.zeros(KernelAbstractions.get_backend(g), T, padded_size(g)...)</span></span>
-<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">        1711 :     return Field(data, g)</span></span>
+<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">         855 : function scalar_field(g::AbstractGrid, ::Type{T}=eltype(spacing(g))) where {T&lt;:Number}</span></span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">        2836 :     data = KernelAbstractions.zeros(KernelAbstractions.get_backend(g), T, padded_size(g)...)</span></span>
+<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">        2411 :     return Field(data, g)</span></span>
 <span id="L73"><span class="lineNum">      73</span>              : end</span>
 <span id="L74"><span class="lineNum">      74</span>              : </span>
 <span id="L75"><span class="lineNum">      75</span>              : &quot;&quot;&quot;</span>
@@ -149,11 +149,11 @@
 <span id="L87"><span class="lineNum">      87</span>              : </span>
 <span id="L88"><span class="lineNum">      88</span>              : See also: [`scalar_field`](@ref), [`component`](@ref).</span>
 <span id="L89"><span class="lineNum">      89</span>              : &quot;&quot;&quot;</span>
-<span id="L90"><span class="lineNum">      90</span> <span class="tlaGNC">          44 : function vector_field(g::AbstractGrid{N}, ::Type{T}=eltype(spacing(g))) where {N,T&lt;:Number}</span></span>
-<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">          94 :     data = KernelAbstractions.zeros(</span></span>
+<span id="L90"><span class="lineNum">      90</span> <span class="tlaGNC">          45 : function vector_field(g::AbstractGrid{N}, ::Type{T}=eltype(spacing(g))) where {N,T&lt;:Number}</span></span>
+<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">          96 :     data = KernelAbstractions.zeros(</span></span>
 <span id="L92"><span class="lineNum">      92</span>              :         KernelAbstractions.get_backend(g), SVector{N,T}, padded_size(g)...</span>
 <span id="L93"><span class="lineNum">      93</span>              :     )</span>
-<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC">          48 :     return Field(data, g)</span></span>
+<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC">          49 :     return Field(data, g)</span></span>
 <span id="L95"><span class="lineNum">      95</span>              : end</span>
 <span id="L96"><span class="lineNum">      96</span>              : </span>
 <span id="L97"><span class="lineNum">      97</span>              : #--------------------------------------------------------------------------------# Field interface</span>
@@ -163,7 +163,7 @@
 <span id="L101"><span class="lineNum">     101</span>              : </span>
 <span id="L102"><span class="lineNum">     102</span>              : View of the interior (owned, non-halo) cells of the field.</span>
 <span id="L103"><span class="lineNum">     103</span>              : &quot;&quot;&quot;</span>
-<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">      295959 : interior(f::Field) = view(f.data, interior(f.grid))</span></span>
+<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">      313279 : interior(f::Field) = view(f.data, interior(f.grid))</span></span>
 <span id="L105"><span class="lineNum">     105</span>              : </span>
 <span id="L106"><span class="lineNum">     106</span>              : &quot;&quot;&quot;</span>
 <span id="L107"><span class="lineNum">     107</span>              :     set!(f::Field, fun) -&gt; f</span>
@@ -178,9 +178,9 @@
 <span id="L116"><span class="lineNum">     116</span>              : u = set!(scalar_field(g), x -&gt; sin(x[1]))</span>
 <span id="L117"><span class="lineNum">     117</span>              : ```</span>
 <span id="L118"><span class="lineNum">     118</span>              : &quot;&quot;&quot;</span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">        4473 : function set!(f::Field, fun::F) where {F}</span></span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">        8896 :     interior(f) .= fun.(cell_center.(Ref(f.grid), interior(f.grid)))</span></span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">        4473 :     return f</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">        4476 : function set!(f::Field, fun::F) where {F}</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">        8902 :     interior(f) .= fun.(cell_center.(Ref(f.grid), interior(f.grid)))</span></span>
+<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">        4476 :     return f</span></span>
 <span id="L122"><span class="lineNum">     122</span>              : end</span>
 <span id="L123"><span class="lineNum">     123</span>              : </span>
 <span id="L124"><span class="lineNum">     124</span>              : &quot;&quot;&quot;</span>
@@ -189,11 +189,11 @@
 <span id="L127"><span class="lineNum">     127</span>              : Number of components of the field's element type: 1 for scalar fields, `N` for</span>
 <span id="L128"><span class="lineNum">     128</span>              : `SVector{N}`-valued fields.</span>
 <span id="L129"><span class="lineNum">     129</span>              : &quot;&quot;&quot;</span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">         274 : ncomponents(f::Field) = _ncomponents(eltype(f.data))</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">         453 : ncomponents(f::Field) = _ncomponents(eltype(f.data))</span></span>
 <span id="L131"><span class="lineNum">     131</span> <span class="tlaUNC tlaBgUNC">           0 : _ncomponents(::Type{&lt;:Number}) = 1</span></span>
-<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC tlaBgGNC">         443 : _ncomponents(::Type{SVector{M,T}}) where {M,T} = M</span></span>
+<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC tlaBgGNC">         444 : _ncomponents(::Type{SVector{M,T}}) where {M,T} = M</span></span>
 <span id="L133"><span class="lineNum">     133</span>              : </span>
-<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">        1654 : _scalar_eltype(::Type{T}) where {T&lt;:Number} = T</span></span>
+<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">        1851 : _scalar_eltype(::Type{T}) where {T&lt;:Number} = T</span></span>
 <span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">         390 : _scalar_eltype(::Type{SVector{M,T}}) where {M,T} = T</span></span>
 <span id="L136"><span class="lineNum">     136</span>              : </span>
 <span id="L137"><span class="lineNum">     137</span>              : &quot;&quot;&quot;</span>
@@ -209,14 +209,14 @@
 <span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">           2 : component(f::Field{L,&lt;:AbstractArray{&lt;:Number}}, d::Integer) where {L} =</span></span>
 <span id="L148"><span class="lineNum">     148</span>              :     d == 1 ? Field{L}(copy(f.data), f.grid) : throw(ArgumentError(&quot;scalar field has only component 1&quot;))</span>
 <span id="L149"><span class="lineNum">     149</span>              : </span>
-<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">         871 : Base.eltype(f::Field) = eltype(f.data)</span></span>
-<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">        2136 : Base.similar(f::Field{L}) where {L} = Field{L}(similar(f.data), f.grid)</span></span>
+<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">         928 : Base.eltype(f::Field) = eltype(f.data)</span></span>
+<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">        3662 : Base.similar(f::Field{L}) where {L} = Field{L}(similar(f.data), f.grid)</span></span>
 <span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">        1144 : Base.similar(f::Field{L}, ::Type{E}) where {L,E} = Field{L}(similar(f.data, E), f.grid)</span></span>
 <span id="L153"><span class="lineNum">     153</span> <span class="tlaGNC">          61 : Base.copy(f::Field{L}) where {L} = Field{L}(copy(f.data), f.grid)</span></span>
 <span id="L154"><span class="lineNum">     154</span>              : </span>
-<span id="L155"><span class="lineNum">     155</span> <span class="tlaGNC">       86432 : apply_bc!(f::Field) = (apply_bc!(f.data, f.grid); f)</span></span>
-<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">       30232 : fold_bc!(f::Field) = (fold_bc!(f.data, f.grid); f)</span></span>
-<span id="L157"><span class="lineNum">     157</span> <span class="tlaGNC">       42171 : zero_ghosts!(f::Field) = (zero_ghosts!(f.data, f.grid); f)</span></span>
+<span id="L155"><span class="lineNum">     155</span> <span class="tlaGNC">       88905 : apply_bc!(f::Field) = (apply_bc!(f.data, f.grid); f)</span></span>
+<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">       32241 : fold_bc!(f::Field) = (fold_bc!(f.data, f.grid); f)</span></span>
+<span id="L157"><span class="lineNum">     157</span> <span class="tlaGNC">       49430 : zero_ghosts!(f::Field) = (zero_ghosts!(f.data, f.grid); f)</span></span>
 <span id="L158"><span class="lineNum">     158</span>              : </span>
 <span id="L159"><span class="lineNum">     159</span> <span class="tlaGNC">          11 : function Adapt.adapt_structure(to, f::Field{L}) where {L}</span></span>
 <span id="L160"><span class="lineNum">     160</span> <span class="tlaGNC">          11 :     return Field{L}(Adapt.adapt(to, f.data), Adapt.adapt(to, f.grid))</span></span>
@@ -226,7 +226,7 @@
 <span id="L164"><span class="lineNum">     164</span>              : </span>
 <span id="L165"><span class="lineNum">     165</span>              : # Reshape a flat interior vector of scalars into the field's element type without</span>
 <span id="L166"><span class="lineNum">     166</span>              : # copying: identity for scalar eltypes, reinterpret for SVector eltypes.</span>
-<span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">      158669 : _as_eltype(::Type{E}, v::AbstractVector{E}, dims) where {E} = reshape(v, dims)</span></span>
+<span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">      176351 : _as_eltype(::Type{E}, v::AbstractVector{E}, dims) where {E} = reshape(v, dims)</span></span>
 <span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">           3 : function _as_eltype(::Type{SVector{M,T}}, v::AbstractVector{T}, dims) where {M,T}</span></span>
 <span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">         411 :     return reshape(reinterpret(SVector{M,T}, v), dims)</span></span>
 <span id="L170"><span class="lineNum">     170</span>              : end</span>
@@ -240,11 +240,11 @@
 <span id="L178"><span class="lineNum">     178</span>              : </span>
 <span id="L179"><span class="lineNum">     179</span>              : See also: [`flat_to_interior!`](@ref), [`interior_to_flat!`](@ref).</span>
 <span id="L180"><span class="lineNum">     180</span>              : &quot;&quot;&quot;</span>
-<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">          76 : function flatten(f::Field)</span></span>
-<span id="L182"><span class="lineNum">     182</span> <span class="tlaGNC">         740 :     data_int = f.data[interior(f.grid)]</span></span>
-<span id="L183"><span class="lineNum">     183</span> <span class="tlaGNC">          84 :     return _flat_vector(vec(data_int))</span></span>
+<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">         108 : function flatten(f::Field)</span></span>
+<span id="L182"><span class="lineNum">     182</span> <span class="tlaGNC">         772 :     data_int = f.data[interior(f.grid)]</span></span>
+<span id="L183"><span class="lineNum">     183</span> <span class="tlaGNC">         116 :     return _flat_vector(vec(data_int))</span></span>
 <span id="L184"><span class="lineNum">     184</span>              : end</span>
-<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">          79 : _flat_vector(v::AbstractVector{&lt;:Number}) = v</span></span>
+<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">         111 : _flat_vector(v::AbstractVector{&lt;:Number}) = v</span></span>
 <span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">           5 : _flat_vector(v::AbstractVector{SVector{M,T}}) where {M,T} = copy(vec(reinterpret(T, v)))</span></span>
 <span id="L187"><span class="lineNum">     187</span>              : </span>
 <span id="L188"><span class="lineNum">     188</span>              : &quot;&quot;&quot;</span>
@@ -253,34 +253,43 @@
 <span id="L191"><span class="lineNum">     191</span>              : Number of interior scalar DOFs in the flat (Krylov) representation of `f`:</span>
 <span id="L192"><span class="lineNum">     192</span>              : `prod(local_size) * ncomponents`, summed over blocks for a block field.</span>
 <span id="L193"><span class="lineNum">     193</span>              : &quot;&quot;&quot;</span>
-<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         244 : flat_length(f::Field) = prod(local_size(f.grid)) * ncomponents(f)</span></span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         282 : flat_length(f::Field) = prod(local_size(f.grid)) * ncomponents(f)</span></span>
 <span id="L195"><span class="lineNum">     195</span>              : </span>
 <span id="L196"><span class="lineNum">     196</span>              : &quot;&quot;&quot;</span>
-<span id="L197"><span class="lineNum">     197</span>              :     flat_to_interior!(f::Field, v::AbstractVector) -&gt; f</span>
+<span id="L197"><span class="lineNum">     197</span>              :     flat_to_interior!(f::Field, v::AbstractVector, α=true, β=false) -&gt; f</span>
 <span id="L198"><span class="lineNum">     198</span>              : </span>
-<span id="L199"><span class="lineNum">     199</span>              : Copy the flat interior vector `v` (as produced by [`flatten`](@ref)) into the</span>
-<span id="L200"><span class="lineNum">     200</span>              : interior of `f`. Ghost cells are untouched.</span>
-<span id="L201"><span class="lineNum">     201</span>              : &quot;&quot;&quot;</span>
-<span id="L202"><span class="lineNum">     202</span> <span class="tlaGNC">       79234 : function flat_to_interior!(f::Field, v::AbstractVector)</span></span>
-<span id="L203"><span class="lineNum">     203</span> <span class="tlaGNC">      157206 :     interior(f) .= _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
-<span id="L204"><span class="lineNum">     204</span> <span class="tlaGNC">       79234 :     return f</span></span>
-<span id="L205"><span class="lineNum">     205</span>              : end</span>
-<span id="L206"><span class="lineNum">     206</span>              : </span>
-<span id="L207"><span class="lineNum">     207</span>              : &quot;&quot;&quot;</span>
-<span id="L208"><span class="lineNum">     208</span>              :     interior_to_flat!(v::AbstractVector, f::Field, α=true, β=false) -&gt; v</span>
-<span id="L209"><span class="lineNum">     209</span>              : </span>
-<span id="L210"><span class="lineNum">     210</span>              : Fused axpby copy-out of the field interior into the flat vector:</span>
-<span id="L211"><span class="lineNum">     211</span>              : `v = α * interior(f) + β * v` in one broadcast.</span>
-<span id="L212"><span class="lineNum">     212</span>              : &quot;&quot;&quot;</span>
-<span id="L213"><span class="lineNum">     213</span> <span class="tlaGNC">       79939 : function interior_to_flat!(v::AbstractVector, f::Field, α::Number=true, β::Number=false)</span></span>
-<span id="L214"><span class="lineNum">     214</span> <span class="tlaGNC">       82230 :     vi = _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
-<span id="L215"><span class="lineNum">     215</span> <span class="tlaGNC">       79840 :     if iszero(β)</span></span>
-<span id="L216"><span class="lineNum">     216</span> <span class="tlaGNC">      158114 :         vi .= α .* interior(f)</span></span>
-<span id="L217"><span class="lineNum">     217</span>              :     else</span>
-<span id="L218"><span class="lineNum">     218</span> <span class="tlaGNC">         220 :         vi .= α .* interior(f) .+ β .* vi</span></span>
-<span id="L219"><span class="lineNum">     219</span>              :     end</span>
-<span id="L220"><span class="lineNum">     220</span> <span class="tlaGNC">       79840 :     return v</span></span>
-<span id="L221"><span class="lineNum">     221</span>              : end</span>
+<span id="L199"><span class="lineNum">     199</span>              : Fused axpby copy-in of the flat interior vector `v` (as produced by</span>
+<span id="L200"><span class="lineNum">     200</span>              : [`flatten`](@ref)) into the interior of `f`: `interior(f) = α * v + β * interior(f)`</span>
+<span id="L201"><span class="lineNum">     201</span>              : in one broadcast. Ghost cells are untouched — the mirror of</span>
+<span id="L202"><span class="lineNum">     202</span>              : [`interior_to_flat!`](@ref), and the reason the distributed path can stage</span>
+<span id="L203"><span class="lineNum">     203</span>              : exchanged ghosts before a local apply.</span>
+<span id="L204"><span class="lineNum">     204</span>              : &quot;&quot;&quot;</span>
+<span id="L205"><span class="lineNum">     205</span> <span class="tlaGNC">       88183 : function flat_to_interior!(f::Field, v::AbstractVector, α::Number=true, β::Number=false)</span></span>
+<span id="L206"><span class="lineNum">     206</span> <span class="tlaGNC">      167776 :     vi = _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
+<span id="L207"><span class="lineNum">     207</span> <span class="tlaGNC">       83860 :     fi = interior(f)</span></span>
+<span id="L208"><span class="lineNum">     208</span> <span class="tlaGNC">       83860 :     if iszero(β)</span></span>
+<span id="L209"><span class="lineNum">     209</span> <span class="tlaGNC">      166592 :         fi .= α .* vi</span></span>
+<span id="L210"><span class="lineNum">     210</span>              :     else</span>
+<span id="L211"><span class="lineNum">     211</span> <span class="tlaGNC">           1 :         fi .= α .* vi .+ β .* fi</span></span>
+<span id="L212"><span class="lineNum">     212</span>              :     end</span>
+<span id="L213"><span class="lineNum">     213</span> <span class="tlaGNC">       83860 :     return f</span></span>
+<span id="L214"><span class="lineNum">     214</span>              : end</span>
+<span id="L215"><span class="lineNum">     215</span>              : </span>
+<span id="L216"><span class="lineNum">     216</span>              : &quot;&quot;&quot;</span>
+<span id="L217"><span class="lineNum">     217</span>              :     interior_to_flat!(v::AbstractVector, f::Field, α=true, β=false) -&gt; v</span>
+<span id="L218"><span class="lineNum">     218</span>              : </span>
+<span id="L219"><span class="lineNum">     219</span>              : Fused axpby copy-out of the field interior into the flat vector:</span>
+<span id="L220"><span class="lineNum">     220</span>              : `v = α * interior(f) + β * v` in one broadcast.</span>
+<span id="L221"><span class="lineNum">     221</span>              : &quot;&quot;&quot;</span>
+<span id="L222"><span class="lineNum">     222</span> <span class="tlaGNC">       89843 : function interior_to_flat!(v::AbstractVector, f::Field, α::Number=true, β::Number=false)</span></span>
+<span id="L223"><span class="lineNum">     223</span> <span class="tlaGNC">       94202 :     vi = _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
+<span id="L224"><span class="lineNum">     224</span> <span class="tlaGNC">       86560 :     if iszero(β)</span></span>
+<span id="L225"><span class="lineNum">     225</span> <span class="tlaGNC">      171546 :         vi .= α .* interior(f)</span></span>
+<span id="L226"><span class="lineNum">     226</span>              :     else</span>
+<span id="L227"><span class="lineNum">     227</span> <span class="tlaGNC">         224 :         vi .= α .* interior(f) .+ β .* vi</span></span>
+<span id="L228"><span class="lineNum">     228</span>              :     end</span>
+<span id="L229"><span class="lineNum">     229</span> <span class="tlaGNC">       86560 :     return v</span></span>
+<span id="L230"><span class="lineNum">     230</span>              : end</span>
         </pre>
               </td>
             </tr>

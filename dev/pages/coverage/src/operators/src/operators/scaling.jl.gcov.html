@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryMed">77.6&nbsp;%</td>
-            <td class="headerCovTableEntry">58</td>
-            <td class="headerCovTableEntry">45</td>
+            <td class="headerCovTableEntryMed">78.0&nbsp;%</td>
+            <td class="headerCovTableEntry">59</td>
+            <td class="headerCovTableEntry">46</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 17:56:00</td>
+            <td class="headerValue">2026-07-28 22:14:58</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -71,7 +71,7 @@
 <span id="L9"><span class="lineNum">       9</span>              : problems). Construct with [`scaling`](@ref).</span>
 <span id="L10"><span class="lineNum">      10</span>              : &quot;&quot;&quot;</span>
 <span id="L11"><span class="lineNum">      11</span>              : struct ScalingOp{F} &lt;: AbstractOperator</span>
-<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">         735 :     coeff::F</span></span>
+<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">         740 :     coeff::F</span></span>
 <span id="L13"><span class="lineNum">      13</span>              : end</span>
 <span id="L14"><span class="lineNum">      14</span>              : </span>
 <span id="L15"><span class="lineNum">      15</span>              : &quot;&quot;&quot;</span>
@@ -95,14 +95,14 @@
 <span id="L33"><span class="lineNum">      33</span>              : </span>
 <span id="L34"><span class="lineNum">      34</span>              : See also: [`gradient`](@ref), [`divergence`](@ref), [`identity_op`](@ref).</span>
 <span id="L35"><span class="lineNum">      35</span>              : &quot;&quot;&quot;</span>
-<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">          18 : scaling(κ::Number) = ScalingOp(κ)</span></span>
-<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">          16 : function scaling(κ::Field)</span></span>
-<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">         115 :     eltype(κ.data) &lt;: Number || throw(</span></span>
+<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">          19 : scaling(κ::Number) = ScalingOp(κ)</span></span>
+<span id="L37"><span class="lineNum">      37</span> <span class="tlaGNC">          20 : function scaling(κ::Field)</span></span>
+<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">         119 :     eltype(κ.data) &lt;: Number || throw(</span></span>
 <span id="L39"><span class="lineNum">      39</span>              :         ArgumentError(</span>
 <span id="L40"><span class="lineNum">      40</span>              :             &quot;scaling coefficient must be a Number or a scalar-eltype Field, got eltype $(eltype(κ.data))&quot;,</span>
 <span id="L41"><span class="lineNum">      41</span>              :         ),</span>
 <span id="L42"><span class="lineNum">      42</span>              :     )</span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">         114 :     return ScalingOp(κ)</span></span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">         118 :     return ScalingOp(κ)</span></span>
 <span id="L44"><span class="lineNum">      44</span>              : end</span>
 <span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">           9 : function scaling(κ::AbstractBlockField)</span></span>
 <span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">          41 :     eltype(κ) &lt;: Number || throw(</span></span>
@@ -175,7 +175,7 @@
 <span id="L113"><span class="lineNum">     113</span>              : composition sibling or the field it is applied to. Construct with</span>
 <span id="L114"><span class="lineNum">     114</span>              : [`identity_op`](@ref).</span>
 <span id="L115"><span class="lineNum">     115</span>              : &quot;&quot;&quot;</span>
-<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          23 : struct IdentityOp &lt;: AbstractOperator end</span></span>
+<span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          42 : struct IdentityOp &lt;: AbstractOperator end</span></span>
 <span id="L117"><span class="lineNum">     117</span>              : </span>
 <span id="L118"><span class="lineNum">     118</span>              : &quot;&quot;&quot;</span>
 <span id="L119"><span class="lineNum">     119</span>              :     identity_op() -&gt; IdentityOp</span>
@@ -189,7 +189,7 @@
 <span id="L127"><span class="lineNum">     127</span>              : H = laplacian(g) - 4 * identity_op()             # Helmholtz-style shift</span>
 <span id="L128"><span class="lineNum">     128</span>              : ```</span>
 <span id="L129"><span class="lineNum">     129</span>              : &quot;&quot;&quot;</span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">          23 : identity_op() = IdentityOp()</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">          42 : identity_op() = IdentityOp()</span></span>
 <span id="L131"><span class="lineNum">     131</span>              : </span>
 <span id="L132"><span class="lineNum">     132</span> <span class="tlaUNC tlaBgUNC">           0 : islinear(::IdentityOp) = true</span></span>
 <span id="L133"><span class="lineNum">     133</span> <span class="tlaUNC">           0 : isconstant(::IdentityOp) = true</span></span>
@@ -197,18 +197,18 @@
 <span id="L135"><span class="lineNum">     135</span> <span class="tlaUNC">           0 : isdiagonal(::IdentityOp) = true</span></span>
 <span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC tlaBgGNC">           1 : adjoint_operator(L::IdentityOp) = L</span></span>
 <span id="L137"><span class="lineNum">     137</span>              : </span>
-<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">         184 : function apply!(y::Field, ::IdentityOp, x::Field, ::AbstractGrid, α, β)</span></span>
-<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">         184 :     yi = interior(y)</span></span>
-<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">         184 :     if iszero(β)</span></span>
-<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">         268 :         yi .= α .* interior(x)</span></span>
+<span id="L138"><span class="lineNum">     138</span> <span class="tlaGNC">         326 : function apply!(y::Field, ::IdentityOp, x::Field, ::AbstractGrid, α, β)</span></span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">         326 :     yi = interior(y)</span></span>
+<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">         326 :     if iszero(β)</span></span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">         384 :         yi .= α .* interior(x)</span></span>
 <span id="L142"><span class="lineNum">     142</span>              :     else</span>
-<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">          50 :         yi .= α .* interior(x) .+ β .* yi</span></span>
+<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">         134 :         yi .= α .* interior(x) .+ β .* yi</span></span>
 <span id="L144"><span class="lineNum">     144</span>              :     end</span>
-<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">         184 :     return y</span></span>
+<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">         326 :     return y</span></span>
 <span id="L146"><span class="lineNum">     146</span>              : end</span>
 <span id="L147"><span class="lineNum">     147</span>              : </span>
-<span id="L148"><span class="lineNum">     148</span>              : function apply_adjoint!(x̄::Field, L::IdentityOp, ȳ::Field, g::AbstractGrid, α, β)</span>
-<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">          14 :     return apply!(x̄, L, ȳ, g, α, β)</span></span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">          50 : function apply_adjoint!(x̄::Field, L::IdentityOp, ȳ::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">          82 :     return apply!(x̄, L, ȳ, g, α, β)</span></span>
 <span id="L150"><span class="lineNum">     150</span>              : end</span>
 <span id="L151"><span class="lineNum">     151</span>              : </span>
 <span id="L152"><span class="lineNum">     152</span>              : # Pointwise: reads no ghosts, so the raw sweep is the ordinary action.</span>
