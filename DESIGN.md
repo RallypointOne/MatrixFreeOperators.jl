@@ -530,13 +530,33 @@ adjoint proven CPU-side against emulated exchange semantics), and
 `GhostExchange` unpacked into `Interface` halo slabs before each local apply,
 `reduce!(+)` for the distributed adjoint, and a `Krylov.CgWorkspace` hook.
 Scope: scalar fields, `Laplacian`/`IdentityOp`/number-`ScalingOp` under
-`Scaled`/`Added`; `Composed` (needs a mid-tree exchange), `AdjointOp` (mid-tree
-reduction), `Field` coefficients, and distributed `boundary_rhs` assembly are
-rejected loudly and deferred. Inhomogeneous BCs meanwhile: assemble the lift on
-the global grid and split, `MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)`.
+`Scaled`/`Added`.
 CUDA-only by MDLA's nature (one partition per physical GPU — MDLA enforces
 unique device IDs, no CPU mode), so distributed tests are env-gated
 (`MFO_TEST_MDLA=true`, ≥ 2 GPUs for multi-partition testsets).
+
+*Built (issue #31, slice 2a):* `Composed` and `AdjointOp`, i.e. the cases needing
+an exchange **inside** the tree rather than only at its root. The operator tree
+is now walked by core (`src/distributed.jl`) — a recursive walk mirroring the
+block-forest `_forest_capply!`/`_forest_capply_adjoint!` pair, which solves the
+same mid-tree-exchange problem — parameterized on three backend primitives
+(`_dist_map!`, `_dist_scatter!`, `_dist_reduce!`). The MDLA extension supplies
+them with `scatter!`/`reduce!`; `test/partitioning.jl` supplies them with
+plain-`Vector` global indexing, so the CPU proof exercises the real walk rather
+than re-emulating it. The distributability guards moved to core with the walk, so
+CI runs them. `Derivative` joins the whitelist (same shape as `Laplacian`, and the
+only whitelisted leaf that is not self-adjoint, hence the only way to reach an
+`AdjointOp` node). Adjoints are normalized down to the leaves before `prepare`,
+which does not recurse into an `AdjointOp` and would otherwise skip the mid-tree
+reduction for `AdjointOp(A∘B)`.
+
+*Deferred (issue #31, slice 2b):* `Field` coefficients, distributed
+`boundary_rhs` assembly, rank-changing intermediates (`Divergence ∘ Gradient`
+needs its own `ncomp = N` spec and ghost layout — `_slab_ghost_layout` and
+`_owned_flat_range` already take the kwarg), and transfer chains (factors on two
+grids, each needing a consistent cut). All rejected loudly. Inhomogeneous BCs
+meanwhile: assemble the lift on the global grid and split,
+`MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)`.
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
 - *Explicit* solvers (RK4, SSPRK, …): provide a trivial RHS adapter

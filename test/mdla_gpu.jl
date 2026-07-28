@@ -19,14 +19,33 @@ end
     @test MDLA_EXT !== nothing
 end
 
+# Composed and AdjointOp used to be rejected here; slice 2a implements the
+# mid-tree exchange and reduction behind those guards, so they now go through —
+# see the composed/adjoint testsets below. What remains rejected is rejected
+# because the failure mode would be a silently wrong answer, not an error.
 @testset "guards" begin
     g = mdla_grid((Dirichlet(), Dirichlet()))
+    gc = coarsen(g)
     κ = set!(scalar_field(g), x -> 1 + x[1] / 7)
-    @test_throws ArgumentError prepare_distributed(laplacian(g) * laplacian(g), 1)
-    @test_throws ArgumentError prepare_distributed(adjoint(derivative(g, 1)), 1)
     @test_throws ArgumentError prepare_distributed(MatrixFreeOperators.gradient(g), 1)
+    @test_throws ArgumentError prepare_distributed(MatrixFreeOperators.divergence(g), 1)
     @test_throws ArgumentError prepare_distributed(scaling(κ) + laplacian(g), 1)
+    @test_throws ArgumentError prepare_distributed(restriction(g, gc), 1)
+    # both factors distributable, but on different grids
+    @test_throws ArgumentError prepare_distributed(laplacian(gc) * restriction(g, gc), 1)
     @test_throws ArgumentError prepare_distributed(laplacian(g), NGPUS_MDLA + 1)
+end
+
+@testset "newly distributable operators are accepted" begin
+    g = mdla_grid((Dirichlet(), Dirichlet()))
+    for L in (
+        laplacian(g) * laplacian(g),
+        adjoint(derivative(g, 1)),
+        adjoint(derivative(g, 1)) + laplacian(g),
+        MatrixFreeOperators.AdjointOp(derivative(g, 1) * derivative(g, 2)),
+    )
+        @test prepare_distributed(L, 1) isa MDLA_EXT.MDLAPreparedOperator
+    end
 end
 
 @testset "single-partition parity vs single-GPU prepare" begin
@@ -136,6 +155,177 @@ end
         @test A_adj ≈ A_fwd'
     else
         @test_skip "distributed adjoint — needs ≥ 2 CUDA devices"
+    end
+end
+
+#--------------------------------------------------------------------------------# Slice 2a: mid-tree exchange and reduction
+
+# Helper: dense forward/adjoint matrices through the distributed path.
+function mdla_materialize(P, n)
+    A_fwd, A_adj, e = zeros(n, n), zeros(n, n), zeros(n)
+    for j in 1:n
+        fill!(e, 0)
+        e[j] = 1
+        col = MultiDeviceVector(zeros(n), P.spec)
+        mul!(col, P, MultiDeviceVector(copy(e), P.spec))
+        A_fwd[:, j] .= gather(col)
+        colᵀ = MultiDeviceVector(zeros(n), P.spec)
+        MDLA_EXT._mul_adjoint!(colᵀ, P, MultiDeviceVector(copy(e), P.spec))
+        A_adj[:, j] .= gather(colᵀ)
+    end
+    return A_fwd, A_adj
+end
+
+# The mid-tree exchange is the whole point of slice 2a: without it the
+# intermediate's cut-plane ghosts are stale zeros and this parity fails near
+# every seam. Bitwise, like the slice-1 forward parity — same device arithmetic.
+@testset "composed: 2-partition forward parity" begin
+    if NGPUS_MDLA >= 2
+        rng = Random.MersenneTwister(43)
+        for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+            g = mdla_grid(cutbc)
+            n = prod(local_size(g))
+            xflat = rand(rng, n)
+            for L in (
+                laplacian(g) * laplacian(g),
+                derivative(g, 1) * derivative(g, 2),
+                adjoint(derivative(g, 2)) * derivative(g, 2),
+            )
+                P1 = prepare_distributed(L, 1)
+                y1 = MultiDeviceVector(zeros(n), P1.spec)
+                mul!(y1, P1, MultiDeviceVector(copy(xflat), P1.spec))
+
+                P2 = prepare_distributed(L, 2)
+                y2 = MultiDeviceVector(zeros(n), P2.spec)
+                mul!(y2, P2, MultiDeviceVector(copy(xflat), P2.spec))
+                @test gather(y2) == gather(y1)
+            end
+        end
+    else
+        @test_skip "composed forward parity — needs ≥ 2 CUDA devices"
+    end
+end
+
+@testset "composed: adjoint identity and transpose structure" begin
+    if NGPUS_MDLA >= 2
+        rng = Random.MersenneTwister(47)
+        for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+            g = mdla_grid(cutbc)
+            n = prod(local_size(g))
+            for L in (laplacian(g) * laplacian(g), derivative(g, 1) * derivative(g, 2))
+                P = prepare_distributed(L, 2)
+                x = MultiDeviceVector(rand(rng, n), P.spec)
+                y = MultiDeviceVector(rand(rng, n), P.spec)
+                Lx = MultiDeviceVector(zeros(n), P.spec)
+                mul!(Lx, P, x)
+                x̄ = MultiDeviceVector(zeros(n), P.spec)
+                MDLA_EXT._mul_adjoint!(x̄, P, y)
+                @test isapprox(dot(Lx, y), dot(x, x̄); rtol=1e-12)
+            end
+        end
+
+        # The literal statement of the transpose argument, on real scatter!/reduce!
+        # with a mid-tree exchange in the middle of it.
+        gt = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (3, 6);
+            bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Neumann())),
+        )
+        nt = prod(local_size(gt))
+        for Lt in (laplacian(gt) * laplacian(gt), adjoint(derivative(gt, 2)) * derivative(gt, 2))
+            A_fwd, A_adj = mdla_materialize(prepare_distributed(Lt, 2), nt)
+            @test A_fwd ≈ materialize(prepare(MatrixFreeOperators._push_adjoints(Lt)))
+            @test A_adj ≈ A_fwd'
+        end
+    else
+        @test_skip "composed adjoint — needs ≥ 2 CUDA devices"
+    end
+end
+
+@testset "AdjointOp as a distributed forward operator" begin
+    if NGPUS_MDLA >= 2
+        rng = Random.MersenneTwister(53)
+        g = mdla_grid((Dirichlet(), Neumann()))
+        n = prod(local_size(g))
+        xflat = rand(rng, n)
+        L = adjoint(derivative(g, 1))
+
+        # CPU reference on the undivided grid
+        xg = flat_to_interior!(scalar_field(g), xflat)
+        ref = flatten(apply(L, xg))
+
+        P2 = prepare_distributed(L, 2)
+        y2 = MultiDeviceVector(zeros(n), P2.spec)
+        mul!(y2, P2, MultiDeviceVector(copy(xflat), P2.spec))
+        @test isapprox(gather(y2), ref; rtol=1e-12)
+
+        # dense transpose structure through the node's mid-tree reduction
+        gt = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (3, 6);
+            bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Neumann())),
+        )
+        nt = prod(local_size(gt))
+        A_fwd, A_adj = mdla_materialize(prepare_distributed(adjoint(derivative(gt, 1)), 2), nt)
+        @test A_fwd ≈ materialize(prepare(derivative(gt, 1)))'
+        @test A_adj ≈ A_fwd'
+    else
+        @test_skip "AdjointOp forward — needs ≥ 2 CUDA devices"
+    end
+end
+
+# The adjoint node's gather zeroes its input's ghosts, so it works on its own
+# copy. Without that, the exchanged ghosts the Laplacian sibling needs would be
+# destroyed whenever the adjoint term comes first — silently, and only in one
+# term order.
+@testset "adjoint sibling under Added: both term orders agree" begin
+    if NGPUS_MDLA >= 2
+        rng = Random.MersenneTwister(59)
+        g = mdla_grid((Dirichlet(), Neumann()))
+        n = prod(local_size(g))
+        xflat = rand(rng, n)
+        A = adjoint(derivative(g, 1))
+        B = laplacian(g)
+        ref = flatten(apply(A + B, flat_to_interior!(scalar_field(g), xflat)))
+        results = map((A + B, B + A)) do L
+            P = prepare_distributed(L, 2)
+            y = MultiDeviceVector(zeros(n), P.spec)
+            mul!(y, P, MultiDeviceVector(copy(xflat), P.spec))
+            gather(y)
+        end
+        @test isapprox(results[1], ref; rtol=1e-12)
+        @test isapprox(results[2], ref; rtol=1e-12)
+        @test isapprox(results[1], results[2]; rtol=1e-12)
+    else
+        @test_skip "adjoint sibling ordering — needs ≥ 2 CUDA devices"
+    end
+end
+
+# DᵀD + I is SPD, so it is a valid CG system that also exercises both a mid-tree
+# exchange and a mid-tree reduction inside every matvec.
+@testset "Krylov.cg on a distributed composed system" begin
+    g = CartesianGrid(
+        ((0.0, 1.0), (0.0, 1.0)), (24, 26);
+        bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Dirichlet())),
+    )
+    L = adjoint(derivative(g, 2)) * derivative(g, 2) + 1.0 * identity_op()
+    f = set!(scalar_field(g), x -> sin(π * x[1]) * sin(π * x[2]))
+    bflat = flatten(f)
+
+    u_cpu, stats_cpu = Krylov.cg(
+        prepare(MatrixFreeOperators._push_adjoints(L)), bflat; atol=1e-10, rtol=1e-10
+    )
+    @test stats_cpu.solved
+
+    niters = Int[]
+    for nd in 1:min(NGPUS_MDLA, 2)
+        P = prepare_distributed(L, nd)
+        u, stats = Krylov.cg(P, MultiDeviceVector(copy(bflat), P.spec); atol=1e-10, rtol=1e-10)
+        @test stats.solved
+        @test isapprox(gather(u), u_cpu; rtol=1e-8)
+        push!(niters, stats.niter)
+    end
+    @test allequal(niters)
+    if NGPUS_MDLA < 2
+        @test_skip "2-partition composed CG parity — needs ≥ 2 CUDA devices"
     end
 end
 

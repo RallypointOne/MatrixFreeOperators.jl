@@ -90,6 +90,51 @@ mp_grid(cutbc) = CartesianGrid(
             end
         end
 
+        # The mid-tree exchange (issue #31 slice 2a) has the same two-owner
+        # property as the root one, and this is the only configuration that
+        # exercises it: the middle slab's intermediate ghost section carries
+        # planes from two different owners.
+        @testset "3-partition Composed forward parity" begin
+            rng = Random.MersenneTwister(61)
+            for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                g = mp_grid(cutbc)
+                n = prod(local_size(g))
+                xflat = rand(rng, n)
+                for L in (
+                    laplacian(g) * laplacian(g),
+                    derivative(g, 1) * derivative(g, 2),
+                    adjoint(derivative(g, 2)) * derivative(g, 2),
+                )
+                    P1 = prepare_distributed(L, 1)
+                    y1 = MultiDeviceVector(zeros(n), P1.spec)
+                    mul!(y1, P1, MultiDeviceVector(copy(xflat), P1.spec))
+
+                    P3 = prepare_distributed(L, 3)
+                    y3 = MultiDeviceVector(zeros(n), P3.spec)
+                    mul!(y3, P3, MultiDeviceVector(copy(xflat), P3.spec))
+                    @test gather(y3) == gather(y1)
+                end
+            end
+        end
+
+        @testset "3-partition Composed adjoint identity" begin
+            rng = Random.MersenneTwister(67)
+            for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                g = mp_grid(cutbc)
+                n = prod(local_size(g))
+                for L in (laplacian(g) * laplacian(g), adjoint(derivative(g, 1)) + laplacian(g))
+                    P = prepare_distributed(L, 3)
+                    x = MultiDeviceVector(rand(rng, n), P.spec)
+                    y = MultiDeviceVector(rand(rng, n), P.spec)
+                    Lx = MultiDeviceVector(zeros(n), P.spec)
+                    mul!(Lx, P, x)
+                    x̄ = MultiDeviceVector(zeros(n), P.spec)
+                    MDLA_EXT_MP._mul_adjoint!(x̄, P, y)
+                    @test isapprox(dot(Lx, y), dot(x, x̄); rtol=1e-12)
+                end
+            end
+        end
+
         @testset "3-partition Krylov.cg parity" begin
             g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (24, 26))
             L = -1.0 * laplacian(g)   # SPD under homogeneous Dirichlet
