@@ -12,6 +12,9 @@ end
 
 owned_flat_range(g, lg) = MatrixFreeOperators._owned_flat_range(g, lg)
 
+# Global-grid field carrying a flat interior vector — the single-device reference.
+_field(g, xflat) = flat_to_interior!(scalar_field(g, eltype(xflat)), xflat)
+
 # The plane-view geometry is core's (src/partitioning.jl), shared verbatim with
 # the MDLA extension — re-deriving it here would let the two silently decouple.
 halo_plane_view(f::Field, plane::Int) = MatrixFreeOperators._halo_plane_view(f, plane)
@@ -55,6 +58,135 @@ function dist_adjoint_emulated(L, g, parts, ghost_globals, plans, ȳflat)
         x̄flat[ghost_globals[p]] .+= contribs[p]
     end
     return x̄flat
+end
+
+#--------------------------------------------------------------------------------# CPU backend for the distributed walk
+
+# The four backend primitives (src/distributed.jl), implemented over plain
+# Vectors. A scatter is direct global indexing — definitionally what a correct
+# exchange delivers, given the ordering contract — and a reduction runs the
+# two-phase contract explicitly. These drive the REAL core walk, so the CPU proof
+# covers the same code the MDLA extension runs, not a second copy of it.
+
+struct EmuCtx{P}
+    parts::P
+end
+
+MatrixFreeOperators._dist_map!(f, ctx::EmuCtx) = (foreach(f, eachindex(ctx.parts)); nothing)
+
+struct EmuExchange{T}
+    ghost_globals::Vector{Vector{Int}}
+    plans::Vector{Vector{Tuple{UnitRange{Int},Int}}}
+    owned::Vector{UnitRange{Int}}
+    stage::Vector{T}              # global flat vector
+    local_x::Vector{Vector{T}}    # per-partition [owned | ghost]
+end
+
+function emu_exchange(g, parts, proto)
+    nc = ncomponents(proto)
+    gg, plans = MatrixFreeOperators._slab_ghost_layout(g, parts; ncomp=nc)
+    owned = [MatrixFreeOperators._owned_flat_range(g, lg; ncomp=nc) for lg in parts]
+    T = MatrixFreeOperators._scalar_eltype(eltype(proto.data))
+    local_x = [Vector{T}(undef, length(owned[p]) + length(gg[p])) for p in eachindex(parts)]
+    return EmuExchange(gg, plans, owned, Vector{T}(undef, prod(local_size(g)) * nc), local_x)
+end
+
+function MatrixFreeOperators._dist_scatter!(X::EmuExchange, fields, ::EmuCtx)
+    for p in eachindex(fields)
+        interior_to_flat!(view(X.stage, X.owned[p]), fields[p])
+    end
+    for p in eachindex(fields)
+        nown = length(X.owned[p])
+        X.local_x[p][1:nown] .= view(X.stage, X.owned[p])
+        X.local_x[p][(nown + 1):end] .= view(X.stage, X.ghost_globals[p])
+        MatrixFreeOperators._unpack_ghosts!(fields[p], X.local_x[p], nown, X.plans[p])
+    end
+    return fields
+end
+
+function MatrixFreeOperators._dist_reduce!(X::EmuExchange, fields, ::EmuCtx)
+    for p in eachindex(fields)
+        MatrixFreeOperators._pack_local_x!(
+            X.local_x[p], fields[p], length(X.owned[p]), X.plans[p]
+        )
+    end
+    fill!(X.stage, zero(eltype(X.stage)))
+    # Phase 1: every owner's own contribution. Phase 2: all neighbour
+    # contributions. Splitting them is essential — fused, an owner's copy would
+    # overwrite a neighbour's already-accumulated share.
+    for p in eachindex(fields)
+        X.stage[X.owned[p]] .= view(X.local_x[p], 1:length(X.owned[p]))
+    end
+    for p in eachindex(fields)
+        nown = length(X.owned[p])
+        X.stage[X.ghost_globals[p]] .+= view(X.local_x[p], (nown + 1):length(X.local_x[p]))
+    end
+    for p in eachindex(fields)
+        flat_to_interior!(fields[p], view(X.stage, X.owned[p]))
+        MatrixFreeOperators.zero_ghosts!(fields[p])
+    end
+    return fields
+end
+
+# CPU twin of prepare_distributed: same normalization, same guards, same tree.
+function dist_prepare(L0, g, nparts)
+    L = MatrixFreeOperators._push_adjoints(L0)
+    MatrixFreeOperators._check_distributable(L)
+    T = eltype(spacing(g))
+    parts = partition_grid(g, nparts)
+    prepared = [prepare(L, scalar_field(lg, T)) for lg in parts]
+    owned = [MatrixFreeOperators._owned_flat_range(g, lg) for lg in parts]
+    ctx = EmuCtx(parts)
+    tree = MatrixFreeOperators._dist_tree(
+        [p.op for p in prepared],
+        AbstractField[p.xpad for p in prepared],
+        proto -> emu_exchange(g, parts, proto),
+    )
+    root = emu_exchange(g, parts, first(prepared).xpad)
+    xs = AbstractField[p.xpad for p in prepared]
+    ys = AbstractField[p.ypad for p in prepared]
+    return (; L, parts, prepared, owned, ctx, tree, root, xs, ys)
+end
+
+# Root drivers — the CPU twin of the extension's mul! / _mul_adjoint!. α/β are
+# applied at the flat boundary, as PreparedOperator.mul! does, so they never
+# cross a collective step.
+function dist_mul!(yflat, D, xflat, α=true, β=false)
+    for p in eachindex(D.parts)
+        flat_to_interior!(D.xs[p], view(xflat, D.owned[p]))
+    end
+    MatrixFreeOperators._dist_scatter!(D.root, D.xs, D.ctx)
+    MatrixFreeOperators._dist_capply!(D.ys, D.tree, D.xs, D.ctx, true, false)
+    for p in eachindex(D.parts)
+        interior_to_flat!(view(yflat, D.owned[p]), D.ys[p], α, β)
+    end
+    return yflat
+end
+dist_mul(D, xflat) = dist_mul!(similar(xflat), D, xflat)
+
+function dist_adjoint!(x̄flat, D, ȳflat)
+    for p in eachindex(D.parts)
+        flat_to_interior!(D.ys[p], view(ȳflat, D.owned[p]))
+    end
+    MatrixFreeOperators._dist_adjoint_segment!(D.xs, D.tree, D.ys, D.ctx)
+    MatrixFreeOperators._dist_reduce!(D.root, D.xs, D.ctx)
+    for p in eachindex(D.parts)
+        interior_to_flat!(view(x̄flat, D.owned[p]), D.xs[p])
+    end
+    return x̄flat
+end
+dist_adjoint(D, ȳflat) = dist_adjoint!(similar(ȳflat), D, ȳflat)
+
+# Dense forward/adjoint matrices through the distributed path.
+function dist_materialize(D, n)
+    A_fwd, A_adj, e = zeros(n, n), zeros(n, n), zeros(n)
+    for j in 1:n
+        fill!(e, 0)
+        e[j] = 1
+        A_fwd[:, j] .= dist_mul(D, e)
+        A_adj[:, j] .= dist_adjoint(D, e)
+    end
+    return A_fwd, A_adj
 end
 
 @testset "Grid partitioning" begin
@@ -305,6 +437,239 @@ end
         @test A_adj ≈ A_fwd'
     end
 
+    #----------------------------------------------------------------# The distributed tree walk
+
+    cutbcs = ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+    gridof(cut, sz=(4, 6)) =
+        CartesianGrid(((0.0, 1.0), (0.0, 2.0)), sz; bc=((Dirichlet(), Dirichlet()), cut))
+
+    # The walk must reproduce the independent emulation on the slice-1 whitelist,
+    # or it has regressed the path that was already proven.
+    @testset "walk reproduces the emulated exchange on slice-1 operators" begin
+        rng = MersenneTwister(20260728)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            parts, gg, plans = dist_setup(g, np)
+            n = prod(local_size(g))
+            x, y = rand(rng, n), rand(rng, n)
+            for L in (laplacian(g), 0.5 * laplacian(g) + 2.0 * identity_op(), -1.5 * laplacian(g))
+                D = dist_prepare(L, g, np)
+                @test dist_mul(D, x) == dist_apply_emulated(L, g, parts, gg, plans, x)
+                @test dist_adjoint(D, y) ≈ dist_adjoint_emulated(L, g, parts, gg, plans, y)
+            end
+        end
+    end
+
+    @testset "forward parity: Composed" begin
+        rng = MersenneTwister(20260729)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            n = prod(local_size(g))
+            x = rand(rng, n)
+            composed = (
+                laplacian(g) * laplacian(g),
+                derivative(g, 1) * derivative(g, 2),
+                laplacian(g) * (2.0 * identity_op() + laplacian(g)),
+            )
+            for L in composed
+                @test dist_mul(dist_prepare(L, g, np), x) == flatten(apply(L, _field(g, x)))
+            end
+        end
+    end
+
+    # Negative control: without the mid-tree exchange the intermediate's cut-plane
+    # ghosts are stale zeros. If suppressing it changed nothing, the parity test
+    # above would be passing for the wrong reason.
+    @testset "the mid-tree exchange is load-bearing" begin
+        g = gridof((Dirichlet(), Neumann()))
+        n = prod(local_size(g))
+        x = rand(MersenneTwister(3), n)
+        L = laplacian(g) * laplacian(g)
+        D = dist_prepare(L, g, 2)
+        @test D.tree.xch !== nothing
+        # A *fresh* prepare for the suppressed variant: sharing D's buffers would
+        # let the intermediate keep the ghosts D's own scatter just wrote, and the
+        # control would pass for the wrong reason.
+        D2 = dist_prepare(L, g, 2)
+        Dsup = (;
+            D2...,
+            tree=MatrixFreeOperators.DistComposed(D2.tree.a, D2.tree.b, D2.tree.tmps, nothing),
+        )
+        @test dist_mul(D, x) != dist_mul(Dsup, x)
+    end
+
+    @testset "adjoint identity across partitions: Composed" begin
+        rng = MersenneTwister(20260730)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            n = prod(local_size(g))
+            x, y = rand(rng, n), rand(rng, n)
+            for L in (laplacian(g) * laplacian(g), derivative(g, 1) * derivative(g, 2))
+                D = dist_prepare(L, g, np)
+                @test isapprox(dot(dist_mul(D, x), y), dot(x, dist_adjoint(D, y)); rtol=1e-12)
+            end
+        end
+    end
+
+    # The literal statement of the transpose argument, on real exchange semantics.
+    @testset "dense structure: Composed and AdjointOp" begin
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut, (3, 6))
+            n = prod(local_size(g))
+            for L in (
+                laplacian(g) * laplacian(g),
+                derivative(g, 1) * derivative(g, 2),
+                adjoint(derivative(g, 1)),
+                adjoint(derivative(g, 2)) * derivative(g, 2),
+            )
+                D = dist_prepare(L, g, np)
+                A_fwd, A_adj = dist_materialize(D, n)
+                @test A_fwd ≈ materialize(prepare(D.L))
+                @test A_adj ≈ A_fwd'
+            end
+        end
+    end
+
+    @testset "AdjointOp leaf as a distributed forward operator" begin
+        rng = MersenneTwister(20260731)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            n = prod(local_size(g))
+            x = rand(rng, n)
+            L = adjoint(derivative(g, 1))
+            D = dist_prepare(L, g, np)
+            @test dist_mul(D, x) ≈ flatten(apply(L, _field(g, x)))
+        end
+    end
+
+    # The forward adjoint node's gather zeroes its input's ghosts. Sharing the
+    # enclosing segment's field would destroy exchanged ghosts a sibling still
+    # needs, making the answer depend on which term of the Added comes first.
+    # Verified load-bearing: dropping DistAdjoint.ins fails only the A + B order.
+    @testset "adjoint node under Added: both term orders agree" begin
+        rng = MersenneTwister(20260801)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            n = prod(local_size(g))
+            x = rand(rng, n)
+            A = adjoint(derivative(g, 1))
+            B = laplacian(g)
+            ref = flatten(apply(A + B, _field(g, x)))
+            first_ = dist_mul(dist_prepare(A + B, g, np), x)
+            second = dist_mul(dist_prepare(B + A, g, np), x)
+            @test first_ ≈ ref
+            @test second ≈ ref
+            @test first_ ≈ second
+        end
+    end
+
+    # Ghosts must be cleared once per adjoint segment: per leaf would wipe the
+    # first Added term before it reaches the reduction; never would let the
+    # previous call's ghosts leak into the accumulating sibling. Verified
+    # load-bearing: moving the clear per-leaf fails this testset.
+    @testset "adjoint segment ghost clearing" begin
+        rng = MersenneTwister(20260802)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            n = prod(local_size(g))
+            y = rand(rng, n)
+            for L in (
+                identity_op() + laplacian(g),
+                laplacian(g) + identity_op(),
+                laplacian(g) + laplacian(g),
+            )
+                D = dist_prepare(L, g, np)
+                x̄g = flatten(apply_adjoint!(scalar_field(g), D.L, _field(g, y), g))
+                first_ = dist_adjoint(D, y)
+                @test first_ ≈ x̄g
+                # Reusing the same prepared operator must be stateless.
+                @test dist_adjoint(D, y) == first_
+                @test dist_mul(D, y) == dist_mul(D, y)
+            end
+        end
+    end
+
+    # `_dist_reduce!` clears ghosts as part of placing interiors. No current
+    # consumer depends on it — the segment clear above already covers every path,
+    # and a stencil adjoint zeroes its own input — but it is part of the
+    # primitive's documented contract that the MDLA backend must also honour, so
+    # pin it here rather than leaving the next consumer to discover it.
+    @testset "reduce leaves ghosts cleared" begin
+        g = gridof((Dirichlet(), Neumann()))
+        D = dist_prepare(laplacian(g), g, 2)
+        for f in D.xs
+            fill!(f.data, 7.0)
+        end
+        MatrixFreeOperators._dist_reduce!(D.root, D.xs, D.ctx)
+        for f in D.xs
+            ghosts = copy(f.data)
+            ghosts[interior(f.grid)] .= 0
+            @test all(iszero, ghosts)
+        end
+    end
+
+    # Three partitions: the middle slab is cut on both faces, so a mid-tree
+    # reduction that double-counts shows up as a factor-2 error at the seams.
+    @testset "three-partition Composed dense structure" begin
+        g = gridof((Dirichlet(), Neumann()), (3, 9))
+        n = prod(local_size(g))
+        for L in (laplacian(g) * laplacian(g), adjoint(derivative(g, 2)) * derivative(g, 2))
+            D = dist_prepare(L, g, 3)
+            A_fwd, A_adj = dist_materialize(D, n)
+            @test A_fwd ≈ materialize(prepare(D.L))
+            @test A_adj ≈ A_fwd'
+        end
+    end
+
+    @testset "α/β through the walk" begin
+        rng = MersenneTwister(20260803)
+        g = gridof((Dirichlet(), Neumann()))
+        n = prod(local_size(g))
+        x, y0 = rand(rng, n), rand(rng, n)
+        for L in (laplacian(g) * laplacian(g), adjoint(derivative(g, 1)) + laplacian(g))
+            D = dist_prepare(L, g, 2)
+            base = dist_mul(D, x)
+            out = copy(y0)
+            dist_mul!(out, D, x, 2.5, 0.5)
+            @test out ≈ 2.5 .* base .+ 0.5 .* y0
+        end
+    end
+
+    # prepare does not recurse into an AdjointOp, so AdjointOp(A*B) would run
+    # aᵀ then bᵀ with no reduction between them. Normalization rewrites it to
+    # Composed(bᵀ, aᵀ), which the walk handles node by node.
+    @testset "AdjointOp over a composite is normalized" begin
+        g = gridof((Dirichlet(), Neumann()), (3, 6))
+        n = prod(local_size(g))
+        inner = derivative(g, 1) * derivative(g, 2)
+        L = MatrixFreeOperators.AdjointOp(inner)
+        pushed = MatrixFreeOperators._push_adjoints(L)
+        @test pushed isa Composed
+        @test !(pushed isa MatrixFreeOperators.AdjointOp)
+        D = dist_prepare(L, g, 2)
+        A_fwd, _ = dist_materialize(D, n)
+        @test A_fwd ≈ materialize(prepare(inner))'
+    end
+
+    # Steady-state work must not scale with the grid: a per-call scratch
+    # allocation inside the walk would show as a ~4x jump when cells quadruple.
+    @testset "walk allocations do not scale with grid size" begin
+        function steady(sz)
+            g = CartesianGrid(
+                ((0.0, 1.0), (0.0, 1.0)), sz;
+                bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Neumann())),
+            )
+            n = prod(sz)
+            x = rand(MersenneTwister(7), n)
+            D = dist_prepare(laplacian(g) * laplacian(g), g, 2)
+            out = similar(x)
+            dist_mul!(out, D, x)          # warm up
+            return @allocated dist_mul!(out, D, x)
+        end
+        small, large = steady((16, 16)), steady((32, 32))
+        @test large < 2 * small
+    end
+
     # The distributability whitelist is the whole defense against a silently
     # wrong distributed answer, so it is tested here — on CPU, in CI — not only
     # behind the GPU gate in test/mdla_gpu.jl.
@@ -317,10 +682,13 @@ end
 
         @testset "accepted" begin
             @test distributable(laplacian(g))
+            @test distributable(derivative(g, 1))
             @test distributable(identity_op())
             @test distributable(scaling(2.5))
             @test distributable(-1.5 * laplacian(g))
             @test distributable(0.5 * laplacian(g) + 2.0 * identity_op())
+            @test distributable(laplacian(g) * laplacian(g))
+            @test distributable(adjoint(derivative(g, 1)))
             L = 0.5 * laplacian(g) + 2.0 * identity_op()
             @test check(L) === L      # passes the operator through, does not throw
         end
@@ -363,6 +731,14 @@ end
             end
             @test err isa ArgumentError
             @test occursin("non-square", err.msg)
+        end
+
+        # A composition of two distributable factors on DIFFERENT grids is still
+        # rejected — the intermediate would need a second, consistent partitioning.
+        @testset "rejected: Composed across grids" begin
+            L = laplacian(gc) * restriction(g, gc)
+            @test !distributable(L)
+            @test_throws ArgumentError check(L)
         end
 
         # The error points at the offending node, not merely at the tree root.
