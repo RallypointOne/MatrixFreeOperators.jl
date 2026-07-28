@@ -14,8 +14,10 @@ cut-dimension BC is [`Periodic`](@ref)), and records its global plane range in
 (e.g. the MDLA extension), never by `apply_bc!`.
 
 Every slab must have at least `halo` planes along the cut dimension (twice that
-when periodic), so each ghost slab has a single owner and ghost requests are
-duplicate-free. `partition_grid(g, 1)` returns `[g]` unchanged.
+for a periodic cut into exactly two partitions, where both of a partition's
+ghost stacks come from the same neighbor), so each ghost slab has a single owner
+and ghost requests are duplicate-free. `partition_grid(g, 1)` returns `[g]`
+unchanged.
 
 ### Examples
 
@@ -34,7 +36,10 @@ function partition_grid(g::CartesianGrid{N,T}, nparts::Integer) where {N,T}
     n = local_size(g)[N]
     h = halo_width(g)[N]
     periodic = boundary_conditions(g)[N][1] isa Periodic
-    minplanes = periodic ? 2 * h : h
+    # A periodic 2-partition cut is the only case where one partition's low and
+    # high ghosts come from the SAME owner; 2h keeps those stacks disjoint. From
+    # three partitions up they have different owners, so h suffices.
+    minplanes = periodic && nparts == 2 ? 2 * h : h
     ranges = _slab_ranges(n, nparts)
     all(r -> length(r) >= minplanes, ranges) || throw(
         ArgumentError(
@@ -64,6 +69,12 @@ end
 # recomputed from the slab extent, where division could drift by an ulp and break
 # bit parity with the single-device apply. Outer extent endpoints are reused
 # exactly; interior cut points are derived from the global origin and spacing.
+#
+# Bit parity covers spacing, and so the stencil weights — not coordinates:
+# cell_center on a slab evaluates lo + (first(zr)-1)h + (i-0.5)h against the
+# global lo + (z-0.5)h, which can differ in the last ulp. Nothing in slice 1
+# evaluates coordinates on a slab (the RHS is assembled on the global grid), but
+# distributed boundary_rhs/set! (#31) will need to account for it.
 function _slab_grid(
     g::CartesianGrid{N,T}, zr::UnitRange{Int}, p::Int, nparts::Int, periodic::Bool
 ) where {N,T}
@@ -89,6 +100,14 @@ end
 function _plane_flat_range(gsize::NTuple{N,Int}, z::Int, ncomp::Int) where {N}
     m = prod(Base.front(gsize)) * ncomp
     return ((z - 1) * m + 1):(z * m)
+end
+
+# Global flat interior indices owned by slab `lg` of global grid `g`: the
+# contiguous span of its cut-dimension planes, in `flatten` layout.
+function _owned_flat_range(g::AbstractGrid{N}, lg::AbstractGrid{N}; ncomp::Int=1) where {N}
+    zr = lg.local_range[N]
+    m = prod(Base.front(local_size(g))) * ncomp
+    return ((first(zr) - 1) * m + 1):(last(zr) * m)
 end
 
 """

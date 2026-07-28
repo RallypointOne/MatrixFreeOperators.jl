@@ -38,6 +38,8 @@ distributed/AMR work later changes only the grid and that function, never operat
   import Adapt, Enzyme, KernelAbstractions, Krylov, Mooncake
   include("test/test_utils.jl"); include("test/laplacian.jl")'
   ```
+- `quarto render docs` runs the **full test suite** — `docs/pages/coverage.qmd` calls `generate_coverage(...; run_test=true)`. Rendering docs is not cheap.
+- The docs sidebar (`docs/_quarto.yml`) has a fixed shape: `pages/api.qmd` lives alone in its own `part: "API"`, between `part: "Docs"` and `part: "Resources"`. `docs/index.qmd` must open with `## Overview`, then `## Quickstart`.
 
 ## Testing conventions
 Every operator gets four checks: action vs. analytic solution, the adjoint identity, composition

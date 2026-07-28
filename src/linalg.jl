@@ -14,6 +14,11 @@ boundary conditions and `halo_update!`, never solver unknowns. Each `mul!` copie
 the flat vector into a halo-padded scratch field, applies the operator, and
 copies the interior back out fused with the `α`/`β` axpby, so the solver's
 vectors are never mutated by halo or BC fills.
+
+`mul!` writes only the interior of `xpad`, deliberately leaving ghost cells as it
+found them: the distributed path ([`prepare_distributed`](@ref)) fills
+[`Interface`](@ref) ghost slabs from a neighbor exchange *before* calling `mul!`,
+and zeroing them here would silently discard that data.
 """
 struct PreparedOperator{O<:AbstractOperator,G<:AbstractGrid,FX<:AbstractField,FY<:AbstractField}
     op::O
@@ -455,6 +460,8 @@ Base.eltype(P::_AnyPrepared) = _scalar_eltype(eltype(P.xpad))
 function LinearAlgebra.mul!(
     y::AbstractVector, P::PreparedOperator, x::AbstractVector, α::Number, β::Number
 )
+    # Interior-only write, by contract: the MDLA extension unpacks exchanged
+    # ghost slabs into P.xpad before this call. Do not add zero_ghosts! here.
     flat_to_interior!(P.xpad, x)
     apply!(P.ypad, P.op, P.xpad, P.grid)
     interior_to_flat!(y, P.ypad, α, β)

@@ -10,12 +10,7 @@ function dist_setup(g, nparts)
     return parts, ghost_globals, plans
 end
 
-function owned_flat_range(g, lg)
-    N = dimension(g)
-    zr = lg.local_range[N]
-    m = prod(local_size(g)[1:(N - 1)])
-    return ((first(zr) - 1) * m + 1):(last(zr) * m)
-end
+owned_flat_range(g, lg) = MatrixFreeOperators._owned_flat_range(g, lg)
 
 # View of one cut-dimension halo plane at transverse-interior positions — the
 # slab a ghost chunk fills (forward) or is packed from (adjoint).
@@ -106,6 +101,13 @@ end
         gp = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (4, 6);
             bc=((Dirichlet(), Dirichlet()), (Periodic(), Periodic())), halo=(1, 2))
         @test_throws ArgumentError partition_grid(gp, 2)  # periodic slabs need ≥ 2h planes
+        # ...but the same grid cut three ways is fine: each slab holds exactly h
+        # planes, and its low and high ghosts now come from distinct owners — so
+        # the requests stay duplicate-free, which is all the 2h rule protected
+        gp3, gp3gg, _ = dist_setup(gp, 3)
+        @test [local_size(p)[2] for p in gp3] == [2, 2, 2]
+        @test all(p -> allunique(gp3gg[p]), 1:3)
+        @test all(p -> isempty(intersect(gp3gg[p], owned_flat_range(gp, gp3[p]))), 1:3)
         gd = CartesianGrid{2,Float64,typeof(g.bc),typeof(g.device),Symbol}(
             g.extent, g.spacing, g.size, g.halo, g.bc, g.device, g.local_range, :topo
         )
@@ -190,6 +192,43 @@ end
         flat_to_interior!(xg, xflat)
         yref = flatten(apply(L, copy(xg)))
         @test dist_apply_emulated(L, g, parts, gg, plans, xflat) == yref
+    end
+
+    @testset "slab apply through the prepared mul! boundary" begin
+        # Guards the core↔ext contract the MDLA extension leans on: mul! writes
+        # only the interior, so Interface ghosts staged into P.xpad beforehand
+        # survive the local sweep. A zero_ghosts! added to mul! breaks this.
+        seed = Random.MersenneTwister(29)
+        g = CartesianGrid(
+            ((0.0, 1.0), (0.0, 2.0)), (4, 9);
+            bc=((Periodic(), Periodic()), (Dirichlet(), Neumann())),
+        )
+        L = laplacian(g)
+        parts, gg, plans = dist_setup(g, 3)
+        xflat = rand(seed, prod(local_size(g)))
+        xg = scalar_field(g)
+        flat_to_interior!(xg, xflat)
+        yref = flatten(apply(L, copy(xg)))
+
+        # Stage the ghosts once per slab, then drive the flat Krylov boundary.
+        function slab_mul!(out, α...)
+            for (p, lg) in enumerate(parts)
+                P = prepare(L, scalar_field(lg))
+                owned = owned_flat_range(g, lg)
+                ghost = xflat[gg[p]]
+                for (sec, plane) in plans[p]
+                    dst = halo_plane_view(P.xpad, plane)
+                    dst .= reshape(view(ghost, sec), size(dst))
+                end
+                mul!(view(out, owned), P, view(xflat, owned), α...)
+            end
+            return out
+        end
+
+        @test slab_mul!(similar(xflat)) == yref
+
+        y0 = rand(seed, length(xflat))
+        @test slab_mul!(copy(y0), 2.5, 0.5) ≈ 2.5 .* yref .+ 0.5 .* y0
     end
 
     @testset "3-D forward parity" begin

@@ -9,8 +9,8 @@ using LinearAlgebra: LinearAlgebra, mul!
 import Adapt
 import MatrixFreeOperators:
     AbstractGrid, AbstractOperator, Field, IdentityOp, Laplacian, PreparedOperator,
-    ScalingOp, Scaled, Added, _require_grid, _slab_ghost_layout, zero_ghosts!,
-    prepare_distributed
+    ScalingOp, Scaled, Added, _owned_flat_range, _require_grid, _slab_ghost_layout,
+    zero_ghosts!, prepare_distributed
 import MultiDeviceLinearAlgebra: _empty_mdv
 
 #--------------------------------------------------------------------------------# Distributed prepared operator
@@ -25,6 +25,10 @@ partitions' `Interface` halo slabs before every local apply. Built with
 [`prepare_distributed`](@ref); `mul!`/`size`/`eltype` operate on MDLA
 `MultiDeviceVector`s partitioned by `spec` (ghost-free — the exchange lives on
 the operator, so Krylov workspace vectors carry no communication buffers).
+
+Stateful and single-threaded, like [`PreparedOperator`](@ref) and for the same
+reason: `mul!` stages through the operator-owned `ghost.local_x` and each
+partition's `xpad`, so concurrent solves need one `prepare_distributed` each.
 """
 struct MDLAPreparedOperator{T,S<:PartitionSpec,GE<:GhostExchange{T}}
     parts::Vector{PreparedOperator}   # heterogeneous local-grid BC type params
@@ -60,23 +64,19 @@ function prepare_distributed(L::AbstractOperator, nparts::Integer; devices=nothi
     g = _require_grid(L)
     g isa CartesianGrid ||
         throw(ArgumentError("prepare_distributed requires a CartesianGrid, got $(nameof(typeof(g)))"))
-    if devices === nothing && nparts > length(CUDA.devices())
+    ndev = devices === nothing ? length(CUDA.devices()) : length(devices)
+    if nparts > ndev
         throw(
             ArgumentError(
                 "$nparts partitions need $nparts distinct CUDA devices, " *
-                "$(length(CUDA.devices())) available",
+                "$ndev $(devices === nothing ? "available" : "given in `devices`")",
             ),
         )
     end
     T = eltype(spacing(g))
     locals = partition_grid(g, nparts)
     ghost_globals, plans = _slab_ghost_layout(g, locals)
-    N = dimension(g)
-    m = prod(Base.front(local_size(g)))
-    ranges = [
-        ((first(lg.local_range[N]) - 1) * m + 1):(last(lg.local_range[N]) * m)
-        for lg in locals
-    ]
+    ranges = [_owned_flat_range(g, lg) for lg in locals]
     spec = devices === nothing ? PartitionSpec(ranges) : PartitionSpec(ranges; devices)
     ghost = GhostExchange(ghost_globals, spec, T)
     parts = Vector{PreparedOperator}(undef, nparts)
