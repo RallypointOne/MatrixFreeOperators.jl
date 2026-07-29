@@ -14,10 +14,11 @@ using LinearAlgebra: LinearAlgebra, mul!
 import Adapt
 import MatrixFreeOperators:
     AbstractField, AbstractGrid, AbstractOperator, DistNode, Field, PreparedOperator,
-    _check_distributable, _dist_adjoint_segment!, _dist_capply!, _dist_map!,
-    _dist_reduce!, _dist_scatter!, _dist_tree, _owned_flat_range, _pack_local_x!,
-    _push_adjoints, _require_grid, _slab_ghost_layout, _unpack_ghosts!, zero_ghosts!,
-    prepare_distributed
+    _check_distributable, _check_one_grid, _dist_adjoint_segment!, _dist_boundary_rhs!,
+    _dist_capply!, _dist_lift_scratch, _dist_map!, _dist_reduce!, _dist_scatter!,
+    _dist_set!, _dist_tree, _owned_flat_range, _pack_local_x!, _push_adjoints,
+    _require_grid, _slab_ghost_layout, _slab_op, _unpack_ghosts!, zero_ghosts!,
+    boundary_rhs, prepare_distributed
 import MultiDeviceLinearAlgebra: _empty_mdv, copy_exchange
 
 #--------------------------------------------------------------------------------# Backend primitives
@@ -159,10 +160,15 @@ function prepare_distributed(L0::AbstractOperator, nparts::Integer; devices=noth
     # Normalize adjoints down to the leaves first: prepare does not recurse into
     # an AdjointOp, so AdjointOp(A*B) would otherwise skip its mid-tree reduction.
     L = _push_adjoints(L0)
+    # Both guards run ONCE, here, on the global tree — before `_slab_op` rewrites
+    # it. That ordering is load-bearing, not incidental: a localized ScalingOp
+    # reports the slab grid from `operator_grid` while a sibling Laplacian still
+    # reports the global one, so re-checking a localized tree would reject it.
     _check_distributable(L)
     g = _require_grid(L)
     g isa CartesianGrid ||
         throw(ArgumentError("prepare_distributed requires a CartesianGrid, got $(nameof(typeof(g)))"))
+    _check_one_grid(L, g)
     ndev = devices === nothing ? length(CUDA.devices()) : length(devices)
     if nparts > ndev
         throw(
@@ -182,12 +188,20 @@ function prepare_distributed(L0::AbstractOperator, nparts::Integer; devices=noth
         MultiDeviceVector{T}(undef, spec),
     )
     ctx = MDLAContext(spec)
+    # Field parameters go to the HOST before being sliced. A coefficient the user
+    # already moved to device 0 would make the slice below a cross-device copy —
+    # the one operation MDLA's P2P probe exists to guard, and the one that returns
+    # silent zeros on IOMMU-affected hosts. Slice on the host, upload the slab.
+    Lh = Adapt.adapt(Array, L)
     parts = Vector{PreparedOperator}(undef, nparts)
     @sync for d in 1:nparts
         @async begin
             CUDA.device!(device_id(spec, d))
             lg = Adapt.adapt(CuArray, locals[d])
-            parts[d] = prepare(L, scalar_field(lg, T))
+            # The adapted coefficient's grid is an adapted twin of locals[d], not
+            # `===` lg. Nothing past prepare compares grid identity, and `interior`
+            # only needs the shape, which matches by construction.
+            parts[d] = prepare(Adapt.adapt(CuArray, _slab_op(Lh, locals[d])), scalar_field(lg, T))
         end
     end
     xpads = AbstractField[p.xpad for p in parts]
@@ -237,6 +251,143 @@ function _mul_adjoint!(
     end
     _dist_adjoint_segment!(P.xpads, P.tree, P.ypads, P.ctx)
     return _root_reduce!(P.root, P.xpads, P.ctx, x̄)
+end
+
+#--------------------------------------------------------------------------------# Right-hand side assembly
+
+"""
+    boundary_rhs(P::MDLAPreparedOperator) -> MultiDeviceVector
+
+Distributed boundary lift of `P`'s operator — the `b` of the affine split
+`L_full(x) = L(x) + b`, assembled slab-locally.
+
+Every partition assembles the lift of its own slab: `Interface` faces contribute
+nothing, so only the slabs owning a physical face lift through the cut dimension,
+while transverse physical faces contribute on all of them. A `Composed` node's
+intermediate lift crosses cut planes through the same mid-tree exchange the
+forward walk uses. Nothing global is ever materialized.
+
+Returns a fresh `MultiDeviceVector` on `P.spec`, so `rhs = f .- boundary_rhs(P)`
+stays partition-local. Shares `P`'s walk buffers, exactly as `mul!` does — do not
+call it concurrently with a solve on the same prepared operator.
+
+### Examples
+
+```julia
+P = prepare_distributed(laplacian(g), 2)
+b = set!(MultiDeviceVector{Float64}(undef, P.spec), P, x -> sin(x[1]))
+b .-= boundary_rhs(P)
+u, stats = Krylov.cg(P, b)
+```
+
+See also: [`distributed_rhs`](@ref), [`prepare_distributed`](@ref).
+"""
+function boundary_rhs(P::MDLAPreparedOperator{T}) where {T}
+    # zs is transient on purpose: the lift is a once-per-solve assembly, and a
+    # permanent padded field per device is memory a homogeneous problem shouldn't pay.
+    zs = _dist_lift_scratch(P.xpads, P.ctx)
+    _dist_boundary_rhs!(P.ypads, P.tree, zs, P.ctx, true, false)
+    b = MultiDeviceVector{T}(undef, P.spec)
+    _dist_map!(P.ctx) do d
+        interior_to_flat!(b.partitions[d], P.ypads[d])
+    end
+    return b
+end
+
+"""
+    local_grids(P::MDLAPreparedOperator) -> Vector
+
+The slab grid each partition owns, in partition order, **on the host**.
+
+The escape hatch for building distributed data this module has no helper for:
+allocate a [`Field`](@ref) on one of these, fill it however you like, and hand the
+vector of fields to [`distributed_rhs`](@ref). Each grid records its span of the
+global grid in `local_range`, and [`cell_center`](@ref) on it agrees bitwise with
+the uncut grid.
+
+Host grids on purpose. A field allocated on a device grid would land on whichever
+device happened to be current, and `distributed_rhs` would then read it from a
+*different* device — the cross-device copy MDLA's P2P probe exists to guard, and
+the one that returns silent zeros on IOMMU-affected hosts. Build on the host;
+`distributed_rhs` uploads each slab inside its own partition's device context.
+"""
+MatrixFreeOperators.local_grids(P::MDLAPreparedOperator) =
+    [Adapt.adapt(Array, p.grid) for p in P.parts]
+
+"""
+    set!(x::MultiDeviceVector, P::MDLAPreparedOperator, fun) -> x
+
+Fill `x` with `fun(coords)` evaluated slab-locally on each partition.
+
+The distributed twin of `set!(::Field, fun)`, and exact: `cell_center` evaluates
+at the global cell index, so this is bit-for-bit `MultiDeviceVector(flatten(set!(scalar_field(g), fun)), P.spec)`
+without ever building the global field. Uses `P`'s input scratch, so the same
+concurrency caveat as `mul!` applies.
+"""
+function MatrixFreeOperators.set!(
+    x::MultiDeviceVector{T}, P::MDLAPreparedOperator{T}, fun
+) where {T}
+    _dist_set!(P.xpads, fun, P.ctx)
+    _dist_map!(P.ctx) do d
+        interior_to_flat!(x.partitions[d], P.xpads[d])
+    end
+    return x
+end
+
+"""
+    distributed_rhs(P::MDLAPreparedOperator, f) -> MultiDeviceVector
+
+The solve-ready right-hand side `f - boundary_rhs(P)`, assembled entirely
+slab-locally.
+
+`f` is either a function of physical coordinates or one [`Field`](@ref) per
+partition on the grids [`local_grids`](@ref) reports. Equivalent to — and bitwise
+equal to — the single-device recipe
+`MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)`, without
+materializing the global right-hand side on one device.
+
+### Examples
+
+```julia
+P = prepare_distributed(laplacian(g), 2)
+b = distributed_rhs(P, x -> sin(x[1]) * exp(-x[2]))
+u, stats = Krylov.cg(P, b)
+```
+"""
+function MatrixFreeOperators.distributed_rhs(P::MDLAPreparedOperator{T}, f) where {T}
+    x = MultiDeviceVector{T}(undef, P.spec)
+    _source!(x, P, f)
+    b = boundary_rhs(P)
+    _dist_map!(P.ctx) do d
+        x.partitions[d] .-= b.partitions[d]
+    end
+    return x
+end
+
+_source!(x, P::MDLAPreparedOperator, fun) = MatrixFreeOperators.set!(x, P, fun)
+function _source!(x, P::MDLAPreparedOperator, fields::AbstractVector)
+    length(fields) == length(P.parts) || throw(
+        ArgumentError(
+            "distributed_rhs got $(length(fields)) source fields for " *
+            "$(length(P.parts)) partitions; pass one per partition, on the grids " *
+            "local_grids(P) reports",
+        ),
+    )
+    for (d, f) in enumerate(fields)
+        flat_length(f) == length(P.spec.ranges[d]) || throw(
+            ArgumentError(
+                "distributed_rhs source field $d has $(flat_length(f)) interior DOFs " *
+                "but partition $d owns $(length(P.spec.ranges[d])); build it on " *
+                "local_grids(P)[$d]",
+            ),
+        )
+    end
+    # Adapt inside the partition's own device context, so a host field is uploaded
+    # to the device that will read it rather than copied across devices.
+    _dist_map!(P.ctx) do d
+        interior_to_flat!(x.partitions[d], Adapt.adapt(CuArray, fields[d]))
+    end
+    return x
 end
 
 #--------------------------------------------------------------------------------# Krylov workspace

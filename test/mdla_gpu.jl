@@ -26,23 +26,32 @@ end
 @testset "guards" begin
     g = mdla_grid((Dirichlet(), Dirichlet()))
     gc = coarsen(g)
-    κ = set!(scalar_field(g), x -> 1 + x[1] / 7)
+    v = set!(vector_field(g), x -> SVector(1.0, 0.0))
     @test_throws ArgumentError prepare_distributed(MatrixFreeOperators.gradient(g), 1)
     @test_throws ArgumentError prepare_distributed(MatrixFreeOperators.divergence(g), 1)
-    @test_throws ArgumentError prepare_distributed(scaling(κ) + laplacian(g), 1)
+    @test_throws ArgumentError prepare_distributed(advection(g, v) + laplacian(g), 1)
     @test_throws ArgumentError prepare_distributed(restriction(g, gc), 1)
     # both factors distributable, but on different grids
     @test_throws ArgumentError prepare_distributed(laplacian(gc) * restriction(g, gc), 1)
     @test_throws ArgumentError prepare_distributed(laplacian(g), NGPUS_MDLA + 1)
+    # a coefficient on some OTHER grid: each leaf is fine alone, only the tree shows it
+    κc = set!(scalar_field(gc), x -> 1 + x[1] / 7)
+    @test_throws ArgumentError prepare_distributed(laplacian(g) + scaling(κc), 1)
 end
 
 @testset "newly distributable operators are accepted" begin
     g = mdla_grid((Dirichlet(), Dirichlet()))
+    κ = set!(scalar_field(g), x -> 1 + x[1] / 7)
     for L in (
         laplacian(g) * laplacian(g),
         adjoint(derivative(g, 1)),
         adjoint(derivative(g, 1)) + laplacian(g),
         MatrixFreeOperators.AdjointOp(derivative(g, 1) * derivative(g, 2)),
+        # slice 2b
+        scaling(κ),
+        scaling(κ) + laplacian(g),
+        laplacian(g) * scaling(κ),
+        adjoint(derivative(g, 1) * scaling(κ)),
     )
         @test prepare_distributed(L, 1) isa MDLA_EXT.MDLAPreparedOperator
     end
@@ -351,5 +360,183 @@ end
     @test allequal(niters)
     if NGPUS_MDLA < 2
         @test_skip "2-partition CG parity — needs ≥ 2 CUDA devices"
+    end
+end
+
+#--------------------------------------------------------------------------------# Slice 2b: Field coefficients, boundary lift, distributed RHS
+
+# The coefficient VARIES ALONG THE CUT DIMENSION (dim 2) and is asymmetric about
+# it. A coefficient constant in the cut dimension could not catch a slice shifted
+# by the halo width, which is the likeliest way `_slab_field` goes wrong.
+mdla_coeff(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
+
+# `prepare_distributed` slices the coefficient on the host and uploads the slab.
+# If it ever uploaded the global field instead, the shapes would still broadcast on
+# partition 1 and only the later partitions would be wrong — so assert the shape.
+@testset "the coefficient is sliced and uploaded per partition" begin
+    if NGPUS_MDLA >= 2
+        g = mdla_grid((Dirichlet(), Neumann()))
+        κ = set!(scalar_field(g), mdla_coeff)
+        P = prepare_distributed(laplacian(g) * scaling(κ), 2)
+        locals = partition_grid(g, 2)
+        for d in 1:2
+            # Composed(laplacian, scaling) ⇒ the inner factor `b` is the scaling
+            Sd = P.tree.b.ops[d]
+            @test Sd isa MatrixFreeOperators.ScalingOp
+            κd = Sd.coeff
+            @test κd.data isa CuArray
+            @test size(κd.data) == MatrixFreeOperators.padded_size(locals[d])
+            @test Array(interior(κd)) == collect(view(interior(κ), locals[d].local_range...))
+        end
+    else
+        @test_skip "per-partition coefficient upload — needs ≥ 2 CUDA devices"
+    end
+end
+
+@testset "Field coefficient: 2-partition forward parity" begin
+    if NGPUS_MDLA >= 2
+        rng = Random.MersenneTwister(61)
+        for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+            g = mdla_grid(cutbc)
+            n = prod(local_size(g))
+            xflat = rand(rng, n)
+            κ = set!(scalar_field(g), mdla_coeff)
+            for L in (
+                scaling(κ),
+                laplacian(g) * scaling(κ),
+                scaling(κ) * laplacian(g),
+                2.0 * scaling(κ) + laplacian(g),
+                derivative(g, 1) * scaling(κ) * derivative(g, 1),
+            )
+                P1 = prepare_distributed(L, 1)
+                y1 = MultiDeviceVector(zeros(n), P1.spec)
+                mul!(y1, P1, MultiDeviceVector(copy(xflat), P1.spec))
+
+                P2 = prepare_distributed(L, 2)
+                y2 = MultiDeviceVector(zeros(n), P2.spec)
+                mul!(y2, P2, MultiDeviceVector(copy(xflat), P2.spec))
+                @test gather(y2) == gather(y1)
+            end
+        end
+    else
+        @test_skip "Field coefficient forward parity — needs ≥ 2 CUDA devices"
+    end
+end
+
+@testset "Field coefficient: adjoint identity and transpose structure" begin
+    if NGPUS_MDLA >= 2
+        rng = Random.MersenneTwister(67)
+        g = mdla_grid((Dirichlet(), Neumann()))
+        n = prod(local_size(g))
+        κ = set!(scalar_field(g), mdla_coeff)
+        x, y = rand(rng, n), rand(rng, n)
+        for L in (scaling(κ) * laplacian(g), laplacian(g) * scaling(κ))
+            P = prepare_distributed(L, 2)
+            Lx = MultiDeviceVector(zeros(n), P.spec)
+            mul!(Lx, P, MultiDeviceVector(copy(x), P.spec))
+            Ly = MultiDeviceVector(zeros(n), P.spec)
+            MDLA_EXT._mul_adjoint!(Ly, P, MultiDeviceVector(copy(y), P.spec))
+            @test dot(gather(Lx), y) ≈ dot(x, gather(Ly)) rtol = 1e-12
+        end
+
+        # Dense structure on a small grid, against the single-device reference.
+        gs = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (3, 6);
+            bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Neumann())))
+        ns = prod(local_size(gs))
+        κs = set!(scalar_field(gs), mdla_coeff)
+        for Lt in (scaling(κs) * laplacian(gs), adjoint(derivative(gs, 1) * scaling(κs)))
+            P = prepare_distributed(Lt, 2)
+            A_fwd, A_adj = mdla_materialize(P, ns)
+            @test A_fwd ≈ materialize(prepare(MatrixFreeOperators._push_adjoints(Lt)))
+            @test A_adj ≈ A_fwd'
+        end
+    else
+        @test_skip "Field coefficient adjoint — needs ≥ 2 CUDA devices"
+    end
+end
+
+# The lift assembles per slab: Interface faces contribute nothing, so only the end
+# slabs lift through the cut dimension. A different value on every face, so a slab
+# that applied a cut BC to its Interface face cannot pass.
+@testset "distributed boundary_rhs parity" begin
+    for cut in ((Dirichlet(2.5), Neumann(0.4)), (Periodic(), Periodic()))
+        g = CartesianGrid(
+            ((0.0, 2π), (0.0, 1.0)), (16, 18);
+            bc=((Dirichlet(0.75), Neumann(-1.25)), cut),
+        )
+        κ = set!(scalar_field(g), mdla_coeff)
+        D1 = derivative(g, 1)
+        for L in (
+            laplacian(g),
+            -1.5 * laplacian(g),
+            laplacian(g) * laplacian(g),
+            scaling(κ) * laplacian(g),
+            adjoint(D1) + laplacian(g),
+            laplacian(g) + adjoint(D1),
+        )
+            ref = flatten(boundary_rhs(L, g))
+            for nd in 1:min(NGPUS_MDLA, 2)
+                P = prepare_distributed(L, nd)
+                @test gather(boundary_rhs(P)) == ref
+            end
+        end
+    end
+    if NGPUS_MDLA < 2
+        @test_skip "2-partition boundary_rhs parity — needs ≥ 2 CUDA devices"
+    end
+end
+
+# The whole point of the slice: assemble `f - b` without a global-sized array on
+# any one device, and get the same system — hence the same iteration count — the
+# single-device path assembles globally. An iteration count that moves with the
+# partition count means the RHS is not partition-independent.
+@testset "Krylov.cg with an inhomogeneous RHS assembled distributed" begin
+    g = CartesianGrid(
+        ((0.0, 1.0), (0.0, 1.0)), (24, 26);
+        bc=((Dirichlet(0.5), Dirichlet(-0.25)), (Dirichlet(1.0), Dirichlet(-0.5))),
+    )
+    κ = set!(scalar_field(g), mdla_coeff)
+    fun = x -> sin(π * x[1]) * sin(π * x[2]) + 0.3x[2]
+    for L in (-1.0 * laplacian(g), -1.0 * (scaling(κ) * laplacian(g)))
+        bflat = flatten(set!(scalar_field(g), fun)) .- flatten(boundary_rhs(L, g))
+        u_cpu, stats_cpu = Krylov.cg(prepare(L), bflat; atol=1e-10, rtol=1e-10)
+        @test stats_cpu.solved
+
+        niters = Int[]
+        for nd in 1:min(NGPUS_MDLA, 2)
+            P = prepare_distributed(L, nd)
+            b = distributed_rhs(P, fun)
+            @test gather(b) == bflat            # bitwise, thanks to global-index cell_center
+            u, stats = Krylov.cg(P, b; atol=1e-10, rtol=1e-10)
+            @test stats.solved
+            @test isapprox(gather(u), u_cpu; rtol=1e-8)
+            push!(niters, stats.niter)
+        end
+        @test allequal(niters)
+    end
+    if NGPUS_MDLA < 2
+        @test_skip "2-partition inhomogeneous CG parity — needs ≥ 2 CUDA devices"
+    end
+end
+
+# The escape hatch: build the source term yourself on the grids local_grids
+# reports, and hand the fields to distributed_rhs.
+@testset "distributed_rhs from per-partition fields" begin
+    if NGPUS_MDLA >= 2
+        g = CartesianGrid(
+            ((0.3, 1.7), (-1.1, 2.9)), (16, 18);
+            bc=((Dirichlet(0.75), Neumann(-1.25)), (Dirichlet(2.5), Neumann(0.4))),
+        )
+        L = laplacian(g)
+        fun = x -> sin(3x[1]) * exp(-x[2]) + 0.25x[1] * x[2]
+        ref = flatten(set!(scalar_field(g), fun)) .- flatten(boundary_rhs(L, g))
+        P = prepare_distributed(L, 2)
+        grids = local_grids(P)
+        @test length(grids) == 2
+        fields = [set!(scalar_field(lg), fun) for lg in grids]
+        @test gather(distributed_rhs(P, fields)) == ref
+        @test_throws ArgumentError distributed_rhs(P, fields[1:1])
+    else
+        @test_skip "distributed_rhs from fields — needs ≥ 2 CUDA devices"
     end
 end

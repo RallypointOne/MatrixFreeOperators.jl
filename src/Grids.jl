@@ -144,12 +144,22 @@ padded_size(g::AbstractGrid{N}) where {N} =
     cell_center(g::AbstractGrid, I::CartesianIndex) -> SVector
 
 Physical coordinates of the center of cell `I` (in halo-padded index space).
+
+Evaluated at the *global* cell index `local_range` reports, against the global
+`extent` origin — so a [`partition_grid`](@ref) slab and the grid it was cut from
+return **bitwise identical** coordinates for the same cell. Recomputing from a
+slab-local origin instead would round twice and drift by an ulp, which is enough
+to make a coordinate-assembled right-hand side depend on the partition count.
+For every undistributed grid and every [`BlockForest`](@ref) leaf grid
+`first(local_range[d]) == 1`, so this is bit-for-bit the plain formula
+`min + (i - 1/2)Δ`.
 """
 function cell_center(g::CartesianGrid{N,T}, I::CartesianIndex{N}) where {N,T}
     return SVector(
-        ntuple(
-            d -> g.extent[d][1] + (T(I[d] - g.halo[d]) - T(0.5)) * g.spacing[d], Val(N)
-        )
+        ntuple(Val(N)) do d
+            z = first(g.local_range[d]) - 1 + I[d] - g.halo[d]   # global cell index
+            g.extent[d][1] + (T(z) - T(0.5)) * g.spacing[d]
+        end
     )
 end
 

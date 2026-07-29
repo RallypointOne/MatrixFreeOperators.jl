@@ -145,11 +145,50 @@ which (0-indexed, unique) — and returns an operator over MDLA
 using MultiDeviceLinearAlgebra, CUDA, Krylov
 g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))
 P = prepare_distributed(laplacian(g), 2)
-b = MultiDeviceVector(flatten(f), P.spec)
+b = distributed_rhs(P, x -> sin(x[1]) * exp(-x[2]))
 u, stats = Krylov.cg(P, b)
 ```
+
+See also: [`distributed_rhs`](@ref), [`local_grids`](@ref), [`boundary_rhs`](@ref).
 """
 function prepare_distributed end
+
+"""
+    distributed_rhs(P, f) -> distributed vector
+
+Solve-ready right-hand side `f - boundary_rhs(P)` for a distributed prepared
+operator, assembled entirely partition-locally — nothing global is materialized
+on one device.
+
+`f` is either a function of physical coordinates or one [`Field`](@ref) per
+partition on the grids [`local_grids`](@ref) reports. Implemented by package
+extensions, like [`prepare_distributed`](@ref).
+
+### Examples
+
+```julia
+P = prepare_distributed(laplacian(g), 2)
+b = distributed_rhs(P, x -> sin(x[1]) * exp(-x[2]))
+u, stats = Krylov.cg(P, b)
+```
+
+See also: [`local_grids`](@ref), [`boundary_rhs`](@ref).
+"""
+function distributed_rhs end
+
+"""
+    local_grids(P) -> Vector{<:AbstractGrid}
+
+The grid each partition of a distributed prepared operator owns, in partition
+order.
+
+The escape hatch for source data [`distributed_rhs`](@ref) cannot build from a
+coordinate function: allocate a [`Field`](@ref) on one of these, fill it however
+you like, and pass the vector of fields to `distributed_rhs`. Each grid records
+its span of the global grid in `local_range`, and [`cell_center`](@ref) on it
+agrees bitwise with the uncut grid. Implemented by package extensions.
+"""
+function local_grids end
 
 # Tree-walking buffer allocation: leaves pass through unchanged; Composed and
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never

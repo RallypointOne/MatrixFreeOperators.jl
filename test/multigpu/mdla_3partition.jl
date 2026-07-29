@@ -151,6 +151,104 @@ mp_grid(cutbc) = CartesianGrid(
             @test stats.solved
             @test isapprox(gather(u), u_cpu; rtol=1e-8)
         end
+
+        #------------------------------------------------------------# Slice 2b
+
+        # The middle slab is the first place a coefficient slice can be right at
+        # one seam and wrong at the other. Coefficient varies along the cut.
+        mp_coeff(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
+
+        @testset "3-partition Field coefficient forward parity" begin
+            rng = Random.MersenneTwister(71)
+            for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                g = mp_grid(cutbc)
+                n = prod(local_size(g))
+                xflat = rand(rng, n)
+                κ = set!(scalar_field(g), mp_coeff)
+                for L in (
+                    scaling(κ),
+                    laplacian(g) * scaling(κ),
+                    scaling(κ) * laplacian(g),
+                    derivative(g, 1) * scaling(κ) * derivative(g, 1),
+                )
+                    P1 = prepare_distributed(L, 1)
+                    y1 = MultiDeviceVector(zeros(n), P1.spec)
+                    mul!(y1, P1, MultiDeviceVector(copy(xflat), P1.spec))
+
+                    P3 = prepare_distributed(L, 3)
+                    y3 = MultiDeviceVector(zeros(n), P3.spec)
+                    mul!(y3, P3, MultiDeviceVector(copy(xflat), P3.spec))
+                    @test gather(y3) == gather(y1)
+                end
+            end
+        end
+
+        @testset "3-partition Field coefficient adjoint identity" begin
+            rng = Random.MersenneTwister(73)
+            for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                g = mp_grid(cutbc)
+                n = prod(local_size(g))
+                κ = set!(scalar_field(g), mp_coeff)
+                for L in (scaling(κ) * laplacian(g), laplacian(g) * scaling(κ))
+                    P = prepare_distributed(L, 3)
+                    x = MultiDeviceVector(rand(rng, n), P.spec)
+                    y = MultiDeviceVector(rand(rng, n), P.spec)
+                    Lx = MultiDeviceVector(zeros(n), P.spec)
+                    mul!(Lx, P, x)
+                    x̄ = MultiDeviceVector(zeros(n), P.spec)
+                    MDLA_EXT_MP._mul_adjoint!(x̄, P, y)
+                    @test isapprox(dot(Lx, y), dot(x, x̄); rtol=1e-12)
+                end
+            end
+        end
+
+        # The middle slab lifts ONLY through its transverse physical faces — its
+        # cut faces are both Interface. A lift that leaked a cut-dimension BC value
+        # onto an Interface face shows up here and nowhere with 2 partitions.
+        @testset "3-partition boundary_rhs parity" begin
+            for cut in ((Dirichlet(2.5), Neumann(0.4)), (Periodic(), Periodic()))
+                g = CartesianGrid(
+                    ((0.0, 2π), (0.0, 1.0)), (16, 18);
+                    bc=((Dirichlet(0.75), Neumann(-1.25)), cut),
+                )
+                κ = set!(scalar_field(g), mp_coeff)
+                D1 = derivative(g, 1)
+                for L in (
+                    laplacian(g),
+                    laplacian(g) * laplacian(g),
+                    scaling(κ) * laplacian(g),
+                    adjoint(D1) + laplacian(g),
+                    laplacian(g) + adjoint(D1),
+                )
+                    P3 = prepare_distributed(L, 3)
+                    @test gather(boundary_rhs(P3)) == flatten(boundary_rhs(L, g))
+                end
+            end
+        end
+
+        @testset "3-partition inhomogeneous RHS assembled distributed" begin
+            g = CartesianGrid(
+                ((0.3, 1.7), (-1.1, 2.9)), (24, 26);
+                bc=((Dirichlet(0.5), Dirichlet(-0.25)), (Dirichlet(1.0), Dirichlet(-0.5))),
+            )
+            L = -1.0 * laplacian(g)
+            fun = x -> sin(3x[1]) * exp(-x[2]) + 0.25x[1] * x[2]
+            bflat = flatten(set!(scalar_field(g), fun)) .- flatten(boundary_rhs(L, g))
+            u_cpu, stats_cpu = Krylov.cg(prepare(L), bflat; atol=1e-10, rtol=1e-10)
+            @test stats_cpu.solved
+
+            niters = Int[]
+            for nd in (1, 3)
+                P = prepare_distributed(L, nd)
+                b = distributed_rhs(P, fun)
+                @test gather(b) == bflat
+                u, stats = Krylov.cg(P, b; atol=1e-10, rtol=1e-10)
+                @test stats.solved
+                @test isapprox(gather(u), u_cpu; rtol=1e-8)
+                push!(niters, stats.niter)
+            end
+            @test allequal(niters)
+        end
     else
         @test_skip "MDLA 3-partition — needs ≥ 3 CUDA devices"
     end
