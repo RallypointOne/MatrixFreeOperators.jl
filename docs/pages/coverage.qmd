@@ -8,9 +8,10 @@ resources:
 #| echo: false
 #| output: asis
 # `generate_coverage(...; run_test=true)` runs the whole test suite under coverage
-# instrumentation, which dominates the book render (~25 min of the ~29 the CI job
-# takes). PR previews set MFO_DOCS_SKIP_COVERAGE=true to skip it; the published
-# builds in Docs.yml never set it, so the deployed report is always the real one.
+# instrumentation, which dominates the book render. Both PR-facing jobs set
+# MFO_DOCS_SKIP_COVERAGE=true to skip it — the preview in preview.yml and the render
+# smoke test in CI.yml. The published builds in Docs.yml never set it, so the
+# deployed report is always the real one.
 if get(ENV, "MFO_DOCS_SKIP_COVERAGE", "") == "true"
     println("""
 This page is empty in pull-request previews. Building the report runs the full

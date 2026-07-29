@@ -44,9 +44,10 @@ jobs:
           sed -i "s/__BUILD_DATE__/$(date -u +'%Y-%m-%d') (PR #${{ github.event.number }})/" docs/_quarto.yml
 
       # Coverage is skipped here on purpose: generate_coverage(...; run_test=true)
-      # runs the full suite under instrumentation and is ~25 of the ~29 minutes the
-      # CI docs-render job takes. Docs.yml never sets this, so published docs keep
-      # the real report. See docs/pages/coverage.qmd.
+      # runs the full suite under instrumentation, which dwarfs the rest of the
+      # render. CI.yml's docs-render job skips it for the same reason. Docs.yml
+      # never sets this, so published docs keep the real report.
+      # See docs/pages/coverage.qmd.
       - name: Render docs without coverage
         if: github.event.action != 'closed'
         env:

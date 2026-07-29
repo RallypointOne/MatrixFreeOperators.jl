@@ -58,5 +58,12 @@ jobs:
         run: sudo apt-get install -y lcov
       - name: Install docs dependencies
         run: julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+      # This job is a render smoke test — it catches broken .qmd cells. Building the
+      # real coverage report runs the whole suite under instrumentation, which the
+      # test matrix above already covers six times over, and had grown to ~27 of the
+      # 30-minute budget. Docs.yml never sets this, so published docs keep the real
+      # report. See docs/pages/coverage.qmd.
       - name: Render template's own docs
+        env:
+          MFO_DOCS_SKIP_COVERAGE: 'true'
         run: quarto render docs
