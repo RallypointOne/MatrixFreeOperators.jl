@@ -323,6 +323,12 @@ The distributed twin of `set!(::Field, fun)`, and exact: `cell_center` evaluates
 at the global cell index, so this is bit-for-bit `MultiDeviceVector(flatten(set!(scalar_field(g), fun)), P.spec)`
 without ever building the global field. Uses `P`'s input scratch, so the same
 concurrency caveat as `mul!` applies.
+
+`fun` runs on the device, inside a broadcast over each slab's cell centers, so it
+must be GPU-compatible — plain arithmetic on the `SVector` of coordinates, with no
+captured host arrays. For anything heavier, build the fields yourself on
+[`local_grids`](@ref) and hand them to [`distributed_rhs`](@ref), which uploads
+them.
 """
 function MatrixFreeOperators.set!(
     x::MultiDeviceVector{T}, P::MDLAPreparedOperator{T}, fun

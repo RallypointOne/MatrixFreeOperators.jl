@@ -215,6 +215,32 @@ parity, coefficient adjoint identity, `boundary_rhs` parity, inhomogeneous RHS +
 slab is the only place a coefficient slice can be right at one seam and wrong at the other, and the
 only place a lift can leak a cut-dimension BC value onto an `Interface` face.
 
+## The one genuinely new GPU code path, and its pre-agreed fallback
+
+`set!(::MultiDeviceVector, P, fun)` calls `set!(::Field, fun)` on a **device** field, which nothing
+in this repo has done before — every existing GPU test builds a field on the CPU with `set!` and then
+`Adapt.adapt`s it. So this is the one place where "CPU-green" carries less weight than usual.
+
+It should work: `set!` is `interior(f) .= fun.(cell_center.(Ref(f.grid), interior(f.grid)))`, an
+adapted `CartesianGrid` is isbits (BCs and `local_range` included), `cell_center` is pure arithmetic
+returning an `SVector`, and `CartesianIndices` is a valid GPU broadcast argument. But it is unrun.
+
+If it fails — a `Ref`/`Adapt` complaint, or a scalar-indexing error out of the broadcast — do **not**
+reach for `CUDA.allowscalar`. The pre-agreed fallback is to assemble each slab on the host and
+upload, which costs one slab-sized host buffer per call and is fine for a once-per-solve assembly
+(the point of the slice is avoiding a *global* array, not any host memory at all):
+
+```julia
+hosts = local_grids(P)
+_dist_map!(P.ctx) do d
+    interior_to_flat!(x.partitions[d], Adapt.adapt(CuArray, set!(scalar_field(hosts[d], T), fun)))
+end
+```
+
+Note the user's `fun` must be GPU-compatible under the current implementation (no captured host
+arrays); the fallback removes that constraint too, so if a user hits it, that is the fix rather than
+a bug.
+
 ## Decisions & conclusions (don't relitigate)
 
 - **Guards run once, on the global tree, before `_slab_op`.** Load-bearing, not incidental: after
