@@ -29,6 +29,8 @@ distributed/AMR work later changes only the grid and that function, never operat
 
 ## Gotchas
 - The core depends only on Adapt, KernelAbstractions, LinearAlgebra, and StaticArrays. AD, MDLA, SciML, and Reactant integrations belong in `ext/` — don't add them to `[deps]`.
+- A `partition_grid` slab keeps the **global** `extent`; only `local_range` says which part it owns, and `cell_center` evaluates at the global cell index. Don't "fix" a slab's extent to describe its own span — that reintroduces an ulp of coordinate drift and makes a slab-assembled RHS depend on the partition count.
+- The distributability guards run once on the *global* operator tree, before `_slab_op` localizes field coefficients per slab. Re-checking a localized tree rejects it: a localized `ScalingOp` reports the slab grid from `operator_grid` while its `Laplacian` sibling still reports the global one.
 - `prepare` is stateful and single-threaded: call it once per concurrent solve, not once globally.
 - GPU parity tests are skipped unless `MFO_TEST_GPU=true` and CUDA.jl is available (`test/device.jl` gates `test/device_gpu.jl`) — a green suite does not mean GPU paths ran.
 - Running one test file needs the test env, which `dev`s the package at `path=".."`:
