@@ -125,11 +125,14 @@ Everything composes from here with the same pieces:
 - `linearize(F, u₀)` — the matrix-free Jacobian of a nonlinear operator such as
   `advection`, for implicit stepping and JFNK;
 - Enzyme or Mooncake gradients through `apply` with respect to the input field
-  *or* the coefficient field `σ` — no custom rules required.
+  *or* the coefficient field `σ` — no custom rules required;
+- `prepare_distributed(L, nparts)` — the same operator partitioned into slabs
+  across several GPUs, one `CartesianGrid` per device, with the ghost exchange
+  driven from inside the operator tree.
 
 See the [documentation](https://RallypointOne.github.io/MatrixFreeOperators.jl/stable/)
-for the full operator catalog, GPU usage, AD examples, and the
-OrdinaryDiffEq.jl interop.
+for the full operator catalog, GPU usage, the multi-GPU path, AD examples, and
+the OrdinaryDiffEq.jl interop.
 
 ## Comparison with related packages
 
@@ -154,7 +157,9 @@ intersection this package targets.
   device-portable stencil kernels and GPU-aware MPI halo exchange, but it has no
   first-class operator objects (`L1 * L2`, `adjoint(L)`), no declared adjoints,
   and no AD story for parameter gradients. It sits one layer *below* this
-  package, and its backend-dispatch ideas informed this design.
+  package, and its backend-dispatch ideas informed this design. Its multi-node
+  MPI reach is still ahead of `prepare_distributed`, which today partitions
+  across the GPUs of a single node.
 - **[Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl)** is the closest
   architectural sibling — KernelAbstractions-based, composable operators,
   multi-architecture — but it is a full ocean model, not a reusable operator

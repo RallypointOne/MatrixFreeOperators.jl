@@ -15,7 +15,10 @@ for solving PDEs on structured grids. Operators are lazy, composable symbols
 so the same operator runs on CPU and GPU arrays, differentiates automatically
 with Enzyme or Mooncake (including gradients w.r.t. operator parameters such as
 material-coefficient fields), and feeds Krylov.jl directly through `prepare` +
-`mul!` with zero steady-state allocations.
+`mul!` with zero steady-state allocations. When one device is not enough,
+`prepare_distributed` partitions the grid across several GPUs without changing a
+line of operator code — see
+[Distributed Multi-GPU Solves](pages/distributed.qmd).
 
 ## Quickstart
 

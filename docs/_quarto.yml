@@ -29,6 +29,7 @@ book:
         - index.qmd
         - pages/amr.qmd
         - pages/multigrid.qmd
+        - pages/distributed.qmd
     - part: "API"
       chapters:
         - pages/api.qmd

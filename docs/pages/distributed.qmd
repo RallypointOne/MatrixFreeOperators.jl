@@ -1,0 +1,244 @@
+---
+title: "Distributed Multi-GPU Solves"
+---
+
+The distributed path cuts one `CartesianGrid` into slabs, gives each slab its
+own GPU, and runs the existing operator algebra unchanged on every one of them
+— a cut face is just another boundary condition. This page tells the story —
+what the partition model is, the one exchange that has to fire in the *middle*
+of the operator tree, and why the list of distributable operators is
+deliberately short.
+
+## The motivation: the grid outgrows one GPU
+
+A matrix-free operator is memory-bound: `mul!` streams the field in, spends a
+handful of flops per cell, and streams it back out, so a device's VRAM is a hard
+ceiling on the resolution you can reach at all. Past that ceiling you are
+choosing between the grid the physics needs and the hardware on the bench.
+Splitting the grid across several devices lifts the ceiling — and the hard
+constraint, the same one AMR carries, is to do it **without rewriting a single
+operator**.
+
+Scope, stated up front: this is a multi-*device*, single-*node* path. The
+transport is MultiDeviceLinearAlgebra.jl (MDLA) over CUDA peer-to-peer copies,
+not MPI, so "distributed" here means the GPUs in one box.
+
+## A partition is a slab, and a cut face is a boundary condition
+
+[`partition_grid`](../pages/api.qmd) cuts along dimension `N` — the
+memory-contiguous one — so every slab owns a *contiguous* span of the global
+flat interior DOFs. That is the whole trick: the flat Krylov vector is already
+partitioned before anything else happens, and no solver vector ever carries a
+ghost cell. Each slab is an ordinary `CartesianGrid` that keeps the global
+spacing **verbatim** rather than recomputing it from its own extent — an ulp of
+drift in `h` would move the stencil weights and cost the bit parity advertised
+below.
+
+The invariant everything rests on: **cut faces carry `Interface`, and
+`apply_bc!`/`fold_bc!` deliberately skip every `Interface` face**. Those methods
+are no-ops selected by dispatch, and because boundary-condition types are grid
+type parameters they constant-fold away entirely. So a cut-plane ghost has
+exactly one writer — the exchange — and the per-slab boundary sweep is
+structurally incapable of racing it.
+
+```
+  Global grid, 12 × 9, cut along dim N = 2 into three slabs —
+  each slab an ordinary CartesianGrid on its own CUDA device.
+
+                ┌────────────────┐  ── Dirichlet
+         p3     │   planes 7:9   │
+                ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌  ╌╌ Interface  ← cut
+         p2     │   planes 4:6   │     cut on BOTH faces: its ghosts
+                ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌     come from two different owners
+         p1     │   planes 1:3   │
+                └────────────────┘  ── Dirichlet
+
+  The flat Krylov vector — interior DOFs only, one contiguous span each:
+
+  ┌──────────────────┬──────────────────┬──────────────────┐
+  │   1 …  36   p1   │  37 …  72   p2   │  73 … 108   p3   │
+  └──────────────────┴──────────────────┴──────────────────┘
+```
+
+Two consequences worth knowing before you pick `nparts`. Under a **periodic**
+cut dimension *both* faces of *every* slab become `Interface`, since the first
+and last slabs wrap into each other. And every slab needs at least `halo` planes
+along the cut dimension — twice that for a periodic two-way cut, the one case
+where a partition's low and high ghosts come from the same owner. Cutting finer
+than that throws rather than producing a ghost slab with two owners.
+`partition_grid(g, 1)` returns the grid unchanged, which is what makes the
+one-partition parity tests meaningful rather than vacuous.
+
+## The exchange has to fire in the middle of the tree
+
+Consider `laplacian(g) * laplacian(g)`. The inner factor writes an intermediate
+that is only *interior*-valid — its cut-plane ghosts were never filled — and the
+outer factor then reads those ghosts as **stale zeros across every cut plane**.
+The answer is wrong near every cut, and nothing raises. An exchange at the root
+cannot fix it; the exchange has to happen between the two applies.
+
+So the operator tree is walked by the core (`src/distributed.jl`) rather than by
+the backend, firing a scatter between the factors of a composition and its exact
+transpose, a reduction, on the adjoint path. The walk deliberately mirrors the
+block-forest apply pair, which solves the same mid-tree problem one level up —
+see [AMR](amr.qmd). Two invariants ride along with it. `_reads_ghosts` elides an
+exchange that would move no information, and it must gate the forward scatter
+and the adjoint reduction **together**: reading a neighbor's value forward is
+exactly what writes a contribution to that neighbor's cotangent in the
+transpose, so gating one and not the other breaks `⟨Lx,y⟩ = ⟨x,Lᵀy⟩`. And
+`AdjointOp` nodes are normalized down to the leaves before `prepare`, because
+`prepare` does not recurse into an `AdjointOp` — `AdjointOp(A*B)` would
+otherwise run `Aᵀ` then `Bᵀ` with no reduction in between and drop the
+intermediate's `Interface` cotangents on the floor. Silently.
+
+Because the walk is parameterized on three backend primitives rather than
+written against MDLA, `test/partitioning.jl` drives the **real** walk on CPU
+with plain-`Vector` global indexing — so it runs in CI on every push, not only
+where a GPU happens to be. That CPU proof covers forward parity against the
+single-grid apply (**bitwise** `==`, not `≈` — what the verbatim spacing buys),
+the adjoint identity to `rtol=1e-13`, the assembled dense structure against
+`materialize`, the guards below, and allocations that do not grow with grid
+size. It also carries a negative control that rebuilds the tree with the
+mid-tree exchange suppressed and asserts the answer *changes* — so the exchange
+is proven load-bearing, and the parity tests cannot be passing for the wrong
+reason.
+
+The gated GPU suite (`test/mdla_gpu.jl`) re-proves parity and the adjoint
+identity on real MDLA `scatter!`/`reduce!`, and adds the one thing CPU cannot
+show: distributed `Krylov.cg` converging in an *identical* iteration count at
+every partition count.
+
+## Usage
+
+[`prepare_distributed`](../pages/api.qmd) returns a Krylov-shaped operator over
+MDLA `MultiDeviceVector`s, so the solve is the ordinary `cg` call with a
+partitioned right-hand side:
+
+```julia
+using MatrixFreeOperators, MultiDeviceLinearAlgebra, CUDA, Krylov
+
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))
+L = -1 * laplacian(g)                        # SPD under Dirichlet
+f = set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2]))
+
+P = prepare_distributed(L, 2)                # two slabs, two CUDA devices
+b = MultiDeviceVector(flatten(f), P.spec)
+u, stats = Krylov.cg(P, b)
+```
+
+Or pinning the devices explicitly, when you do not want the first `nparts` the
+driver reports:
+
+```julia
+P = prepare_distributed(L, 2; devices=[2, 3])   # 0-indexed, unique
+```
+
+`prepare_distributed` has no methods at all until the extension loads, which
+needs MultiDeviceLinearAlgebra.jl **and** Krylov.jl **and** CUDA.jl all present
+— a `MethodError` here means one of the three is missing. Device IDs must be
+unique, so it is one partition per *physical* GPU: there is no CPU mode and no
+oversubscribing a card. `Krylov.cg` works because the extension supplies its
+workspace constructor; another Krylov solver needs the same one-method hook
+added. The prepared operator is stateful and single-threaded exactly like
+[`PreparedOperator`](../pages/api.qmd), and for the same reason — `mul!` stages
+through per-partition scratch — so concurrent solves need one
+`prepare_distributed` each.
+
+## A throw here is the design working
+
+The list of distributable operators is short, and everything off it throws up
+front. That is deliberate, and it is worth being explicit about why: for every
+rejected case the failure mode is a **silently wrong answer**, not a crash. An
+operator that reads a global-grid field would broadcast it against a slab
+interior and quietly return numbers that look plausible. Erroring is strictly
+better than that.
+
+The whitelist lives in the core, not in the MDLA extension — an extension-only
+guard is only exercised where a GPU is present, which CI is not, so the guards
+would go untested precisely where they matter. It follows the package's "traits
+default to the weaker claim" rule: an operator is distributable only if it says
+so, and a forgotten declaration falls through to the fallback and throws.
+
+Distributable today: `Laplacian`, `Derivative`, `IdentityOp`, and `ScalingOp`
+with a `Number` coefficient, combined under `Scaled`, `Added`, `Composed`, and
+`adjoint`, with both factors of a composition on the same grid. Everything else:
+
+```
+  rejected                        because
+  ─────────────────────────────── ────────────────────────────────────────────
+  ScalingOp with a Field coeff    the coefficient is bound to the GLOBAL grid;
+                                  it must be partitioned onto the slabs first
+  Advection                       same — the velocity field is global
+  Gradient / Divergence           rank-changing ⇒ non-square ⇒ needs two
+                                  partition specs; use it inside a product
+                                  whose result is scalar
+  Restriction / Prolongation      two grids, each needing its own cut
+  Composed across two grids       same
+```
+
+The error names the **first** undistributable node it finds, not the tree root,
+so a large expression points at its actual culprit rather than at itself.
+
+## Inhomogeneous boundaries still assemble on one device
+
+There is no distributed `boundary_rhs` yet. Assemble the lift on the global grid
+and split it, which is exact and works today:
+
+```julia
+b = MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)
+```
+
+**An honest note:** this materializes the whole global right-hand side on one
+device before scattering it, so it does not scale — it is a bridge, not the
+design, and it is the reason homogeneous problems are the ones worth running
+distributed today. Tracked in issue #31 slice 2b, together with `Field`
+coefficients, rank-changing intermediates, and transfer chains.
+
+## Running it takes CUDA, an unregistered package, and an env var
+
+MultiDeviceLinearAlgebra.jl is public at
+[kylebeggs/MultiDeviceLinearAlgebra.jl](https://github.com/kylebeggs/MultiDeviceLinearAlgebra.jl)
+but is **not** in the General registry, so `Pkg.add("MultiDeviceLinearAlgebra")`
+will not find it — it has to come from a path or a URL. The `[compat]` entry
+pins it to one exact patch on purpose: the extension reaches into MDLA
+internals and replays its ghost-section ordering rule, none of which is public
+API. Neither CUDA nor MDLA lives in `test/Project.toml`, also on purpose, so
+`--project=test` can never satisfy the gate — the distributed tests need a side
+environment:
+
+```
+julia --project=/tmp/mfo-gpu-env -e '
+using Pkg
+Pkg.develop(path=".")                                   # this package, from its root
+Pkg.develop(path="<path-to-MultiDeviceLinearAlgebra>")
+Pkg.add(["CUDA", "Krylov", "Test", "Random", "StaticArrays", "Adapt"])'
+```
+
+Then set `MFO_TEST_MDLA=true`; without it `test/mdla.jl` reports a skip and the
+suite stays green on a machine with no GPU. The hardware ladder is one GPU for
+the guard tests, two for the multi-partition testsets in `test/mdla_gpu.jl`, and
+three for `test/multigpu/mdla_3partition.jl`. Three matters for the reason the
+diagram above shows: two slabs can never produce a slab cut on *both* faces, so
+the middle slab of a three-way cut is the first case whose ghost section holds
+planes from two different owners.
+
+One environment hazard is worth knowing about, because it looks like a bug in
+this package. On some hosts a direct device-to-device `copyto!` silently
+produces zeros even though `CUDA.can_access_peer` returns `true` — almost always
+the IOMMU. MDLA now probes each ordered device pair when it builds the exchange
+and falls back to host-staged transfers for any pair that fails, so an affected
+host yields correct numbers plus a one-time warning rather than silent zeros.
+That fallback is a safety net, not a fix — `test/multigpu/README.md` carries the
+health check and the host-side remedy.
+
+## Status
+
+Ships today: slab partitioning of a `CartesianGrid`, scalar fields,
+`Laplacian`/`Derivative`/`IdentityOp`/number-coefficient `ScalingOp` under
+`Scaled`/`Added`/`Composed`/`adjoint` on one grid, the mid-tree scatter and its
+matched reduction, distributed `Krylov.cg`, and bitwise forward parity across
+partition counts. Deliberately deferred: distributed `boundary_rhs` assembly,
+`Field` coefficients, rank-changing intermediates, and transfer chains (issue
+#31 slice 2b), Krylov workspaces beyond `cg`, multi-node transport, and any CPU
+distributed backend. Unsupported configurations throw an `ArgumentError` up
+front rather than degrade.
