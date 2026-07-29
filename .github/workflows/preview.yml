@@ -36,9 +36,12 @@ jobs:
         if: github.event.action != 'closed'
         run: julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
 
+      # Block scalar, not a plain one: an unquoted `run:` would treat the " #" in
+      # "(PR #123)" as a YAML comment and hand bash a truncated, unbalanced quote.
       - name: Set build date
         if: github.event.action != 'closed'
-        run: sed -i "s/__BUILD_DATE__/$(date -u +'%Y-%m-%d') (PR #${{ github.event.number }})/" docs/_quarto.yml
+        run: |
+          sed -i "s/__BUILD_DATE__/$(date -u +'%Y-%m-%d') (PR #${{ github.event.number }})/" docs/_quarto.yml
 
       # Coverage is skipped here on purpose: generate_coverage(...; run_test=true)
       # runs the full suite under instrumentation and is ~25 of the ~29 minutes the
