@@ -905,6 +905,10 @@ end
                 derivative(g, 1) * derivative(g, 2),
                 scaling(κ) * laplacian(g),
                 laplacian(g) * scaling(κ),
+                # A diagonal factor between two stencils: the OUTER Composed's
+                # `_reads_ghosts` is false, so its lift must skip the exchange while
+                # the inner one still fires — the gating, not just the exchange.
+                derivative(g, 1) * scaling(κ) * derivative(g, 1),
                 # both term orders: a DistAdjoint's zero lift has to WRITE its zero
                 # when it runs first, and stay a no-op when it accumulates
                 adjoint(D1) + laplacian(g),
