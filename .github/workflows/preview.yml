@@ -1,0 +1,76 @@
+name: Docs Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Serialize all pushes to gh-pages (shared with Docs.yml, which uses the same group).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    name: Deploy PR docs preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Forked PRs get a read-only token, so previews only work for same-repo branches.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: julia-actions/setup-julia@v3
+        if: github.event.action != 'closed'
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+        if: github.event.action != 'closed'
+      - uses: quarto-dev/quarto-actions/setup@v2
+        if: github.event.action != 'closed'
+
+      - name: Install docs dependencies
+        if: github.event.action != 'closed'
+        run: julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'
+
+      # Block scalar, not a plain one: an unquoted `run:` would treat the " #" in
+      # "(PR #123)" as a YAML comment and hand bash a truncated, unbalanced quote.
+      - name: Set build date
+        if: github.event.action != 'closed'
+        run: |
+          sed -i "s/__BUILD_DATE__/$(date -u +'%Y-%m-%d') (PR #${{ github.event.number }})/" docs/_quarto.yml
+
+      # Coverage is skipped here on purpose: generate_coverage(...; run_test=true)
+      # runs the full suite under instrumentation, which dwarfs the rest of the
+      # render. CI.yml's docs-render job skips it for the same reason. Docs.yml
+      # never sets this, so published docs keep the real report.
+      # See docs/pages/coverage.qmd.
+      - name: Render docs without coverage
+        if: github.event.action != 'closed'
+        env:
+          MFO_DOCS_SKIP_COVERAGE: 'true'
+        run: quarto render docs
+
+      # Docs.yml substitutes these at deploy time, so the render leaves them as
+      # placeholders. Without this the version selector falls back to dev + "/",
+      # whose links 404 from a preview URL.
+      - name: Inject version and base path
+        if: github.event.action != 'closed'
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+        run: |
+          find docs/_site -name '*.html' -exec sed -i \
+            -e "s|__CURRENT_VERSION__|pr-${{ github.event.number }}|g" \
+            -e "s|__BASE_PATH__|/${REPO_NAME}/|g" \
+            {} +
+
+      - name: Deploy preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ./docs/_site
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          action: auto

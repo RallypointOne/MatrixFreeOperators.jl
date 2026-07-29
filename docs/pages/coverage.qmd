@@ -6,15 +6,29 @@ resources:
 
 ```{julia}
 #| echo: false
-#| output: false
-using LocalCoverage
-coverage = generate_coverage("MatrixFreeOperators"; run_test=true)
-html_coverage(coverage; dir=joinpath(@__DIR__, "coverage"), open=false)
-cov_dir = joinpath(dirname(dirname(@__DIR__)), "coverage")
-mv(joinpath(cov_dir, "lcov.info"), joinpath(@__DIR__, "lcov.info"); force=true)
-rm(cov_dir; recursive=true, force=true)
-```
+#| output: asis
+# `generate_coverage(...; run_test=true)` runs the whole test suite under coverage
+# instrumentation, which dominates the book render. Both PR-facing jobs set
+# MFO_DOCS_SKIP_COVERAGE=true to skip it — the preview in preview.yml and the render
+# smoke test in CI.yml. The published builds in Docs.yml never set it, so the
+# deployed report is always the real one.
+if get(ENV, "MFO_DOCS_SKIP_COVERAGE", "") == "true"
+    println("""
+This page is empty in pull-request previews. Building the report runs the full
+test suite under coverage instrumentation, which would add roughly half an hour
+to every preview.
 
+The report for the development docs is published
+[here](https://rallypointone.github.io/MatrixFreeOperators.jl/dev/pages/coverage.html).
+""")
+else
+    using LocalCoverage
+    coverage = generate_coverage("MatrixFreeOperators"; run_test=true)
+    html_coverage(coverage; dir=joinpath(@__DIR__, "coverage"), open=false)
+    cov_dir = joinpath(dirname(dirname(@__DIR__)), "coverage")
+    mv(joinpath(cov_dir, "lcov.info"), joinpath(@__DIR__, "lcov.info"); force=true)
+    rm(cov_dir; recursive=true, force=true)
+    println("""
 <iframe id="coverage-iframe" src="coverage/index.html" width="100%" style="border:none; overflow:hidden;" scrolling="no"></iframe>
 
 <script>
@@ -29,3 +43,6 @@ rm(cov_dir; recursive=true, force=true)
     window.addEventListener('resize', resize);
 })();
 </script>
+""")
+end
+```
