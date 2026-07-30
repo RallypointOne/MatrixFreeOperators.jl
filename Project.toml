@@ -21,7 +21,7 @@ MatrixFreeOperatorsReactantExt = "Reactant"
 
 [compat]
 Adapt = "4"
-CUDA = "5"
+CUDA = "5, 6.2"
 KernelAbstractions = "0.9"
 Krylov = "0.10"
 LinearAlgebra = "1"
