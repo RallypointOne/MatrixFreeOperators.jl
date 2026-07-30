@@ -14,9 +14,10 @@
 
 Whether `L`'s ghost needs are met by the slab exchange machinery (internal).
 
-Stencil and pointwise leaves qualify; combinators propagate explicitly. An
-operator that reads a field-valued parameter does not, because that parameter is
-bound to the *global* grid and would silently broadcast against a slab interior.
+Stencil and pointwise leaves qualify; combinators propagate explicitly. A
+field-valued parameter qualifies when it can be sliced onto the slabs — see
+[`_partitionable_coeff`](@ref); one that cannot does not, because it stays bound
+to the *global* grid and would silently broadcast against a slab interior.
 Transfer operators do not, because their factors live on two different grids
 that would each need their own consistent partitioning.
 """
@@ -27,11 +28,32 @@ _distributable(::Laplacian) = true
 # so it is what makes an AdjointOp node reachable at all.
 _distributable(::Derivative) = true
 _distributable(::IdentityOp) = true
-_distributable(S::ScalingOp) = S.coeff isa Number
+_distributable(::ScalingOp{<:Number}) = true
+_distributable(S::ScalingOp{<:Field}) = _partitionable_coeff(S.coeff)
+# An AbstractBlockField coefficient belongs to a forest, not to a slab.
+_distributable(::ScalingOp) = false
 _distributable(L::Scaled) = _distributable(L.op)
 _distributable(L::Added) = _distributable(L.a) && _distributable(L.b)
 _distributable(L::AdjointOp) = _distributable(L.op)
 _distributable(::AbstractOperator) = false
+
+"""
+    _partitionable_coeff(κ) -> Bool
+
+Whether a field-valued operator parameter can be sliced onto slabs (internal).
+
+Requires an undistributed `CartesianGrid` — the layout [`_slab_field`](@ref)
+slices — and a **real** element type. Real only because
+`adjoint_operator(::ScalingOp{<:Field})` builds `conj.(κ.data)` on every call
+(`src/operators/scaling.jl`), which in the distributed adjoint would allocate a
+full coefficient array per partition per Krylov iteration.
+"""
+function _partitionable_coeff(κ::Field)
+    κ.grid isa CartesianGrid || return false
+    κ.grid.topology === nothing || return false
+    return _scalar_eltype(eltype(κ.data)) <: Real
+end
+_partitionable_coeff(::Any) = false
 
 # A composition additionally needs both factors on the SAME grid: its
 # intermediate is exchanged on the slabs of that one partitioning, and a
@@ -39,7 +61,36 @@ _distributable(::AbstractOperator) = false
 function _distributable(L::Composed)
     (_distributable(L.a) && _distributable(L.b)) || return false
     ga, gb = operator_grid(L.a), operator_grid(L.b)
-    return ga === nothing || gb === nothing || ga === gb
+    return ga === nothing || gb === nothing || _same_grid(ga, gb)
+end
+
+"""
+    _same_grid(a::AbstractGrid, b::AbstractGrid) -> Bool
+
+Whether two grids describe the same discretization (internal).
+
+Structural rather than `===`, for two reasons — neither of which is "`===` is
+wrong today". A `CartesianGrid` is currently isbits, so `===` *is* value equality;
+that is a property of the current field set, not a guarantee. The moment
+`topology` carries a real object (DESIGN §9's distributed/AMR seam) `===` silently
+becomes identity again, and a guard that quietly changes meaning is exactly what
+this file exists to prevent.
+
+Second, `device` is deliberately **not** compared: a host grid and its
+device-adapted twin describe the same discretization, and a guard that runs on the
+host tree should not care which. `local_range` **is** compared, and that is what
+keeps a slab from ever comparing equal to the grid it was cut from.
+"""
+_same_grid(a::AbstractGrid, b::AbstractGrid) = a === b
+function _same_grid(a::CartesianGrid{N}, b::CartesianGrid{N}) where {N}
+    a === b && return true
+    return a.extent == b.extent &&
+           a.spacing == b.spacing &&
+           a.size == b.size &&
+           a.halo == b.halo &&
+           a.bc === b.bc &&
+           a.local_range == b.local_range &&
+           a.topology === b.topology
 end
 
 # Why each rejected case is rejected, for an error message that names the reason
@@ -49,7 +100,8 @@ _undistributable_reason(::Restriction) =
 _undistributable_reason(::Prolongation) =
     "transfer operators compose grids that would each need their own consistent partitioning"
 _undistributable_reason(S::ScalingOp) =
-    "a field-valued coefficient is bound to the global grid; it must be partitioned onto the slabs first"
+    "its coefficient must be a Number or a real-eltype Field on an undistributed " *
+    "CartesianGrid, so it can be sliced onto the slabs"
 _undistributable_reason(::Advection) =
     "the velocity field is bound to the global grid; it must be partitioned onto the slabs first"
 _undistributable_reason(::Gradient) =
@@ -89,11 +141,51 @@ function _check_distributable(L::AbstractOperator)
     throw(
         ArgumentError(
             "prepare_distributed cannot distribute $(nameof(typeof(culprit)))$detail. " *
-            "Supported: Laplacian, Derivative, IdentityOp, number-coefficient ScalingOp, " *
-            "and their Scaled/Added/Composed/adjoint combinations on one grid; " *
-            "got $(sprint(show, L)).",
+            "Supported: Laplacian, Derivative, IdentityOp, ScalingOp with a Number or " *
+            "real-eltype Field coefficient, and their Scaled/Added/Composed/adjoint " *
+            "combinations on one grid; got $(sprint(show, L)).",
         ),
     )
+end
+
+"""
+    _check_one_grid(L::AbstractOperator, g::AbstractGrid) -> L
+
+Check that every grid-bearing operator in `L` lives on `g`, the grid being
+partitioned (internal).
+
+`_distributable` cannot express this: it is a predicate on one operator, while a
+mismatched pair is only visible from the tree. `_distributable(::Composed)`
+covers a composition's two factors; this covers the rest, so that
+`Added(laplacian(g), scaling(κ))` with `κ` on some other grid throws instead of
+slicing the coefficient onto slabs of a grid it does not live on.
+"""
+function _check_one_grid(L::AbstractOperator, g::AbstractGrid)
+    culprit = _grid_mismatch(L, g)
+    culprit === nothing && return L
+    throw(
+        ArgumentError(
+            "prepare_distributed needs every grid-bearing operator on the grid it " *
+            "partitions, but $(nameof(typeof(culprit))) is on a different grid. " *
+            "Rebuild it on the same grid (matching extent, spacing, size, halo, and " *
+            "boundary conditions); got $(sprint(show, L)).",
+        ),
+    )
+end
+
+_grid_mismatch(L::Scaled, g) = _grid_mismatch(L.op, g)
+_grid_mismatch(L::AdjointOp, g) = _grid_mismatch(L.op, g)
+function _grid_mismatch(L::Added, g)
+    a = _grid_mismatch(L.a, g)
+    return a === nothing ? _grid_mismatch(L.b, g) : a
+end
+function _grid_mismatch(L::Composed, g)
+    a = _grid_mismatch(L.a, g)
+    return a === nothing ? _grid_mismatch(L.b, g) : a
+end
+function _grid_mismatch(L::AbstractOperator, g)
+    lg = operator_grid(L)
+    return (lg === nothing || _same_grid(lg, g)) ? nothing : L
 end
 
 #--------------------------------------------------------------------------------# Adjoint normalization
@@ -126,6 +218,63 @@ _push_adjoints(L::Added) = Added(_push_adjoints(L.a), _push_adjoints(L.b))
 _push_adjoints(L::Scaled) = Scaled(_push_adjoints(L.op), L.α)
 _push_adjoints(L::Composed) = Composed(_push_adjoints(L.a), _push_adjoints(L.b))
 _push_adjoints(L::AbstractOperator) = L
+
+#--------------------------------------------------------------------------------# Slab localization
+
+"""
+    _slab_op(L::AbstractOperator, lg::AbstractGrid) -> AbstractOperator
+
+Rebuild `L` with every field-valued operator parameter restricted to the slab
+`lg` (internal).
+
+The slab analogue of `_leaf_op` (`src/operators/forest.jl`), which solves the
+same problem one level down for a block forest. Leaves carrying no field
+parameter come back **unchanged and identical** — they read the grid they are
+*passed*, never the one they hold — so every partition keeps sharing one object
+and [`DistLeaf`](@ref) stays concretely typed for them.
+
+Runs per partition, *after* the distributability guards: those check the global
+tree, where a coefficient's `operator_grid` still agrees with its siblings'. A
+localized `ScalingOp` reports the slab grid while a sibling `Laplacian` still
+reports the global one, so re-checking a localized tree would reject it. Check
+once, before rewriting.
+"""
+_slab_op(L::AbstractOperator, ::AbstractGrid) = L
+_slab_op(S::ScalingOp{<:Field}, lg::AbstractGrid) = ScalingOp(_slab_field(S.coeff, lg))
+_slab_op(L::Added, lg::AbstractGrid) = Added(_slab_op(L.a, lg), _slab_op(L.b, lg))
+_slab_op(L::Scaled, lg::AbstractGrid) = Scaled(_slab_op(L.op, lg), L.α)
+_slab_op(L::Composed, lg::AbstractGrid) = Composed(_slab_op(L.a, lg), _slab_op(L.b, lg))
+_slab_op(L::AdjointOp, lg::AbstractGrid) = AdjointOp(_slab_op(L.op, lg))
+
+"""
+    _slab_field(f::Field, lg::AbstractGrid) -> Field
+
+The slab window of a global field, as a field on `lg` (internal).
+
+A *restriction*, never a re-evaluation — slicing is exact by construction and
+needs nothing from the caller. Ghosts are left zero: every field-valued parameter
+in the whitelist is read pointwise at the cell being written
+(`_coeff_values(c::Field)` is `interior(c)`), so a parameter's ghosts are never
+consulted. That is what lets a coefficient be partitioned with no exchange of
+its own.
+
+Its pullback, should distributed AD ever arrive, is the transpose gather — a
+scatter-add of each partition's `∂/∂κ` into the global coefficient over owned
+ranges, with no ghost section. Not implemented: what blocks distributed AD is the
+transport, not this rewrite.
+"""
+function _slab_field(f::Field{L}, lg::AbstractGrid{N}) where {L,N}
+    f.grid === lg && return f
+    # The OWNED interior window, and every dimension of it. Slicing the padded
+    # window instead would shift every partition after the first by `halo` planes,
+    # which is invisible unless the parameter varies along the cut; and taking
+    # only the cut dimension would drop the transverse ranges a 3-D grid carries.
+    win = ntuple(d -> lg.local_range[d] .- (first(f.grid.local_range[d]) - 1), Val(N))
+    lf = Field{L}(similar(f.data, padded_size(lg)), lg)
+    fill!(lf.data, zero(eltype(lf.data)))
+    interior(lf) .= view(interior(f), win...)
+    return lf
+end
 
 #--------------------------------------------------------------------------------# Backend primitives (no methods in core)
 
@@ -207,8 +356,15 @@ function _dist_reduce! end
 
 abstract type DistNode end
 
-struct DistLeaf{O<:AbstractOperator} <: DistNode
-    op::O
+# One operator per partition. They are the SAME object for every leaf that
+# carries no field parameter, so `identity.` in `_dist_tree` narrows the vector to
+# a concrete element type and `ops[p]` still dispatches statically — the slice-1
+# and slice-2a hot path is unchanged. Only a leaf localized by `_slab_op` gets an
+# abstract element type (slab grids differ in their BC type parameters by
+# construction), which costs one dynamic dispatch per node per partition against a
+# full grid sweep — the same trade already taken for the buffer vectors below.
+struct DistLeaf{V<:AbstractVector} <: DistNode
+    ops::V
 end
 
 struct DistAdded{A<:DistNode,B<:DistNode} <: DistNode
@@ -237,8 +393,8 @@ end
 # destroy exchanged ghosts a *sibling* under the same `Added` still needs —
 # making the result depend on term order, silently. `outs` is the gather target
 # (`PreparedAdjoint.scratch`).
-struct DistAdjoint{O<:AbstractOperator,FI<:AbstractVector,FO<:AbstractVector,X} <: DistNode
-    op::O
+struct DistAdjoint{V<:AbstractVector,FI<:AbstractVector,FO<:AbstractVector,X} <: DistNode
+    ops::V
     ins::FI
     outs::FO
     xch::X
@@ -256,7 +412,9 @@ reading a neighbour's value forward is exactly what writes a contribution to tha
 neighbour's cotangent in the transpose. Gating one direction and not the other
 breaks the adjoint identity.
 """
-_reads_ghosts(node::DistLeaf) = !isdiagonal(node.op)
+# `first` is enough: isdiagonal is a type-level trait, and localization varies a
+# leaf's grid type parameters, never its trait.
+_reads_ghosts(node::DistLeaf) = !isdiagonal(first(node.ops))
 _reads_ghosts(node::DistAdded) = _reads_ghosts(node.a) || _reads_ghosts(node.b)
 _reads_ghosts(node::DistScaled) = _reads_ghosts(node.node)
 _reads_ghosts(node::DistComposed) = _reads_ghosts(node.b)   # `b` consumes the input
@@ -276,7 +434,7 @@ constructor, called once per node that needs one.
 _dist_tree(nodes::AbstractVector, protos::AbstractVector, mkxch) =
     _dist_tree(first(nodes), nodes, protos, mkxch)
 
-_dist_tree(::AbstractOperator, nodes, protos, mkxch) = DistLeaf(first(nodes))
+_dist_tree(::AbstractOperator, nodes, protos, mkxch) = DistLeaf(identity.(nodes))
 
 _dist_tree(::Added, nodes, protos, mkxch) = DistAdded(
     _dist_tree([n.a for n in nodes], protos, mkxch),
@@ -298,7 +456,7 @@ function _dist_tree(proto::PreparedAdjoint, nodes, protos, mkxch)
     ins = AbstractField[zero_ghosts!(similar(p)) for p in protos]
     outs = AbstractField[n.scratch for n in nodes]
     xch = isdiagonal(proto.op) ? nothing : mkxch(first(outs))
-    return DistAdjoint(proto.op, ins, outs, xch)
+    return DistAdjoint(identity.([n.op for n in nodes]), ins, outs, xch)
 end
 
 # α/β blend of one field's interior into another's — the pattern PreparedAdjoint
@@ -332,7 +490,7 @@ The transpose is [`_dist_capply_adjoint!`](@ref).
 """
 function _dist_capply!(ys, node::DistLeaf, xs, ctx, α, β)
     _dist_map!(ctx) do p
-        apply!(ys[p], node.op, xs[p], xs[p].grid, α, β)
+        apply!(ys[p], node.ops[p], xs[p], xs[p].grid, α, β)
     end
     return ys
 end
@@ -362,7 +520,7 @@ function _dist_capply!(ys, node::DistAdjoint, xs, ctx, α, β)
     _dist_map!(ctx) do p
         interior(node.ins[p]) .= interior(xs[p])
         zero_ghosts!(node.outs[p])
-        apply_adjoint!(node.outs[p], node.op, node.ins[p], node.ins[p].grid)
+        apply_adjoint!(node.outs[p], node.ops[p], node.ins[p], node.ins[p].grid)
     end
     node.xch === nothing || _dist_reduce!(node.xch, node.outs, ctx)
     _dist_map!(ctx) do p
@@ -413,7 +571,7 @@ function _dist_capply_adjoint!(x̄s, node::DistLeaf, ȳs, ctx, α, β)
     # scattered ghosts that the adjoint contract does not deliver — and mid-tree
     # it would flip a reduction into a scatter and lose the transpose.
     _dist_map!(ctx) do p
-        apply_adjoint!(x̄s[p], node.op, ȳs[p], ȳs[p].grid, α, β)
+        apply_adjoint!(x̄s[p], node.ops[p], ȳs[p], ȳs[p].grid, α, β)
     end
     return x̄s
 end
@@ -447,7 +605,116 @@ function _dist_capply_adjoint!(x̄s, node::DistAdjoint, ȳs, ctx, α, β)
     end
     node.xch === nothing || _dist_scatter!(node.xch, node.outs, ctx)
     _dist_map!(ctx) do p
-        apply!(x̄s[p], node.op, node.outs[p], node.outs[p].grid, α, β)
+        apply!(x̄s[p], node.ops[p], node.outs[p], node.outs[p].grid, α, β)
     end
     return x̄s
+end
+
+#--------------------------------------------------------------------------------# Boundary lift
+
+"""
+    _dist_lift_scratch(protos, ctx) -> Vector{AbstractField}
+
+Per-partition zero field carrying the *inhomogeneous* ghost offsets of its own
+slab (internal) — the `z` of [`boundary_rhs`](@ref), once per partition.
+
+Read-only for the whole lift walk, and exact **without any exchange**.
+`fill_bc_inhomogeneous!` is a no-op on [`Interface`](@ref) faces
+(`src/boundaries.jl`) and otherwise depends only on `(bc, spacing, k)`, which a
+slab shares with the global grid. So a slab's `z` is the restriction of the
+global `z`: nonzero only in physical-boundary ghosts, and zero across every cut
+plane — which is right, because the global `z` is zero at those cells too, they
+being *interior* cells of the neighbouring partition. An interior slab's leaf
+lift is therefore genuinely zero except through its transverse physical faces.
+
+One caveat worth knowing rather than testing: `fill_bc_inhomogeneous!` sweeps
+dimensions `1:N` writing full cross-dimensional slices, so a *corner* ghost keeps
+whichever dimension wrote last — dimension `N` globally, but dimension 1 on a slab
+whose dimension-`N` faces are `Interface`. Harmless here: every whitelisted leaf
+steps `±1` along one axis at a time, so no stencil ever reads a corner ghost. A
+diagonal or wider stencil would break that silently.
+"""
+function _dist_lift_scratch(protos, ctx)
+    zs = Vector{AbstractField}(undef, length(protos))
+    _dist_map!(ctx) do p
+        z = similar(protos[p])
+        fill!(z.data, zero(eltype(z.data)))
+        fill_bc_inhomogeneous!(z.data, z.grid)
+        zs[p] = z
+    end
+    return zs
+end
+
+"""
+    _dist_boundary_rhs!(bs, node::DistNode, zs, ctx, α, β) -> bs
+
+Assemble the boundary lift of `node` across every partition (internal): the same
+recursion [`boundary_rhs`](@ref) runs over a single `Field`, walked over the
+`DistNode` tree so a `Composed` node's `apply(a, b_b)` gets the mid-tree ghost
+exchange it needs.
+
+Contract — `zs` is the per-partition inhomogeneous-ghost field from
+[`_dist_lift_scratch`](@ref) and is never written; on exit every `bs[p]` interior
+holds `α·lift + β·bs[p]`.
+"""
+function _dist_boundary_rhs!(bs, node::DistLeaf, zs, ctx, α, β)
+    # _apply_raw!, not apply!: apply! opens with halo_update!/apply_bc!, which
+    # would overwrite the inhomogeneous ghost offsets this whole walk exists to
+    # sweep. Same seam the single-device boundary_rhs uses.
+    _dist_map!(ctx) do p
+        _apply_raw!(bs[p], node.ops[p], zs[p], zs[p].grid, α, β)
+    end
+    return bs
+end
+
+function _dist_boundary_rhs!(bs, node::DistAdded, zs, ctx, α, β)
+    _dist_boundary_rhs!(bs, node.a, zs, ctx, α, β)
+    _dist_boundary_rhs!(bs, node.b, zs, ctx, α, true)
+    return bs
+end
+
+# No conj here, unlike the adjoint walk above: this is a forward lift, matching
+# `boundary_rhs(L::Scaled)` in linalg.jl.
+_dist_boundary_rhs!(bs, node::DistScaled, zs, ctx, α, β) =
+    _dist_boundary_rhs!(bs, node.node, zs, ctx, α * node.α, β)
+
+# The adjoint action is built homogeneous (gather + fold, no ghost offsets), so
+# its lift is identically zero — but β = 0 still has to WRITE that zero, or the
+# caller's buffer keeps whatever the previous walk left in it.
+function _dist_boundary_rhs!(bs, ::DistAdjoint, zs, ctx, α, β)
+    iszero(β) && _dist_map!(ctx) do p
+        fill!(interior(bs[p]), zero(eltype(bs[p].data)))
+    end
+    return bs
+end
+
+# Affine composition: a(b(x) + c_b) + c_a = (a∘b)(x) + a(c_b) + c_a. The middle
+# term applies `a` to a REAL field, so `c_b`'s cut-plane ghosts have to be
+# exchanged first — the slice-2a problem, gated by the same predicate so no
+# unmatched exchange is introduced.
+#
+# Reusing this node's own `tmps`/`xch` is safe and deliberate: they are never
+# shared with another node, `_dist_scatter!` fully overwrites what it stages, and
+# the lift is assembled once per solve, never concurrently with a `mul!` — the
+# same single-threaded contract `prepare` already carries. Afterwards `tmps` holds
+# stale *physical* ghosts, which the walk's standing contract already covers:
+# every ghost-reading leaf opens with `apply_bc!`.
+function _dist_boundary_rhs!(bs, node::DistComposed, zs, ctx, α, β)
+    _dist_boundary_rhs!(node.tmps, node.b, zs, ctx, true, false)
+    node.xch === nothing || _dist_scatter!(node.xch, node.tmps, ctx)
+    _dist_capply!(bs, node.a, node.tmps, ctx, α, β)
+    _dist_boundary_rhs!(bs, node.a, zs, ctx, α, true)
+    return bs
+end
+
+#--------------------------------------------------------------------------------# Distributed source terms
+
+# set! per partition. Exact against the global set! because cell_center evaluates
+# at the global cell index (Grids.jl) — that is what makes a slab-assembled
+# right-hand side independent of the partition count.
+function _dist_set!(fields, fun::F, ctx) where {F}
+    _dist_map!(ctx) do p
+        set!(fields[p], fun)
+    end
+    return fields
 end

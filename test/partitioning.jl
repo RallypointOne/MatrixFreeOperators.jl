@@ -19,6 +19,21 @@ _field(g, xflat) = flat_to_interior!(scalar_field(g, eltype(xflat)), xflat)
 # the MDLA extension — re-deriving it here would let the two silently decouple.
 halo_plane_view(f::Field, plane::Int) = MatrixFreeOperators._halo_plane_view(f, plane)
 
+# Every field-coefficient ScalingOp in a (possibly prepared) tree, so the slice-2b
+# testsets can reach in and poke at what `_slab_op` built.
+let M = MatrixFreeOperators
+    global _scaling_leaves
+    _scaling_leaves(S::M.ScalingOp{<:Field}) = (S,)
+    _scaling_leaves(L::M.Scaled) = _scaling_leaves(L.op)
+    _scaling_leaves(L::M.AdjointOp) = _scaling_leaves(L.op)
+    _scaling_leaves(L::M.PreparedAdjoint) = _scaling_leaves(L.op)
+    _scaling_leaves(L::M.Added) = (_scaling_leaves(L.a)..., _scaling_leaves(L.b)...)
+    _scaling_leaves(L::M.Composed) = (_scaling_leaves(L.a)..., _scaling_leaves(L.b)...)
+    _scaling_leaves(L::M.PreparedComposed) =
+        (_scaling_leaves(L.a)..., _scaling_leaves(L.b)...)
+    _scaling_leaves(::M.AbstractOperator) = ()
+end
+
 function dist_apply_emulated(L, g, parts, ghost_globals, plans, xflat)
     T = eltype(xflat)
     yflat = similar(xflat)
@@ -128,13 +143,18 @@ function MatrixFreeOperators._dist_reduce!(X::EmuExchange, fields, ::EmuCtx)
     return fields
 end
 
-# CPU twin of prepare_distributed: same normalization, same guards, same tree.
+# CPU twin of prepare_distributed: same normalization, same guards, same
+# localization, same tree.
 function dist_prepare(L0, g, nparts)
     L = MatrixFreeOperators._push_adjoints(L0)
     MatrixFreeOperators._check_distributable(L)
+    MatrixFreeOperators._check_one_grid(L, g)
     T = eltype(spacing(g))
     parts = partition_grid(g, nparts)
-    prepared = [prepare(L, scalar_field(lg, T)) for lg in parts]
+    # Guards first, on the GLOBAL tree, then localize — see `_slab_op`.
+    prepared = [
+        prepare(MatrixFreeOperators._slab_op(L, lg), scalar_field(lg, T)) for lg in parts
+    ]
     owned = [MatrixFreeOperators._owned_flat_range(g, lg) for lg in parts]
     ctx = EmuCtx(parts)
     tree = MatrixFreeOperators._dist_tree(
@@ -177,6 +197,28 @@ function dist_adjoint!(x̄flat, D, ȳflat)
 end
 dist_adjoint(D, ȳflat) = dist_adjoint!(similar(ȳflat), D, ȳflat)
 
+# CPU twin of the extension's boundary_rhs(P): assemble the lift per slab and copy
+# the owned interiors out. `zs` is transient here exactly as it is there.
+function dist_boundary_rhs(D, T=Float64)
+    zs = MatrixFreeOperators._dist_lift_scratch(D.xs, D.ctx)
+    MatrixFreeOperators._dist_boundary_rhs!(D.ys, D.tree, zs, D.ctx, true, false)
+    b = Vector{T}(undef, sum(length, D.owned))
+    for p in eachindex(D.parts)
+        interior_to_flat!(view(b, D.owned[p]), D.ys[p])
+    end
+    return b
+end
+
+# CPU twin of the extension's set!(::MultiDeviceVector, P, fun).
+function dist_set(D, fun, T=Float64)
+    MatrixFreeOperators._dist_set!(D.xs, fun, D.ctx)
+    x = Vector{T}(undef, sum(length, D.owned))
+    for p in eachindex(D.parts)
+        interior_to_flat!(view(x, D.owned[p]), D.xs[p])
+    end
+    return x
+end
+
 # Dense forward/adjoint matrices through the distributed path.
 function dist_materialize(D, n)
     A_fwd, A_adj, e = zeros(n, n), zeros(n, n), zeros(n)
@@ -201,9 +243,10 @@ end
         @test all(p -> local_size(p)[1] == 5, parts)
         @test all(p -> spacing(p) == spacing(g), parts)
         @test all(p -> halo_width(p) == halo_width(g), parts)
-        @test parts[1].extent[2][1] == g.extent[2][1]
-        @test parts[3].extent[2][2] == g.extent[2][2]
-        @test parts[1].extent[2][2] == parts[2].extent[2][1]
+        # A slab keeps the GLOBAL extent; its position lives in local_range alone.
+        # That is what makes cell_center bitwise equal on a slab and on the uncut
+        # grid — see "slab coordinates are global-index exact" below.
+        @test all(p -> p.extent == g.extent, parts)
         @test [p.local_range[2] for p in parts] == [1:3, 4:6, 7:8]
         @test all(p -> p.local_range[1] == 1:5, parts)
         Interface = MatrixFreeOperators.Interface
@@ -218,6 +261,46 @@ end
         @test all(p -> boundary_conditions(p)[2] isa Tuple{Interface,Interface}, pparts)
 
         @test partition_grid(g, 1) == [g] && partition_grid(g, 1)[1] === g
+    end
+
+    # Coordinates, not just spacing. A slab that derived its own origin would
+    # evaluate lo + (z0)h + (i-0.5)h against the global lo + (z-0.5)h — two
+    # roundings versus one, drifting by an ulp. That is invisible in a stencil
+    # apply (which reads only spacing) but makes any coordinate-assembled RHS
+    # depend on the partition count. `===` on purpose: `≈` would pass while the
+    # bug is present.
+    @testset "slab coordinates are global-index exact" begin
+        # An origin and spacing chosen so lo + k*h is NOT exact in Float64.
+        for (ext, sz) in (
+            ((( 0.3, 1.7), (-1.1, 2.9)), (5, 9)),
+            (((-0.7, 0.9), ( 0.1, 1.3), (2.2, 5.8)), (3, 4, 6)),
+        )
+            g = CartesianGrid(ext, sz)
+            N = length(sz)
+            for np in (2, 3)
+                parts = partition_grid(g, np)
+                for lp in parts
+                    off = first(lp.local_range[N]) - 1
+                    for I in interior(lp)
+                        J = CartesianIndex(ntuple(d -> d == N ? I[d] + off : I[d], N))
+                        @test cell_center(lp, I) === cell_center(g, J)
+                    end
+                end
+            end
+        end
+
+        # ...and the consequence that matters: a slab-local `set!` reproduces the
+        # global one bit for bit, so a distributed RHS is partition-independent.
+        g = CartesianGrid(((0.3, 1.7), (-1.1, 2.9)), (5, 9))
+        fun = x -> sin(3x[1]) * exp(-x[2]) + 0.25x[1] * x[2]
+        ref = set!(scalar_field(g), fun)
+        for np in (2, 3)
+            for lp in partition_grid(g, np)
+                loc = set!(scalar_field(lp), fun)
+                @test collect(interior(loc)) ==
+                    collect(view(interior(ref), lp.local_range...))
+            end
+        end
     end
 
     @testset "validation" begin
@@ -651,23 +734,287 @@ end
         @test A_fwd ≈ materialize(prepare(inner))'
     end
 
+    #----------------------------------------------------------------# Field coefficients (2b)
+
+    # Every coefficient here VARIES ALONG THE CUT DIMENSION and is asymmetric
+    # about it. A coefficient constant in the cut dimension cannot catch a
+    # halo-shifted or reversed slice, which is the likeliest bug in `_slab_field`.
+    coeff_fun(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
+
+    @testset "_slab_field restricts the global coefficient exactly" begin
+        for (ext, sz) in (
+            ((( 0.0, 1.0), (0.0, 2.0)), (4, 6)),
+            (((-0.7, 0.9), (0.1, 1.3), (2.2, 5.8)), (3, 4, 6)),
+        )
+            g = CartesianGrid(ext, sz)
+            N = length(sz)
+            κ = set!(scalar_field(g), x -> 1.5 + sum(d -> d * x[d]^2, 1:N))
+            for np in (1, 2, 3)
+                parts = partition_grid(g, np)
+                for lp in parts
+                    lκ = MatrixFreeOperators._slab_field(κ, lp)
+                    @test lκ.grid === lp
+                    @test size(lκ.data) == MatrixFreeOperators.padded_size(lp)
+                    @test collect(interior(lκ)) ==
+                        collect(view(interior(κ), lp.local_range...))
+                end
+                # ...and the slabs tile the global coefficient with no gap or overlap
+                rebuilt = similar(interior(κ))
+                for lp in parts
+                    view(rebuilt, lp.local_range...) .=
+                        interior(MatrixFreeOperators._slab_field(κ, lp))
+                end
+                @test rebuilt == interior(κ)
+            end
+        end
+    end
+
+    # The claim that lets a coefficient be partitioned with NO exchange of its
+    # own: it is read pointwise at the cell being written, so its ghosts are
+    # never consulted. Poison them and demand the answer not move.
+    @testset "a localized coefficient's ghosts are never read" begin
+        g = gridof((Dirichlet(), Neumann()))
+        n = prod(local_size(g))
+        x = rand(MersenneTwister(11), n)
+        κ = set!(scalar_field(g), coeff_fun)
+        for L in (scaling(κ), laplacian(g) * scaling(κ), scaling(κ) * laplacian(g))
+            D = dist_prepare(L, g, 2)
+            clean = dist_mul(D, x)
+            for pre in D.prepared
+                for S in _scaling_leaves(pre.op)
+                    saved = copy(interior(S.coeff))
+                    fill!(S.coeff.data, NaN)      # poison every ghost
+                    interior(S.coeff) .= saved
+                end
+            end
+            @test dist_mul(D, x) == clean
+        end
+    end
+
+    @testset "forward parity: Field coefficient" begin
+        rng = MersenneTwister(20260729)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            n = prod(local_size(g))
+            x = rand(rng, n)
+            κ = set!(scalar_field(g), coeff_fun)
+            ops = (
+                scaling(κ),
+                laplacian(g) * scaling(κ),
+                scaling(κ) * laplacian(g),
+                2.0 * scaling(κ) + laplacian(g),
+                derivative(g, 1) * scaling(κ) * derivative(g, 1),
+            )
+            for L in ops
+                @test dist_mul(dist_prepare(L, g, np), x) == flatten(apply(L, _field(g, x)))
+            end
+        end
+    end
+
+    # Negative control for the slice window. Shifting it by one plane is the
+    # halo-off-by-h bug in miniature: still a valid coefficient everywhere, still
+    # the right shapes, and wrong on every partition after the first.
+    @testset "the coefficient slice window is load-bearing" begin
+        g = gridof((Dirichlet(), Neumann()))
+        n = prod(local_size(g))
+        x = rand(MersenneTwister(13), n)
+        κ = set!(scalar_field(g), coeff_fun)
+        D = dist_prepare(laplacian(g) * scaling(κ), g, 2)
+        good = dist_mul(D, x)
+        @test good == flatten(apply(laplacian(g) * scaling(κ), _field(g, x)))
+        Dbad = dist_prepare(laplacian(g) * scaling(κ), g, 2)
+        for (p, lp) in enumerate(Dbad.parts)
+            p == 1 && continue                       # partition 1's window is right
+            shifted = ntuple(d -> d == 2 ? lp.local_range[d] .- 1 : lp.local_range[d], 2)
+            for S in _scaling_leaves(Dbad.prepared[p].op)
+                interior(S.coeff) .= view(interior(κ), shifted...)
+            end
+        end
+        @test dist_mul(Dbad, x) != good
+    end
+
+    @testset "adjoint identity and dense structure: Field coefficient" begin
+        rng = MersenneTwister(20260730)
+        for cut in cutbcs, np in (2, 3)
+            g = gridof(cut)
+            n = prod(local_size(g))
+            κ = set!(scalar_field(g), coeff_fun)
+            x, y = rand(rng, n), rand(rng, n)
+            for L in (
+                scaling(κ) * laplacian(g),
+                laplacian(g) * scaling(κ),
+                adjoint(derivative(g, 1) * scaling(κ)),
+                scaling(κ) + laplacian(g),
+            )
+                D = dist_prepare(L, g, np)
+                @test dot(dist_mul(D, x), y) ≈ dot(x, dist_adjoint(D, y)) rtol = 1e-13
+                A_fwd, A_adj = dist_materialize(D, n)
+                @test A_fwd ≈ materialize(prepare(D.L))
+                @test A_adj ≈ A_fwd'
+            end
+        end
+    end
+
+    #----------------------------------------------------------------# Boundary lift (2b)
+
+    # A DIFFERENT inhomogeneous value on every face. A slab that applied a
+    # cut-dimension BC to its Interface face, or swapped low for high, would still
+    # produce a plausible lift under a symmetric choice; it cannot under this one.
+    inhom_grid(cut, sz=(4, 6)) = CartesianGrid(
+        ((0.0, 1.0), (0.0, 2.0)), sz;
+        bc=((Dirichlet(0.75), Neumann(-1.25)), cut),
+    )
+    inhom_cuts = (
+        (Dirichlet(2.5), Neumann(0.4)),      # physical cut: only the end slabs lift
+        (Periodic(), Periodic()),            # periodic cut: transverse faces only
+    )
+
+    # The premise the whole leaf-level lift rests on: a slab's inhomogeneous ghost
+    # field is the restriction of the global one, with no exchange. Compared at
+    # transverse-INTERIOR positions only — corner ghosts legitimately differ,
+    # because the dimension-N pass that would overwrite them globally is a no-op on
+    # an Interface face, and no whitelisted stencil reads a corner.
+    @testset "the inhomogeneous ghost field is exact per slab" begin
+        for cut in inhom_cuts, np in (2, 3)
+            g = inhom_grid(cut)
+            zg = scalar_field(g)
+            MatrixFreeOperators.fill_bc_inhomogeneous!(zg.data, g)
+            D = dist_prepare(laplacian(g), g, np)
+            zs = MatrixFreeOperators._dist_lift_scratch(D.xs, D.ctx)
+            h1, n1 = halo_width(g)[1], local_size(g)[1]
+            tr = (h1 + 1):(h1 + n1)
+            for (p, lp) in enumerate(D.parts)
+                off = first(lp.local_range[2]) - 1
+                for i in axes(zs[p].data, 2)
+                    @test view(zs[p].data, tr, i) == view(zg.data, tr, i + off)
+                end
+            end
+        end
+    end
+
+    @testset "boundary_rhs parity" begin
+        for cut in inhom_cuts, np in (1, 2, 3)
+            g = inhom_grid(cut)
+            κ = set!(scalar_field(g), coeff_fun)
+            D1 = derivative(g, 1)
+            ops = (
+                laplacian(g),
+                -1.5 * laplacian(g),
+                laplacian(g) + 2.0 * identity_op(),
+                laplacian(g) * laplacian(g),
+                derivative(g, 1) * derivative(g, 2),
+                scaling(κ) * laplacian(g),
+                laplacian(g) * scaling(κ),
+                # A diagonal factor between two stencils: the OUTER Composed's
+                # `_reads_ghosts` is false, so its lift must skip the exchange while
+                # the inner one still fires — the gating, not just the exchange.
+                derivative(g, 1) * scaling(κ) * derivative(g, 1),
+                # both term orders: a DistAdjoint's zero lift has to WRITE its zero
+                # when it runs first, and stay a no-op when it accumulates
+                adjoint(D1) + laplacian(g),
+                laplacian(g) + adjoint(D1),
+            )
+            for L in ops
+                @test dist_boundary_rhs(dist_prepare(L, g, np)) ==
+                    flatten(boundary_rhs(L, g))
+            end
+        end
+
+        # 3-D, where the transverse faces of every slab contribute and the cut
+        # dimension is the last one.
+        g3 = CartesianGrid(
+            ((0.0, 1.0), (0.0, 2.0), (0.0, 1.5)), (3, 4, 6);
+            bc=(
+                (Dirichlet(0.75), Neumann(-1.25)),
+                (Neumann(0.3), Dirichlet(-2.0)),
+                (Dirichlet(2.5), Neumann(0.4)),
+            ),
+        )
+        for np in (2, 3), L in (laplacian(g3), laplacian(g3) * laplacian(g3))
+            @test dist_boundary_rhs(dist_prepare(L, g3, np)) ==
+                flatten(boundary_rhs(L, g3))
+        end
+
+        # A homogeneous problem lifts to exactly zero — the case that must not
+        # start costing anything now that there is a walk for it.
+        gh = gridof((Dirichlet(), Neumann()))
+        @test all(iszero, dist_boundary_rhs(dist_prepare(laplacian(gh), gh, 2)))
+    end
+
+    # Negative control, mirroring "the mid-tree exchange is load-bearing": the
+    # inner lift `b_b` is a real field with nonzero interior near the physical
+    # boundary, so the outer factor reads its cut-plane ghosts. Without the
+    # exchange those are stale, and the parity test above would be passing for the
+    # wrong reason on a grid whose intermediate happened to vanish at the cut.
+    @testset "the lift's mid-tree exchange is load-bearing" begin
+        g = inhom_grid((Dirichlet(2.5), Neumann(0.4)))
+        L = laplacian(g) * laplacian(g)
+        D = dist_prepare(L, g, 2)
+        @test D.tree.xch !== nothing
+        D2 = dist_prepare(L, g, 2)
+        Dsup = (;
+            D2...,
+            tree=MatrixFreeOperators.DistComposed(D2.tree.a, D2.tree.b, D2.tree.tmps, nothing),
+        )
+        @test dist_boundary_rhs(D) != dist_boundary_rhs(Dsup)
+    end
+
+    # The lift reuses each Composed node's own `tmps`/`xch` rather than allocating
+    # a second set. That is safe only because the two never run concurrently — pin
+    # it, because a violation would surface as stale physical ghosts on an
+    # intermediate, i.e. a wrong answer on the *next* solve rather than this one.
+    @testset "lift and mul! do not corrupt each other" begin
+        for cut in inhom_cuts
+            g = inhom_grid(cut)
+            n = prod(local_size(g))
+            x = rand(MersenneTwister(17), n)
+            L = laplacian(g) * laplacian(g)
+            D = dist_prepare(L, g, 2)
+            y0, b0 = dist_mul(D, x), dist_boundary_rhs(D)
+            @test dist_mul(D, x) == y0        # a lift in between changes nothing
+            @test dist_boundary_rhs(D) == b0  # ...and neither does a mul!
+            @test dist_boundary_rhs(D) == b0  # the lift is idempotent on its own
+        end
+    end
+
+    # The end the whole slice exists for: assemble `f - b` slab-locally and get the
+    # same linear system the single-device path assembles globally.
+    @testset "a full inhomogeneous RHS assembles slab-locally" begin
+        for cut in inhom_cuts, np in (2, 3)
+            g = inhom_grid(cut, (8, 12))
+            κ = set!(scalar_field(g), coeff_fun)
+            fun = x -> sin(3x[1]) * exp(-x[2]) + 0.25x[1] * x[2]
+            for L in (laplacian(g), scaling(κ) * laplacian(g))
+                D = dist_prepare(L, g, np)
+                ref = flatten(set!(scalar_field(g), fun)) .- flatten(boundary_rhs(L, g))
+                @test dist_set(D, fun) .- dist_boundary_rhs(D) == ref
+            end
+        end
+    end
+
     # Steady-state work must not scale with the grid: a per-call scratch
     # allocation inside the walk would show as a ~4x jump when cells quadruple.
     @testset "walk allocations do not scale with grid size" begin
-        function steady(sz)
+        function steady(sz, mk)
             g = CartesianGrid(
                 ((0.0, 1.0), (0.0, 1.0)), sz;
                 bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Neumann())),
             )
             n = prod(sz)
             x = rand(MersenneTwister(7), n)
-            D = dist_prepare(laplacian(g) * laplacian(g), g, 2)
+            D = dist_prepare(mk(g), g, 2)
             out = similar(x)
             dist_mul!(out, D, x)          # warm up
             return @allocated dist_mul!(out, D, x)
         end
-        small, large = steady((16, 16)), steady((32, 32))
-        @test large < 2 * small
+        for mk in (
+            g -> laplacian(g) * laplacian(g),
+            # A localized leaf dispatches dynamically; that must stay O(1), not O(cells).
+            g -> laplacian(g) * scaling(set!(scalar_field(g), coeff_fun)),
+        )
+            small, large = steady((16, 16), mk), steady((32, 32), mk)
+            @test large < 2 * small
+        end
     end
 
     # The distributability whitelist is the whole defense against a silently
@@ -691,22 +1038,71 @@ end
             @test distributable(adjoint(derivative(g, 1)))
             L = 0.5 * laplacian(g) + 2.0 * identity_op()
             @test check(L) === L      # passes the operator through, does not throw
+
+            # slice 2b: a real coefficient field on an undistributed CartesianGrid
+            # is sliceable onto the slabs, so it joins the whitelist.
+            κ = set!(scalar_field(g), x -> 1 + x[1])
+            @test distributable(scaling(κ))
+            @test distributable(scaling(κ) + laplacian(g))
+            @test distributable(laplacian(g) * scaling(κ))
+            @test distributable(adjoint(derivative(g, 1) * scaling(κ)))
         end
 
         @testset "rejected: field-valued parameters" begin
-            κ = set!(scalar_field(g), x -> 1 + x[1])
-            @test !distributable(scaling(κ))
-            @test !distributable(scaling(κ) + laplacian(g))
             v = set!(vector_field(g), x -> SVector(1.0, 0.0))
             @test !distributable(advection(g, v))
             # the message must name the reason, not just the type
             err = try
-                check(scaling(κ))
+                check(advection(g, v))
             catch e
                 e
             end
             @test err isa ArgumentError
             @test occursin("global grid", err.msg)
+
+            # A complex coefficient stays rejected: its adjoint rebuilds conj.(κ)
+            # per call, which would allocate a full array per partition per
+            # Krylov iteration.
+            κc = Field(ComplexF64.(ones(size(scalar_field(g).data))), g)
+            @test !distributable(scaling(κc))
+            errc = try
+                check(scaling(κc))
+            catch e
+                e
+            end
+            @test errc isa ArgumentError
+            @test occursin("real-eltype", errc.msg)
+        end
+
+        # A coefficient on a *different* grid is only visible from the tree, not
+        # from any single operator — without this check it would be sliced onto
+        # slabs of a grid it does not live on and answer with plausible numbers.
+        @testset "rejected: a coefficient on another grid" begin
+            check1 = MatrixFreeOperators._check_one_grid
+            same = MatrixFreeOperators._same_grid
+            g2 = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))   # separately built
+            @test same(g2, g)
+            @test !same(g, gc)                                     # different resolution
+            # The two properties that make _same_grid worth having: a slab never
+            # compares equal to the grid it was cut from (local_range differs), and
+            # a device-adapted twin does (device is not compared).
+            @test all(p -> !same(p, g), partition_grid(g, 2))
+            @test same(Adapt.adapt(Array, g), g)
+
+            κg = set!(scalar_field(g), x -> 1 + x[1])
+            @test check1(laplacian(g) + scaling(κg), g) isa MatrixFreeOperators.Added
+            @test check1(laplacian(g) + scaling(κg), g2) isa MatrixFreeOperators.Added
+
+            κc = set!(scalar_field(gc), x -> 1 + x[1])
+            @test distributable(laplacian(g) + scaling(κc))        # each leaf is fine alone
+            err = try
+                check1(laplacian(g) + scaling(κc), g)
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            @test occursin("ScalingOp", err.msg)
+            @test occursin("different grid", err.msg)
         end
 
         @testset "rejected: transfer operators span two grids" begin
@@ -743,14 +1139,14 @@ end
 
         # The error points at the offending node, not merely at the tree root.
         @testset "message names the culprit inside a tree" begin
-            κ = set!(scalar_field(g), x -> 1 + x[1])
+            v = set!(vector_field(g), x -> SVector(1.0, 0.0))
             err = try
-                check(laplacian(g) + 2.0 * scaling(κ))
+                check(laplacian(g) + 2.0 * advection(g, v))
             catch e
                 e
             end
             @test err isa ArgumentError
-            @test occursin("ScalingOp", err.msg)
+            @test occursin("Advection", err.msg)
         end
     end
 end

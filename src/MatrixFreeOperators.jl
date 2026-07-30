@@ -25,6 +25,7 @@ export Restriction, restriction, Prolongation, prolongation
 export Scaled, Added, Composed
 export LinearizedOp, linearize, linearize!
 export PreparedOperator, PreparedForest, prepare, prepare_distributed, boundary_rhs
+export assemble_rhs, local_grids
 export MultigridPreconditioner, MultigridSolver, solve, Jacobi, Chebyshev
 
 include("Grids.jl")

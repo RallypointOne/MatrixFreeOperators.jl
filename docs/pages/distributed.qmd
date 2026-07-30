@@ -29,10 +29,15 @@ not MPI, so "distributed" here means the GPUs in one box.
 memory-contiguous one — so every slab owns a *contiguous* span of the global
 flat interior DOFs. That is the whole trick: the flat Krylov vector is already
 partitioned before anything else happens, and no solver vector ever carries a
-ghost cell. Each slab is an ordinary `CartesianGrid` that keeps the global
-spacing **verbatim** rather than recomputing it from its own extent — an ulp of
-drift in `h` would move the stencil weights and cost the bit parity advertised
-below.
+ghost cell.
+
+Each slab is an ordinary `CartesianGrid` that keeps the global spacing **and the
+global extent** verbatim, carrying its own position only in `local_range`. Extent
+describes the domain; `local_range` describes ownership. Recomputing either from
+the slab's own span would round a second time, and an ulp of drift in `h` moves
+the stencil weights while an ulp of drift in a coordinate moves any
+[right-hand side you assemble per slab](#inhomogeneous-boundaries-assemble-slab-locally-too)
+— both costing the bit parity advertised below.
 
 The invariant everything rests on: **cut faces carry `Interface`, and
 `apply_bc!`/`fold_bc!` deliberately skip every `Interface` face**. Those methods
@@ -98,10 +103,11 @@ where a GPU happens to be. That CPU proof covers forward parity against the
 single-grid apply (**bitwise** `==`, not `≈` — what the verbatim spacing buys),
 the adjoint identity to `rtol=1e-13`, the assembled dense structure against
 `materialize`, the guards below, and allocations that do not grow with grid
-size. It also carries a negative control that rebuilds the tree with the
-mid-tree exchange suppressed and asserts the answer *changes* — so the exchange
-is proven load-bearing, and the parity tests cannot be passing for the wrong
-reason.
+size. It also carries negative controls that rebuild the tree with the mid-tree
+exchange suppressed — for both the forward action and the boundary lift — and
+assert the answer *changes*, plus one that shifts a partition's coefficient slice
+by a single plane. So the exchange and the slice window are proven load-bearing,
+and the parity tests cannot be passing for the wrong reason.
 
 The gated GPU suite (`test/mdla_gpu.jl`) re-proves parity and the adjoint
 identity on real MDLA `scatter!`/`reduce!`, and adds the one thing CPU cannot
@@ -119,12 +125,16 @@ using MatrixFreeOperators, MultiDeviceLinearAlgebra, CUDA, Krylov
 
 g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))
 L = -1 * laplacian(g)                        # SPD under Dirichlet
-f = set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2]))
 
 P = prepare_distributed(L, 2)                # two slabs, two CUDA devices
-b = MultiDeviceVector(flatten(f), P.spec)
+b = assemble_rhs(P, x -> sinpi(x[1]) * sinpi(x[2]))
 u, stats = Krylov.cg(P, b)
 ```
+
+[`assemble_rhs`](../pages/api.qmd) is the whole right-hand side —
+`f - boundary_rhs`, assembled slab-locally, with nothing global materialized on
+any one device. See [Inhomogeneous boundaries](#inhomogeneous-boundaries-assemble-slab-locally-too)
+below for what it does and how to bring your own source data.
 
 Or pinning the devices explicitly, when you do not want the first `nparts` the
 driver reports:
@@ -160,15 +170,20 @@ default to the weaker claim" rule: an operator is distributable only if it says
 so, and a forgotten declaration falls through to the fallback and throws.
 
 Distributable today: `Laplacian`, `Derivative`, `IdentityOp`, and `ScalingOp`
-with a `Number` coefficient, combined under `Scaled`, `Added`, `Composed`, and
-`adjoint`, with both factors of a composition on the same grid. Everything else:
+with either a `Number` or a real-valued `Field` coefficient, combined under
+`Scaled`, `Added`, `Composed`, and `adjoint`, all on one grid. Everything else:
 
 ```
   rejected                        because
   ─────────────────────────────── ────────────────────────────────────────────
-  ScalingOp with a Field coeff    the coefficient is bound to the GLOBAL grid;
-                                  it must be partitioned onto the slabs first
-  Advection                       same — the velocity field is global
+  Advection                       the velocity field is bound to the GLOBAL
+                                  grid; it must be sliced onto the slabs first
+  ScalingOp, complex coefficient  its adjoint rebuilds conj(κ) per call, which
+                                  would allocate a full array per partition
+                                  per Krylov iteration
+  ScalingOp on a BlockField       that is a forest's coefficient, not a slab's
+  a coefficient on another grid   it would be sliced onto slabs of a grid it
+                                  does not live on
   Gradient / Divergence           rank-changing ⇒ non-square ⇒ needs two
                                   partition specs; use it inside a product
                                   whose result is scalar
@@ -179,20 +194,54 @@ with a `Number` coefficient, combined under `Scaled`, `Added`, `Composed`, and
 The error names the **first** undistributable node it finds, not the tree root,
 so a large expression points at its actual culprit rather than at itself.
 
-## Inhomogeneous boundaries still assemble on one device
+A `Field` coefficient works because it is read **pointwise at the cell being
+written**, so each partition needs nothing but the interior slice of it — no
+ghost exchange of its own, no second `GhostExchange`. The slicing happens on the
+host and the slab is then uploaded, deliberately: slicing a coefficient the user
+had already moved to device 0 would be a cross-device copy, which is exactly the
+operation MDLA's peer-to-peer probe exists to guard.
 
-There is no distributed `boundary_rhs` yet. Assemble the lift on the global grid
-and split it, which is exact and works today:
+## Inhomogeneous boundaries assemble slab-locally too
+
+[`boundary_rhs`](../pages/api.qmd) has a distributed method. Each partition
+assembles the lift of its own slab and the result comes back as a
+`MultiDeviceVector`:
 
 ```julia
-b = MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)
+b = assemble_rhs(P, x -> sinpi(x[1]) * sinpi(x[2]))   # f - boundary_rhs(P)
+
+# ...or in two steps, if you want the pieces
+src = set!(MultiDeviceVector{Float64}(undef, P.spec), P, x -> sinpi(x[1]))
+b   = src .- boundary_rhs(P)
 ```
 
-**An honest note:** this materializes the whole global right-hand side on one
-device before scattering it, so it does not scale — it is a bridge, not the
-design, and it is the reason homogeneous problems are the ones worth running
-distributed today. Tracked in issue #31 slice 2b, together with `Field`
-coefficients, rank-changing intermediates, and transfer chains.
+Why this is local at all: `Interface` faces contribute nothing to the lift — the
+inhomogeneous fill is a no-op on them, just like `apply_bc!` and `fold_bc!` — and
+that is not an approximation. The global lift really is zero at those cells,
+because inhomogeneous data lives only in *physical*-boundary ghosts, and a cut
+plane's other side is an interior cell of the neighbouring partition. So only the
+slabs owning a physical face lift through the cut dimension, while transverse
+physical faces contribute on every slab. The one place an exchange is needed is a
+`Composed` lift, where the inner factor's lift is a real field whose cut-plane
+ghosts the outer factor reads — and that reuses the node's own mid-tree exchange.
+
+Bring your own source data with [`local_grids`](../pages/api.qmd), which hands
+back each partition's slab grid, on the host:
+
+```julia
+fields = [set!(scalar_field(lg), myfun) for lg in local_grids(P)]
+b = assemble_rhs(P, fields)
+```
+
+This is bitwise equal to the old single-device recipe
+`MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)` — which
+still works, and is still the right call if you already have the global field in
+memory. The reason the two agree exactly is that `cell_center` evaluates at the
+**global** cell index: a slab keeps the global `extent` and carries its position
+in `local_range`, so a slab-local `set!` rounds once, the same way the uncut grid
+does. Deriving a slab-local origin instead would round twice and drift by an ulp,
+which is enough to make the assembled right-hand side — and therefore the
+iteration count — depend on how many partitions you asked for.
 
 ## Running it takes CUDA, an unregistered package, and an env var
 
@@ -234,11 +283,11 @@ health check and the host-side remedy.
 ## Status
 
 Ships today: slab partitioning of a `CartesianGrid`, scalar fields,
-`Laplacian`/`Derivative`/`IdentityOp`/number-coefficient `ScalingOp` under
-`Scaled`/`Added`/`Composed`/`adjoint` on one grid, the mid-tree scatter and its
-matched reduction, distributed `Krylov.cg`, and bitwise forward parity across
-partition counts. Deliberately deferred: distributed `boundary_rhs` assembly,
-`Field` coefficients, rank-changing intermediates, and transfer chains (issue
-#31 slice 2b), Krylov workspaces beyond `cg`, multi-node transport, and any CPU
-distributed backend. Unsupported configurations throw an `ArgumentError` up
-front rather than degrade.
+`Laplacian`/`Derivative`/`IdentityOp`/`ScalingOp` (`Number` or real `Field`
+coefficient) under `Scaled`/`Added`/`Composed`/`adjoint` on one grid, the mid-tree
+scatter and its matched reduction, distributed `boundary_rhs` and right-hand-side
+assembly, distributed `Krylov.cg`, and bitwise forward parity across partition
+counts. Deliberately deferred: rank-changing intermediates and transfer chains,
+`Advection` and complex coefficients, Krylov workspaces beyond `cg`, multi-node
+transport, distributed autodiff, and any CPU distributed backend. Unsupported
+configurations throw an `ArgumentError` up front rather than degrade.

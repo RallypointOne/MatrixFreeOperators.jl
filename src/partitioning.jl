@@ -7,11 +7,13 @@ Split `g` into `nparts` slab partitions along dimension `N` — the memory-conti
 dimension, so each partition owns a contiguous range of global flat interior DOFs.
 Cell counts split evenly with the remainder going to the first partitions.
 
-Each local grid keeps the global spacing verbatim, gets [`Interface`](@ref) faces
-on partition cuts (both cut-dimension faces on every partition when the global
-cut-dimension BC is [`Periodic`](@ref)), and records its global plane range in
-`local_range`. `Interface` ghost slabs are filled by a distributed exchange
-(e.g. the MDLA extension), never by `apply_bc!`.
+Each local grid keeps the global spacing *and the global extent* verbatim — its
+position is carried entirely by `local_range`, which records the global plane
+range it owns, so [`cell_center`](@ref) agrees bitwise with the uncut grid. It
+gets [`Interface`](@ref) faces on partition cuts (both cut-dimension faces on
+every partition when the global cut-dimension BC is [`Periodic`](@ref)).
+`Interface` ghost slabs are filled by a distributed exchange (e.g. the MDLA
+extension), never by `apply_bc!`.
 
 Every slab must have at least `halo` planes along the cut dimension (twice that
 for a periodic cut into exactly two partitions, where both of a partition's
@@ -67,21 +69,18 @@ end
 
 # One slab-local grid. Spacing is copied verbatim from the global grid — never
 # recomputed from the slab extent, where division could drift by an ulp and break
-# bit parity with the single-device apply. Outer extent endpoints are reused
-# exactly; interior cut points are derived from the global origin and spacing.
+# bit parity with the single-device apply.
 #
-# Bit parity covers spacing, and so the stencil weights — not coordinates:
-# cell_center on a slab evaluates lo + (first(zr)-1)h + (i-0.5)h against the
-# global lo + (z-0.5)h, which can differ in the last ulp. Nothing in slice 1
-# evaluates coordinates on a slab (the RHS is assembled on the global grid), but
-# distributed boundary_rhs/set! (#31) will need to account for it.
+# The GLOBAL extent is kept verbatim too, and `local_range` alone says which part
+# of it this slab owns: extent describes the domain, local_range the ownership.
+# That is what makes `cell_center` (Grids.jl) bitwise equal on a slab and on the
+# grid it was cut from — deriving a slab-local origin `lo + (first(zr)-1)h` and
+# then adding `(i-0.5)h` rounds twice and drifts by an ulp, which would make a
+# coordinate-assembled RHS depend on the partition count.
 function _slab_grid(
     g::CartesianGrid{N,T}, zr::UnitRange{Int}, p::Int, nparts::Int, periodic::Bool
 ) where {N,T}
-    lo, hi = g.extent[N]
-    slab_lo = first(zr) == 1 ? lo : lo + T(first(zr) - 1) * g.spacing[N]
-    slab_hi = last(zr) == local_size(g)[N] ? hi : lo + T(last(zr)) * g.spacing[N]
-    extent = ntuple(d -> d == N ? (slab_lo, slab_hi) : g.extent[d], Val(N))
+    extent = g.extent
     sz = ntuple(d -> d == N ? length(zr) : local_size(g)[d], Val(N))
     lowbc = periodic || p > 1 ? Interface() : boundary_conditions(g)[N][1]
     highbc = periodic || p < nparts ? Interface() : boundary_conditions(g)[N][2]

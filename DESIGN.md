@@ -550,13 +550,46 @@ only whitelisted leaf that is not self-adjoint, hence the only way to reach an
 which does not recurse into an `AdjointOp` and would otherwise skip the mid-tree
 reduction for `AdjointOp(A∘B)`.
 
-*Deferred (issue #31, slice 2b):* `Field` coefficients, distributed
-`boundary_rhs` assembly, rank-changing intermediates (`Divergence ∘ Gradient`
-needs its own `ncomp = N` spec and ghost layout — `_slab_ghost_layout` and
-`_owned_flat_range` already take the kwarg), and transfer chains (factors on two
-grids, each needing a consistent cut). All rejected loudly. Inhomogeneous BCs
-meanwhile: assemble the lift on the global grid and split,
-`MultiDeviceVector(flatten(f) .- flatten(boundary_rhs(L, g)), P.spec)`.
+*Built (issue #31, slice 2b):* `Field` coefficients and distributed `boundary_rhs`
+— i.e. the whole solve, including its right-hand side, assembled slab-locally with
+nothing global materialized on one device.
+
+A coefficient needs no exchange of its own: `ScalingOp` reads it *pointwise at the
+cell being written*, so `_slab_op`/`_slab_field` (core, `src/distributed.jl`) slice
+the interior onto each slab and nothing else is required. Slicing happens on the
+host and the slab is uploaded, so a coefficient the user had already moved to a
+device never becomes a cross-device copy. Only field-carrying leaves differ per
+partition, so `DistLeaf`/`DistAdjoint` hold a per-partition operator vector that
+`identity.` narrows — shared leaves stay concretely typed and statically
+dispatched, and the slice-1/2a hot path is untouched. Complex coefficients stay
+rejected (their adjoint rebuilds `conj(κ)` per call, an allocation per partition
+per Krylov iteration), as does `Advection`.
+
+`_dist_boundary_rhs!` is a third walk over the same `DistNode` tree, mirroring
+`boundary_rhs`'s recursion. Leaf lifts are slab-local for free — the inhomogeneous
+fill is a no-op on `Interface` faces, and that is exact rather than approximate,
+since the global lift is zero at a cut plane too (inhomogeneous data lives only in
+physical-boundary ghosts). Only a `Composed` lift needs the mid-tree exchange,
+which it takes from the node it already belongs to.
+
+Making that assembly *partition-independent* required one core change: a slab now
+keeps the **global** `extent` and carries its position in `local_range` alone, and
+`cell_center` evaluates at the global cell index. A slab-local origin rounds twice
+and drifts by an ulp — invisible to a stencil, which reads only spacing, but enough
+to make a coordinate-assembled RHS and therefore the Krylov iteration count depend
+on `nparts`. It is bit-for-bit a no-op for undistributed grids and forest leaf
+grids, where `first(local_range[d]) == 1`. The user-facing surface is
+`boundary_rhs(P)`, `set!(::MultiDeviceVector, P, fun)`, `assemble_rhs(P, f)`, and
+`local_grids(P)`. Only `prepare_distributed` carries a `distributed` qualifier,
+because only it shadows a single-device function; everything downstream dispatches
+on `P` and is named for what it computes, not for where it runs.
+
+*Deferred:* rank-changing intermediates (`Divergence ∘ Gradient` needs its own
+`ncomp = N` spec and ghost layout — `_slab_ghost_layout` and `_owned_flat_range`
+already take the kwarg), transfer chains (factors on two grids, each needing a
+consistent cut), and distributed autodiff (blocked by the transport, not by the
+localization rewrite — `_slab_field`'s pullback is the transpose gather). All
+rejected loudly.
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
 - *Explicit* solvers (RK4, SSPRK, …): provide a trivial RHS adapter
