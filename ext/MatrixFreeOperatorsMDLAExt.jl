@@ -280,7 +280,7 @@ b .-= boundary_rhs(P)
 u, stats = Krylov.cg(P, b)
 ```
 
-See also: [`distributed_rhs`](@ref), [`prepare_distributed`](@ref).
+See also: [`assemble_rhs`](@ref), [`prepare_distributed`](@ref).
 """
 function boundary_rhs(P::MDLAPreparedOperator{T}) where {T}
     # zs is transient on purpose: the lift is a once-per-solve assembly, and a
@@ -301,15 +301,15 @@ The slab grid each partition owns, in partition order, **on the host**.
 
 The escape hatch for building distributed data this module has no helper for:
 allocate a [`Field`](@ref) on one of these, fill it however you like, and hand the
-vector of fields to [`distributed_rhs`](@ref). Each grid records its span of the
+vector of fields to [`assemble_rhs`](@ref). Each grid records its span of the
 global grid in `local_range`, and [`cell_center`](@ref) on it agrees bitwise with
 the uncut grid.
 
 Host grids on purpose. A field allocated on a device grid would land on whichever
-device happened to be current, and `distributed_rhs` would then read it from a
+device happened to be current, and `assemble_rhs` would then read it from a
 *different* device — the cross-device copy MDLA's P2P probe exists to guard, and
 the one that returns silent zeros on IOMMU-affected hosts. Build on the host;
-`distributed_rhs` uploads each slab inside its own partition's device context.
+`assemble_rhs` uploads each slab inside its own partition's device context.
 """
 MatrixFreeOperators.local_grids(P::MDLAPreparedOperator) =
     [Adapt.adapt(Array, p.grid) for p in P.parts]
@@ -327,7 +327,7 @@ concurrency caveat as `mul!` applies.
 `fun` runs on the device, inside a broadcast over each slab's cell centers, so it
 must be GPU-compatible — plain arithmetic on the `SVector` of coordinates, with no
 captured host arrays. For anything heavier, build the fields yourself on
-[`local_grids`](@ref) and hand them to [`distributed_rhs`](@ref), which uploads
+[`local_grids`](@ref) and hand them to [`assemble_rhs`](@ref), which uploads
 them.
 """
 function MatrixFreeOperators.set!(
@@ -341,7 +341,7 @@ function MatrixFreeOperators.set!(
 end
 
 """
-    distributed_rhs(P::MDLAPreparedOperator, f) -> MultiDeviceVector
+    assemble_rhs(P::MDLAPreparedOperator, f) -> MultiDeviceVector
 
 The solve-ready right-hand side `f - boundary_rhs(P)`, assembled entirely
 slab-locally.
@@ -356,11 +356,11 @@ materializing the global right-hand side on one device.
 
 ```julia
 P = prepare_distributed(laplacian(g), 2)
-b = distributed_rhs(P, x -> sin(x[1]) * exp(-x[2]))
+b = assemble_rhs(P, x -> sin(x[1]) * exp(-x[2]))
 u, stats = Krylov.cg(P, b)
 ```
 """
-function MatrixFreeOperators.distributed_rhs(P::MDLAPreparedOperator{T}, f) where {T}
+function MatrixFreeOperators.assemble_rhs(P::MDLAPreparedOperator{T}, f) where {T}
     x = MultiDeviceVector{T}(undef, P.spec)
     _source!(x, P, f)
     b = boundary_rhs(P)
@@ -374,7 +374,7 @@ _source!(x, P::MDLAPreparedOperator, fun) = MatrixFreeOperators.set!(x, P, fun)
 function _source!(x, P::MDLAPreparedOperator, fields::AbstractVector)
     length(fields) == length(P.parts) || throw(
         ArgumentError(
-            "distributed_rhs got $(length(fields)) source fields for " *
+            "assemble_rhs got $(length(fields)) source fields for " *
             "$(length(P.parts)) partitions; pass one per partition, on the grids " *
             "local_grids(P) reports",
         ),
@@ -382,7 +382,7 @@ function _source!(x, P::MDLAPreparedOperator, fields::AbstractVector)
     for (d, f) in enumerate(fields)
         flat_length(f) == length(P.spec.ranges[d]) || throw(
             ArgumentError(
-                "distributed_rhs source field $d has $(flat_length(f)) interior DOFs " *
+                "assemble_rhs source field $d has $(flat_length(f)) interior DOFs " *
                 "but partition $d owns $(length(P.spec.ranges[d])); build it on " *
                 "local_grids(P)[$d]",
             ),

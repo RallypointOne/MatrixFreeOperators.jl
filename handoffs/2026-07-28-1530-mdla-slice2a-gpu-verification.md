@@ -183,7 +183,7 @@ Three things, and the third is the one to be careful about.
 2. **Distributed `boundary_rhs`.** `_dist_boundary_rhs!` is a third walk over the same `DistNode`
    tree. Leaf lifts are slab-local for free (the inhomogeneous fill is a no-op on `Interface`); only
    a `Composed` lift needs the mid-tree exchange, and it reuses the node's own. New surface:
-   `boundary_rhs(P)`, `set!(::MultiDeviceVector, P, fun)`, `distributed_rhs(P, f)`, `local_grids(P)`.
+   `boundary_rhs(P)`, `set!(::MultiDeviceVector, P, fun)`, `assemble_rhs(P, f)`, `local_grids(P)`.
 3. **Slab coordinates are now global-index exact.** A slab keeps the **global** `extent` and carries
    its position in `local_range` alone; `cell_center` evaluates at the global cell index. Without
    this, a slab-local `set!` rounds twice and drifts by an ulp, and the assembled RHS — hence the CG
@@ -206,9 +206,9 @@ Three things, and the third is the one to be careful about.
   *different* inhomogeneous value on every face. A failure on the physical-cut grid but not the
   periodic one points at a slab applying a cut BC to its `Interface` face.
 - **`Krylov.cg with an inhomogeneous RHS assembled distributed`** — the acceptance test. Asserts
-  `gather(distributed_rhs(P, fun)) == bflat` bitwise *and* `allequal(niters)`. If the bitwise RHS
+  `gather(assemble_rhs(P, fun)) == bflat` bitwise *and* `allequal(niters)`. If the bitwise RHS
   check fails while `≈` passes, suspect the `cell_center` change, not the lift.
-- **`distributed_rhs from per-partition fields`** — the `local_grids` escape hatch.
+- **`assemble_rhs from per-partition fields`** — the `local_grids` escape hatch.
 
 `test/multigpu/mdla_3partition.jl` adds 3-partition versions of all four (coefficient forward
 parity, coefficient adjoint identity, `boundary_rhs` parity, inhomogeneous RHS + CG). The middle
@@ -260,7 +260,7 @@ a bug.
   Out of scope for #31; the guard and its reason are unchanged.
 - **`local_grids` returns HOST grids.** A field allocated on a device grid would land on whichever
   device happened to be current and then be read from a different one — the cross-device copy MDLA's
-  P2P probe exists to guard. `distributed_rhs` adapts each slab inside its own device context.
+  P2P probe exists to guard. `assemble_rhs` adapts each slab inside its own device context.
 - **`zs` is transient, not a field on `MDLAPreparedOperator`.** The lift is a once-per-solve
   assembly; a permanent padded field per device is memory a homogeneous problem should not pay.
 - **The lift reuses each `Composed` node's own `tmps`/`xch`.** Safe because they are never shared

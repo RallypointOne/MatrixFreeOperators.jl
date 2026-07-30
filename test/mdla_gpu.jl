@@ -505,7 +505,7 @@ end
         niters = Int[]
         for nd in 1:min(NGPUS_MDLA, 2)
             P = prepare_distributed(L, nd)
-            b = distributed_rhs(P, fun)
+            b = assemble_rhs(P, fun)
             @test gather(b) == bflat            # bitwise, thanks to global-index cell_center
             u, stats = Krylov.cg(P, b; atol=1e-10, rtol=1e-10)
             @test stats.solved
@@ -520,8 +520,8 @@ end
 end
 
 # The escape hatch: build the source term yourself on the grids local_grids
-# reports, and hand the fields to distributed_rhs.
-@testset "distributed_rhs from per-partition fields" begin
+# reports, and hand the fields to assemble_rhs.
+@testset "assemble_rhs from per-partition fields" begin
     if NGPUS_MDLA >= 2
         g = CartesianGrid(
             ((0.3, 1.7), (-1.1, 2.9)), (16, 18);
@@ -534,9 +534,9 @@ end
         grids = local_grids(P)
         @test length(grids) == 2
         fields = [set!(scalar_field(lg), fun) for lg in grids]
-        @test gather(distributed_rhs(P, fields)) == ref
-        @test_throws ArgumentError distributed_rhs(P, fields[1:1])
+        @test gather(assemble_rhs(P, fields)) == ref
+        @test_throws ArgumentError assemble_rhs(P, fields[1:1])
     else
-        @test_skip "distributed_rhs from fields — needs ≥ 2 CUDA devices"
+        @test_skip "assemble_rhs from fields — needs ≥ 2 CUDA devices"
     end
 end

@@ -579,8 +579,10 @@ and drifts by an ulp — invisible to a stencil, which reads only spacing, but e
 to make a coordinate-assembled RHS and therefore the Krylov iteration count depend
 on `nparts`. It is bit-for-bit a no-op for undistributed grids and forest leaf
 grids, where `first(local_range[d]) == 1`. The user-facing surface is
-`boundary_rhs(P)`, `set!(::MultiDeviceVector, P, fun)`, `distributed_rhs(P, f)`,
-and `local_grids(P)`.
+`boundary_rhs(P)`, `set!(::MultiDeviceVector, P, fun)`, `assemble_rhs(P, f)`, and
+`local_grids(P)`. Only `prepare_distributed` carries a `distributed` qualifier,
+because only it shadows a single-device function; everything downstream dispatches
+on `P` and is named for what it computes, not for where it runs.
 
 *Deferred:* rank-changing intermediates (`Divergence ∘ Gradient` needs its own
 `ncomp = N` spec and ghost layout — `_slab_ghost_layout` and `_owned_flat_range`

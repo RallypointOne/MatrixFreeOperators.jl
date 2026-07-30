@@ -127,11 +127,11 @@ g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))
 L = -1 * laplacian(g)                        # SPD under Dirichlet
 
 P = prepare_distributed(L, 2)                # two slabs, two CUDA devices
-b = distributed_rhs(P, x -> sinpi(x[1]) * sinpi(x[2]))
+b = assemble_rhs(P, x -> sinpi(x[1]) * sinpi(x[2]))
 u, stats = Krylov.cg(P, b)
 ```
 
-[`distributed_rhs`](../pages/api.qmd) is the whole right-hand side —
+[`assemble_rhs`](../pages/api.qmd) is the whole right-hand side —
 `f - boundary_rhs`, assembled slab-locally, with nothing global materialized on
 any one device. See [Inhomogeneous boundaries](#inhomogeneous-boundaries-assemble-slab-locally-too)
 below for what it does and how to bring your own source data.
@@ -208,7 +208,7 @@ assembles the lift of its own slab and the result comes back as a
 `MultiDeviceVector`:
 
 ```julia
-b = distributed_rhs(P, x -> sinpi(x[1]) * sinpi(x[2]))   # f - boundary_rhs(P)
+b = assemble_rhs(P, x -> sinpi(x[1]) * sinpi(x[2]))   # f - boundary_rhs(P)
 
 # ...or in two steps, if you want the pieces
 src = set!(MultiDeviceVector{Float64}(undef, P.spec), P, x -> sinpi(x[1]))
@@ -230,7 +230,7 @@ back each partition's slab grid, on the host:
 
 ```julia
 fields = [set!(scalar_field(lg), myfun) for lg in local_grids(P)]
-b = distributed_rhs(P, fields)
+b = assemble_rhs(P, fields)
 ```
 
 This is bitwise equal to the old single-device recipe

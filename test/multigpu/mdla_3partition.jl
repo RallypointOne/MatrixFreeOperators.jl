@@ -240,7 +240,7 @@ mp_grid(cutbc) = CartesianGrid(
             niters = Int[]
             for nd in (1, 3)
                 P = prepare_distributed(L, nd)
-                b = distributed_rhs(P, fun)
+                b = assemble_rhs(P, fun)
                 @test gather(b) == bflat
                 u, stats = Krylov.cg(P, b; atol=1e-10, rtol=1e-10)
                 @test stats.solved
