@@ -27,6 +27,7 @@ book:
     - part: "Docs"
       chapters:
         - index.qmd
+        - pages/autodiff.qmd
         - pages/amr.qmd
         - pages/multigrid.qmd
         - pages/distributed.qmd

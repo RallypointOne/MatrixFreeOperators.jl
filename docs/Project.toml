@@ -1,5 +1,8 @@
 [deps]
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
 JSON3 = "0f8b85d8-7281-11e9-16c2-39a750bddbf1"
 Krylov = "ba0b0d4f-ebba-5204-a429-3ac8c609bfb7"
-MatrixFreeOperators = "bf251007-91fc-422b-8727-f8d5215c1c76"
 LocalCoverage = "5f6e1e16-694c-5876-87ef-16b5274f298e"
+MatrixFreeOperators = "bf251007-91fc-422b-8727-f8d5215c1c76"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"

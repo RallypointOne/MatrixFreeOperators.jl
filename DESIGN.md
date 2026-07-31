@@ -498,11 +498,29 @@ present, so the **core has zero AD dependencies**. Do not route custom rules
 through DifferentiationInterface.jl (it cannot carry custom Enzyme rules); DI may
 be offered as a user-facing convenience for generic code.
 
-> **API to verify at implementation:** EnzymeRules `augmented_primal`/`reverse`
-> exact signatures and `RevConfig`/activity types; Mooncake `rrule!!` / `CoDual`
-> / `@from_rrule`. (One research subagent emitted a non-existent
-> `EnzymeCore.register_primitive`; the correct mechanism is EnzymeRules — pin
-> against Enzyme docs when coding.)
+> **API verified at implementation (2026-07-31).** EnzymeRules
+> `augmented_primal(config, func, RT, args...)` → `AugmentedReturn(primal, shadow,
+> tape)` and `reverse(config, func, RT, tape, args...)` → one slot per argument;
+> `RevConfig{NeedsPrimal,NeedsShadow,Width,Overwritten,RuntimeActivity,StrongZero}`.
+> Rules live in `EnzymeCore`, so the rules extension weak-depends on **EnzymeCore**
+> (tiny, LLVM-free) and only the AD-*powered* Jacobian needs full `Enzyme`.
+>
+> Two constraints the design did not anticipate, both learned by hitting them:
+>
+> 1. **A rule argument may not mix GC-tracked pointers with inline floats.** From
+>    Julia 1.12 that is a hard `CallingConventionMismatchError`
+>    (EnzymeAD/Enzyme.jl#2707), and a `Field`/`BlockField`/`BlockForest` qualifies
+>    through its embedded grid. Rule seams therefore take **raw storage** —
+>    `_exchange_storage!`/`_bc_storage!` over a block vector or packed array plus
+>    isbits descriptors — which is what `_storage`/`_layout`/`BlockLayout` exist
+>    for. This also blocks the planned rules on `apply`/`apply!` and on
+>    `mul!(::PreparedOperator)`: `apply` both takes *and returns* a `Field`.
+> 2. **A rule body must not allocate.** Rule bodies are compiled into Enzyme's
+>    generated code; a `Dict` lookup and a closure in an augmented-primal body
+>    segfaulted on Linux x86_64 while running clean on macOS/aarch64.
+>
+> Corollary: the "custom rules for linear leaves" plan below is **deferred**, not
+> abandoned — it is blocked on #2707, not on this package's design.
 
 **Adjoint correctness is testable** and must be tested: the dot-product identity
 ⟨L x, y⟩ = ⟨x, Lᵀ y⟩ for random x, y, and AD gradients checked against
@@ -597,8 +615,9 @@ rejected loudly.
 - *Implicit/stiff* solvers (needed for diffusion): the idiomatic way to give
   OrdinaryDiffEq a **matrix-free Jacobian** is `ODEFunction(f; jac_prototype = J)`
   where `J` is a SciML-style lazy operator. Here `J` is the linear
-  `linearize(F, u₀)` operator from §10.8 — its `mul!` is the forward-mode-AD JVP,
-  so the matrix-free Jacobian comes from the AD layer, not by hand. We ship a
+  `linearize(F, u₀)` operator from §10.8 — its `mul!` is a central finite-difference
+  JVP by default, or the forward-mode-AD JVP under `EnzymeJVP()`, so the matrix-free
+  Jacobian comes from the AD layer rather than by hand. We ship a
   **thin optional SciMLOperators adapter** (a `FunctionOperator`-style wrapper
   exposing that `mul!`) *only* for this one hook — in `ext/…SciMLExt.jl`, not in
   the core, and not adopting the `(u,p,t)` model anywhere else.
@@ -857,10 +876,14 @@ Presented one at a time with a recommendation; none block writing v1's spine.
    *Recommendation:* collocated v1; encode location as the `Field` trait `L` so
    staggered is purely additive.
 
-3. **AD backend default.** Enzyme (GPU + best mutation) vs Mooncake (CPU, pure
-   Julia, gentler). *Recommendation:* ship both via extensions; document Enzyme
-   as primary for GPU, Mooncake for CPU-only / where Enzyme struggles. Note
-   Mooncake has no GPU support today.
+3. ~~**AD backend default.**~~ **Resolved (2026-07-31): Enzyme.** It is the
+   documented default and preferred backend, and the only one the custom rules in
+   `ext/…EnzymeCoreExt.jl` apply to. Mooncake stays a tested CPU-only cross-check:
+   because EnzymeRules are invisible to it, it tapes through everything and is
+   therefore a genuinely independent oracle rather than a second view of the same
+   machinery. Mooncake still has no GPU support, and no Mooncake rules are
+   written. DifferentiationInterface.jl is the recommended *frontend* — never a
+   dependency, and never a route for rules (§6).
 
 4. **Distributed target to implement *first* (when we get there).** MDLA
    `GhostExchange` (multi-GPU, yours, CUDA-only today) vs MPI+halo
@@ -953,8 +976,18 @@ Presented one at a time with a recommendation; none block writing v1's spine.
      operator whose `mul!(Jv, J, v)` is the JVP `∂/∂ε F(u₀+εv)|₀`. With Decision
      A (array-level leaves) this JVP is **free via forward-mode AD** — the
      matrix-free Jacobian falls straight out of the autodiff layer. (A
-     finite-difference JVP `(F(u₀+εv)−F(u₀))/ε` is the classic fallback.) That
-     linear `J` is what feeds Krylov and the `jac_prototype` hook in §7.
+     finite-difference JVP is the classic fallback.) That linear `J` is what feeds
+     Krylov and the `jac_prototype` hook in §7.
+
+     *As built (2026-07-31):* the backend is an explicit argument, not ambient.
+     `FiniteDifferenceJVP()` is the default — central-difference, two operator
+     applications per product, ~`√eps` accurate, and **no transpose** (its
+     `adjoint` throws). `EnzymeJVP()` is the preferred choice where Enzyme is
+     available: exact, one application per product, and it supplies a real
+     reverse-mode VJP so `adjoint(J)` works and transpose-needing Krylov methods
+     can run against a JFNK Jacobian. Explicit rather than ambient because the two
+     differ in *numbers* as well as capability, and that must not depend on which
+     packages happen to be loaded.
 
 9. **Vector-field memory layout.** Given the §Core-abstraction-1 decision that a
    field's element type carries its rank, what is the *concrete default layout* for

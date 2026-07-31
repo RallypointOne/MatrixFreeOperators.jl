@@ -52,10 +52,11 @@ become your problem:
 MatrixFreeOperators.jl solves all three at once with one design decision:
 operator bodies are written as **array-level broadcasts** over halo-padded
 fields. A single code path is then device-agnostic (GPUArrays + Adapt move it to
-any backend), differentiable by Enzyme and Mooncake with no per-operator rules
-(field *and* parameter gradients), and traceable for compiler stacks — with
-KernelAbstractions `@kernel` available as a per-operator escape hatch for hot
-stencils. On top of that sit:
+any backend), differentiable by Enzyme (the default backend) and Mooncake with no
+per-operator rules — field *and* parameter gradients — and traceable for compiler
+stacks, with KernelAbstractions `@kernel` available as a per-operator escape hatch
+for hot stencils. Custom AD rules exist as an *optimization* on top of that path,
+not as a prerequisite for it. On top of that sit:
 
 - a **lazy operator algebra** — leaves like `laplacian`, `gradient`,
   `divergence`, `scaling`, `advection` bind a grid at construction and compose
@@ -70,7 +71,9 @@ stencils. On top of that sit:
   `mul!`/`size`/`eltype` is exactly what Krylov.jl consumes;
 - **honest nonlinearity** — nonlinear operators support `apply!` and AD but
   refuse `adjoint`/`prepare`; `linearize(F, u₀)` produces the matrix-free
-  Jacobian (AD-powered JVP) that feeds Krylov, which is the JFNK pattern.
+  Jacobian that feeds Krylov, which is the JFNK pattern. The JVP is a central
+  finite difference by default and an exact forward-mode AD product under
+  `linearize(F, u₀, EnzymeJVP())`, which additionally supplies the transpose.
 
 ## Quickstart
 
@@ -124,8 +127,10 @@ Everything composes from here with the same pieces:
   solve RHS so the operator itself stays linear;
 - `linearize(F, u₀)` — the matrix-free Jacobian of a nonlinear operator such as
   `advection`, for implicit stepping and JFNK;
-- Enzyme or Mooncake gradients through `apply` with respect to the input field
-  *or* the coefficient field `σ` — no custom rules required;
+- gradients through `apply` with respect to the input field *or* the coefficient
+  field `σ`, via Enzyme (default) or Mooncake, with
+  [DifferentiationInterface.jl](https://github.com/JuliaDiff/DifferentiationInterface.jl)
+  as the recommended frontend — see `examples/inverse_diffusion.jl`;
 - `prepare_distributed(L, nparts)` — the same operator partitioned into slabs
   across several GPUs, one `CartesianGrid` per device, with the ghost exchange
   driven from inside the operator tree.
@@ -176,7 +181,8 @@ intersection this package targets.
 structured-grid PDEs in which the same operator definition is simultaneously
 (1) composable, with declared adjoints that get boundary conditions right,
 (2) device-agnostic without per-backend code, (3) differentiable end-to-end —
-through the solution field *and* operator parameters — without per-operator AD
-rules, and (4) zero-allocation behind `mul!` for Krylov hot loops. Existing
+through the solution field *and* operator parameters — without needing a
+per-operator AD rule to make it work at all, and (4) zero-allocation behind
+`mul!` for Krylov hot loops. Existing
 packages each deliver one or two of these; the array-level authoring model is
 what lets this package deliver all four from a single operator definition.

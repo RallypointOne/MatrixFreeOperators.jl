@@ -1,0 +1,194 @@
+---
+title: "Automatic Differentiation"
+---
+
+Gradients are not an add-on here — they are the reason operator bodies are written
+the way they are. This page covers what differentiates out of the box, which
+backend to use, where the package supplies its own rules and why, and the two
+places where an operator's *declared adjoint* and its *AD pullback* are the same
+object viewed from different sides.
+
+**Enzyme is the default and preferred backend**, and
+[DifferentiationInterface.jl](https://github.com/JuliaDiff/DifferentiationInterface.jl)
+is the recommended frontend. Neither is a dependency of this package: both arrive
+through extensions and your own project.
+
+## What differentiates, and why nobody wrote a rule for it
+
+Every operator leaf is authored as array-level broadcasts over halo-padded fields.
+That is a deliberate constraint (`DESIGN.md` Decision A), and differentiability is
+what it buys: leaves are ordinary Julia array code, so Enzyme differentiates
+straight through them — including with respect to parameters stored *inside*
+operators, such as a material-coefficient field.
+
+That second half is the part most matrix-free stacks cannot do. A gradient with
+respect to the solution field is a pullback through a linear map; a gradient with
+respect to `κ` in `divergence(g) * scaling(κ) * gradient(g)` is not, and a
+hand-written adjoint rule per operator per backend will not produce it.
+
+```{julia}
+using MatrixFreeOperators, Random
+import DifferentiationInterface as DI
+import Enzyme
+
+const MFO = MatrixFreeOperators   # `gradient` is an operator here *and* DI's verb
+
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16))
+
+# Everything the loss does not differentiate w.r.t. rides along as a DI Constant —
+# Enzyme wants typed arguments, not captured non-const globals.
+function diffusion_loss(κdata, udata, w, gg)
+    K = divergence(gg) * scaling(Field(κdata, gg)) * MFO.gradient(gg)
+    return sum(w .* interior(apply(K, Field(copy(udata), gg))))
+end
+
+rng = MersenneTwister(1)
+u = set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2]))
+w = rand(rng, local_size(g)...)
+κ = 1.0 .+ rand(rng, padded_size(g)...)
+
+backend = DI.AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Reverse))
+dκ = DI.gradient(diffusion_loss, backend, κ, DI.Constant(u.data), DI.Constant(w), DI.Constant(g))
+
+extrema(dκ)
+```
+
+`set_runtime_activity` is needed whenever a `Const` coefficient field flows into an
+active output buffer — static activity analysis cannot prove that safe. Setting it
+once on the backend object is why the DI frontend is pleasant to use.
+
+For a real optimization loop, prepare once and reuse:
+
+```julia
+prep = DI.prepare_gradient(diffusion_loss, backend, κ, DI.Constant(u.data), DI.Constant(w), DI.Constant(g))
+val, dκ = DI.value_and_gradient(diffusion_loss, prep, backend, κ, DI.Constant(u.data), DI.Constant(w), DI.Constant(g))
+```
+
+A complete worked inverse problem — recovering `κ` from a noisy observation, with
+the AD gradient spot-checked against finite differences before an optimizer is
+allowed to trust it — is in
+[`examples/inverse_diffusion.jl`](https://github.com/RallypointOne/MatrixFreeOperators.jl/blob/main/examples/inverse_diffusion.jl).
+
+## The adjoint you declared is the pullback you get
+
+For a *linear* operator `L`, the reverse-mode pullback with respect to the input
+field is exactly the adjoint `Lᵀ`. This is not an analogy — it is an identity, and
+it is worth using as a test oracle, because the two are computed by completely
+different machinery:
+
+```{julia}
+field_loss(xdata, w, L, gg) = sum(w .* interior(apply(L, Field(xdata, gg))))
+
+L = laplacian(g)
+x = rand(rng, padded_size(g)...)
+
+dx = DI.gradient(field_loss, backend, x, DI.Constant(w), DI.Constant(L), DI.Constant(g))
+
+# the declared adjoint, applied to the same cotangent
+w̃ = scalar_field(g); interior(w̃) .= w
+lt = apply(adjoint(L), w̃)
+
+maximum(abs, dx[interior(g)] .- collect(interior(lt)))
+```
+
+Agreement to machine precision means the hand-declared adjoint and the AD tape
+agree about boundary contributions — which is the thing that quietly goes wrong in
+matrix-free adjoint codes. The suite asserts this for every linear leaf.
+
+Note also that the ghost entries of `dx` are exactly zero. Ghost cells are scratch,
+not degrees of freedom; a nonzero cotangent there would mean the operator had
+leaked a boundary artifact into the gradient.
+
+## Where the package supplies its own rules
+
+Two sweeps are taken off the tape by custom Enzyme rules, registered in an
+extension so the core keeps zero AD dependencies:
+
+| Sweep | Reverse pass |
+|---|---|
+| `_exchange_storage!` — inter-block halo exchange on a `BlockForest` | `_exchange_storage_adjoint!` |
+| `_bc_storage!` — the physical-BC face pass | `_bc_storage_adjoint!` |
+
+Both are **constant, parameter-free linear maps**: they overwrite ghost cells with
+weighted sums of interior cells, and the weights come from grid topology and
+boundary-condition types, never from the differentiated data. For such a map
+`x ← H·x`, reverse mode is exactly `x̄ ← Hᵀ·x̄`, and the transposes already existed
+and were already tested by the dot-product identity. So the rules carry an **empty
+tape** — nothing from the forward pass has to survive to the reverse pass.
+
+There are two reasons to bother:
+
+- **The coarse–fine descriptor sweep.** On a refined forest the exchange runs over
+  `GhostFill` descriptors, each holding a nested `Vector` — not an `isbits` type,
+  and hostile to Enzyme's type analysis. Routing through the declared transpose
+  means it never reaches that analysis at all.
+- **Kernels must never be differentiated through.** On GPU backends the same sweeps
+  run as KernelAbstractions kernels. A rule makes "the adjoint is declared, not
+  discovered" structural rather than incidental.
+
+Crucially, these rules **cannot swallow a parameter gradient**: neither function
+reads an operator, let alone a coefficient field. Gradients with respect to
+`scaling`/`advection` coefficient fields keep flowing through ordinary AD exactly
+as before.
+
+The single-grid `apply_bc!` deliberately has no rule. It is a handful of slab
+broadcasts that Enzyme already tapes correctly and cheaply, so a rule there would
+add risk for no measurable gain.
+
+## Jacobians of nonlinear operators
+
+Nonlinear operators support `apply!` and AD, but not `adjoint` or `prepare` — an
+adjoint of a nonlinear map is not defined. `linearize(F, u₀)` freezes the Jacobian
+at a state and hands back a *linear* operator, which is the Jacobian-free
+Newton–Krylov pattern.
+
+The JVP backend is explicit, because the two available backends differ in accuracy
+*and* in capability:
+
+```julia
+using Enzyme
+
+F  = advection(g1, SelfAdvection())          # nonlinear u·∇u
+J  = linearize(F, u0)                        # FiniteDifferenceJVP — the default
+Ja = linearize(F, u0, EnzymeJVP())           # exact, and has a transpose
+```
+
+| | `FiniteDifferenceJVP` (default) | `EnzymeJVP` |
+|---|---|---|
+| accuracy | ~`√eps` | exact |
+| operator applications per product | 2 | 1 |
+| `adjoint(J)` | throws | reverse-mode VJP |
+| dependencies | none | `using Enzyme` |
+
+`EnzymeJVP` is preferred whenever Enzyme is available. Selection is deliberately
+explicit rather than ambient: which JVP you get must not depend on whether some
+other package happened to be loaded, since it silently changes both the numbers and
+the available operations.
+
+Krylov solves themselves are never differentiated through. Sensitivities of a
+solution come from implicit-function-theorem adjoints on the solution, not from
+taping the iteration — which is also why `linearize!` may refresh the frozen state
+in place inside a Newton loop.
+
+## Backends
+
+**Enzyme** is the default and preferred backend: it handles mutation well, supports
+GPU, and is the only backend the custom rules above apply to.
+
+**Mooncake** is supported and tested as a CPU-only cross-check. It tapes through
+everything — the Enzyme rules are invisible to it — which makes it a genuinely
+independent oracle rather than a second view of the same machinery. It has no GPU
+support.
+
+**DifferentiationInterface** is the recommended frontend, not a backend. Custom
+rules cannot be routed through it, so the package registers rules directly with
+Enzyme; DI sits above that and sees the result.
+
+## Limitations
+
+- **Distributed AD** is not supported — the blocker is the transport, not the
+  operators. See [Distributed Multi-GPU Solves](distributed.qmd).
+- **Packed/GPU fields**: `BlockField` is the reference layout for AD. Packed
+  storage works through the same storage-level rules, but GPU AD is not covered by
+  the test suite.
+- Combining Enzyme with the Reactant tracing path is untested.
