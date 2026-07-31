@@ -128,7 +128,13 @@ end
         c = [5.0, 6.0]
         @test ENZ_EXT._shadows(Enzyme.Const(a)) == ()
         @test ENZ_EXT._shadows(Enzyme.Duplicated(a, b)) == (b,)
+        @test ENZ_EXT._shadows(Enzyme.DuplicatedNoNeed(a, b)) == (b,)
         @test ENZ_EXT._shadows(Enzyme.BatchDuplicated(a, (b, c))) == (b, c)
+        @test ENZ_EXT._shadows(Enzyme.BatchDuplicatedNoNeed(a, (b, c))) == (b, c)
+        # Mixed* should not arise for pure-pointer storage, but an uncovered
+        # annotation is a runtime MethodError, not a fallback — so cover it.
+        @test ENZ_EXT._shadows(Enzyme.MixedDuplicated(a, Ref(b))) == (b,)
+        @test ENZ_EXT._shadows(Enzyme.BatchMixedDuplicated(a, (Ref(b), Ref(c)))) == (b, c)
     end
 
     @testset "adjoint direction stays on rules ((Hᵀ)ᵀ = H)" begin

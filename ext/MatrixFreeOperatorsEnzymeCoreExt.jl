@@ -75,9 +75,18 @@ rule_hits() = (
 
 # Every shadow an annotation carries, uniformly across batch widths. `Const` carries
 # none, so the reverse pass degrades to a no-op instead of a special case.
+#
+# The lattice is covered exhaustively on purpose. Enzyme marks a ruled call site with
+# activity erased, so it will not fall back to taping if an annotation is missing —
+# it raises a runtime `MethodError` inside the user's `autodiff` call instead. The
+# Mixed* cases should not arise for a bare block vector or packed array (both are
+# pure-pointer containers, so Enzyme classifies them `DupState`), but covering them
+# costs two lines and removes the failure mode entirely.
 @inline _shadows(::Const) = ()
 @inline _shadows(x::Union{Duplicated,DuplicatedNoNeed}) = (x.dval,)
 @inline _shadows(x::Union{BatchDuplicated,BatchDuplicatedNoNeed}) = x.dval
+@inline _shadows(x::MixedDuplicated) = (x.dval[],)
+@inline _shadows(x::BatchMixedDuplicated) = map(r -> r[], x.dval)
 
 # `store` is the only argument carrying a cotangent. The descriptors — an
 # `ExchangeSchedule`, or the grid's already-separated isbits pieces — are read as
