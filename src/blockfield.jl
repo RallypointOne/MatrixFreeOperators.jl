@@ -14,6 +14,60 @@ and the forest-native kernel sweeps dispatch on the concrete type.
 abstract type AbstractBlockField <: AbstractField end
 
 """
+    BlockLayout
+
+Supertype of the zero-size tags naming a block-storage layout: [`BlocksLayout`](@ref)
+for the vector-of-blocks [`BlockField`](@ref), [`PackedLayout`](@ref) for the
+contiguous [`PackedBlockField`](@ref).
+
+The tag exists so the descriptor sweeps can be written against **raw storage**
+(`_storage(f)`) plus a layout tag instead of against the field struct. That split is
+what makes them a legal Enzyme custom-rule seam: from Julia 1.12 a rule argument may
+not mix GC-tracked pointers with inline floats (EnzymeAD/Enzyme.jl#2707), which a
+field does through its embedded grid, while a bare block vector or packed array does
+not. Dispatch and specialization are unchanged — the tag is a singleton, so
+`_leaf_array`/`_leaf_view` still resolve to one concrete `SubArray` per layout.
+"""
+abstract type BlockLayout end
+
+"""
+    BlocksLayout()
+
+Layout tag for vector-of-blocks storage: `store[i]` is leaf `i`'s padded array.
+"""
+struct BlocksLayout <: BlockLayout end
+
+"""
+    PackedLayout()
+
+Layout tag for packed storage: leaf `i` is the `i`-th slice along the trailing
+dimension of one contiguous array.
+"""
+struct PackedLayout <: BlockLayout end
+
+"""
+    _storage(f::AbstractBlockField)
+
+The field's raw block storage, stripped of grid and generation metadata — the
+argument the descriptor sweeps and their Enzyme rules take. Paired with
+[`_layout`](@ref).
+"""
+function _storage end
+
+"""
+    _layout(f::AbstractBlockField) -> BlockLayout
+
+The field's storage layout tag. See [`BlockLayout`](@ref).
+"""
+function _layout end
+
+# Storage-level twins of `_block_array`/`_block_view`, indexing raw storage by
+# layout. The field-level accessors are defined in terms of these, so the two can
+# never drift apart.
+@inline _leaf_array(store, ::BlocksLayout, i::Integer) = store[i]
+@inline _leaf_view(store, ::BlocksLayout, i::Integer, ranges) = view(store[i], ranges...)
+
+"""
     BlockField{L}(blocks, grid)
     BlockField(blocks, grid)
 
@@ -37,8 +91,10 @@ BlockField{L}(blocks::Vector{<:AbstractArray}, grid::BlockForest) where {L} =
 BlockField(blocks::Vector{<:AbstractArray}, grid::BlockForest) = BlockField{Center}(blocks, grid)
 
 # Per-layout storage accessors behind which everything else is layout-agnostic.
-_block_array(f::BlockField, i::Integer) = f.blocks[i]
-_block_view(f::BlockField, i::Integer, ranges) = view(f.blocks[i], ranges...)
+_storage(f::BlockField) = f.blocks
+_layout(::BlockField) = BlocksLayout()
+_block_array(f::BlockField, i::Integer) = _leaf_array(f.blocks, BlocksLayout(), i)
+_block_view(f::BlockField, i::Integer, ranges) = _leaf_view(f.blocks, BlocksLayout(), i, ranges)
 _flat_similar(f::BlockField, ::Type{T}, len::Int) where {T} = similar(first(f.blocks), T, len)
 
 # Regrid guard: block storage is tied to the leaf set the field was allocated on.
