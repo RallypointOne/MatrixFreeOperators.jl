@@ -52,8 +52,9 @@ _restrict_scale(L::Restriction) = eltype(spacing(L.fine))(2)^(-dimension(L.fine)
 
 # The forward action IS the scaled Pᵀ gather (adjoint_gather! zeroes input
 # ghosts and folds the coarse output through its BCs), so ⟨R·x, y⟩ = ⟨x, Rᵀ·y⟩
-# holds exactly. The β ≠ 0 path allocates inside adjoint_gather!; the multigrid
-# cycle only calls β = 0.
+# holds exactly — which also means the forward path inherits the gather's ghost
+# contract: β ≠ 0 accumulates the whole padded coarse field, physical-BC ghosts
+# included, and leaves them folded away.
 function apply!(y::Field, L::Restriction, x::Field, g::AbstractGrid, α, β)
     gather = let hf = halo_width(L.fine),
         hc = halo_width(L.coarse),

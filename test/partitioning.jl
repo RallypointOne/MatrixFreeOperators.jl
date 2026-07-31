@@ -995,7 +995,7 @@ end
     # Steady-state work must not scale with the grid: a per-call scratch
     # allocation inside the walk would show as a ~4x jump when cells quadruple.
     @testset "walk allocations do not scale with grid size" begin
-        function steady(sz, mk)
+        function steady(sz, mk, drive!)
             g = CartesianGrid(
                 ((0.0, 1.0), (0.0, 1.0)), sz;
                 bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Neumann())),
@@ -1004,16 +1004,34 @@ end
             x = rand(MersenneTwister(7), n)
             D = dist_prepare(mk(g), g, 2)
             out = similar(x)
-            dist_mul!(out, D, x)          # warm up
-            return @allocated dist_mul!(out, D, x)
+            drive!(out, D, x)             # warm up
+            return @allocated drive!(out, D, x)
         end
         for mk in (
             g -> laplacian(g) * laplacian(g),
             # A localized leaf dispatches dynamically; that must stay O(1), not O(cells).
             g -> laplacian(g) * scaling(set!(scalar_field(g), coeff_fun)),
         )
-            small, large = steady((16, 16), mk), steady((32, 32), mk)
+            small, large = steady((16, 16), mk, dist_mul!), steady((32, 32), mk, dist_mul!)
             @test large < 2 * small
+        end
+
+        # The adjoint walk, where `Added` sends β = true into a leaf and the gather
+        # has to accumulate (issue #33). One padded slab of a 32² grid cut in two is
+        # ~4.9 kB, and the pre-fix gather allocated one per accumulating call per
+        # partition: `laplacian + laplacian` measured 6.4 kB → 14.0 kB across the 4x
+        # cell jump, against 3.3 kB → 3.6 kB after. The residual is the emulated
+        # exchange's staging, which is O(surface) and so grows a little on its own —
+        # hence a bound on the *delta*, which is what an O(cells) leak moves.
+        for mk in (
+            g -> laplacian(g) + laplacian(g),
+            g -> laplacian(g) + derivative(g, 1),
+            g -> (laplacian(g) * laplacian(g)) + laplacian(g),
+        )
+            small = steady((16, 16), mk, dist_adjoint!)
+            large = steady((32, 32), mk, dist_adjoint!)
+            @test large - small < 1024
+            @test large < 1.5 * small
         end
     end
 

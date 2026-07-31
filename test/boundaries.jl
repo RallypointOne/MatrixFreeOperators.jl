@@ -50,6 +50,69 @@
         @test sum(abs, x) ≈ sum(abs, xi)
     end
 
+    @testset "zero_bc_ghosts! clears exactly what fold_bc! folds" begin
+        Interface = MatrixFreeOperators.Interface   # internal — the BC of forest leaf / slab grids
+        zero_bc_ghosts! = MatrixFreeOperators.zero_bc_ghosts!
+
+        # Dim 1 cut (Interface), dim 2 physical. The dim-2 slabs are full rows, so
+        # they claim the four corners even though dim 1 is Interface — and they must,
+        # since fold_bc! folds those corners into the dim-1 Interface slab.
+        g = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)),
+            (3, 3);
+            bc=((Interface(), Interface()), (Dirichlet(), Neumann())),
+        )
+        x = reshape(collect(1.0:25.0), 5, 5)
+        x0 = copy(x)
+        zero_bc_ghosts!(x, g)
+        @test all(iszero, x[:, 1])          # Dirichlet slab, corners included
+        @test all(iszero, x[:, 5])          # Neumann slab, corners included
+        @test x[1, 2:4] == x0[1, 2:4]       # Interface slab survives...
+        @test x[5, 2:4] == x0[5, 2:4]       # ...on both cut faces
+        @test x[2:4, 2:4] == x0[2:4, 2:4]   # interior untouched
+
+        # An all-Interface leaf grid has nothing to fold, so nothing to clear.
+        gi = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)),
+            (3, 3);
+            bc=((Interface(), Interface()), (Interface(), Interface())),
+        )
+        y = reshape(collect(1.0:25.0), 5, 5)
+        @test zero_bc_ghosts!(copy(y), gi) == y
+
+        # The contract that makes the in-place adjoint gather exact: every cell
+        # zero_bc_ghosts! clears is a cell fold_bc! would have zeroed anyway, so
+        # clearing a running total's foldable ghosts discards nothing live.
+        rng = Random.MersenneTwister(31)
+        cases = [
+            CartesianGrid(((0.0, 1.0),), (5,); halo=(2,), bc=((Dirichlet(), Neumann()),)),
+            CartesianGrid(
+                ((0.0, 1.0), (0.0, 1.0)),
+                (4, 3);
+                bc=((Periodic(), Periodic()), (Interface(), Neumann())),
+            ),
+            CartesianGrid(
+                ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0)),
+                (3, 4, 2);
+                halo=(2, 1, 1),
+                bc=(
+                    (Interface(), Interface()),
+                    (Periodic(), Periodic()),
+                    (Dirichlet(), Neumann()),
+                ),
+            ),
+        ]
+        for g in cases
+            v = rand(rng, padded_size(g)...)
+            folded = fold_bc!(copy(v), g)
+            @test zero_bc_ghosts!(copy(folded), g) == folded
+            # and it is not vacuous: zero_ghosts! (which also clears Interface)
+            # would have gone further wherever the grid has a cut face.
+            cleared = zero_bc_ghosts!(copy(v), g)
+            @test count(iszero, cleared) ≥ count(iszero, v)
+        end
+    end
+
     @testset "fill/fold adjointness ⟨Px,y⟩ = ⟨x,Pᵀy⟩" begin
         rng = Random.MersenneTwister(7)
         cases = [

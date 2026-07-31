@@ -240,8 +240,11 @@ function apply!(y::Field, L::PreparedComposed, x::Field, g::AbstractGrid, α, β
     return y
 end
 
-# AdjointOp twin: the leaf adjoint gather is allocation-free only for β = 0, so
-# accumulating applications gather into the held scratch first.
+# AdjointOp twin: accumulating applications gather into the held scratch with
+# β = 0 and blend only the interiors, so an adjoint node writes no ghost of the
+# field it shares with its siblings. The distributed walk depends on exactly
+# that (`_reads_ghosts(::DistAdjoint) = false`, distributed.jl) and reuses this
+# scratch as `DistAdjoint.outs`.
 struct PreparedAdjoint{O<:AbstractOperator,F<:AbstractField} <: AbstractOperator
     op::O
     scratch::F
@@ -304,8 +307,8 @@ function _forest_capply_adjoint!(
     return x̄
 end
 
-# PreparedAdjoint: the leaf adjoint gather is allocation-free only for β = 0, so the
-# accumulating form gathers into the node's own scratch, then blends per leaf.
+# PreparedAdjoint: same interior-only discipline as the ::Field method above —
+# the accumulating form gathers into the node's own scratch, then blends per leaf.
 function _forest_capply!(
     y::AbstractBlockField, L::PreparedAdjoint, x::AbstractBlockField, P::PreparedForest, α, β
 )

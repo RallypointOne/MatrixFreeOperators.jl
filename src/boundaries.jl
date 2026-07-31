@@ -195,6 +195,46 @@ function _zero_ghosts_dims!(data::AbstractArray{<:Any,N}, ::Val{D}, hn::Tuple) w
 end
 _zero_ghosts_dims!(::AbstractArray, ::Val, ::Tuple{}) = nothing
 
+"""
+    zero_bc_ghosts!(data, g::AbstractGrid) -> data
+
+Zero exactly the ghost cells [`fold_bc!`](@ref) folds — every non-[`Interface`](@ref)
+face, whole slabs, corners included. `Interface` faces are left untouched: they carry
+neighbour-owned cotangents that belong to `halo_update_adjoint!` / the distributed
+reduction, not to the homogeneous adjoint.
+
+The complement of [`zero_ghosts!`](@ref), which clears every ghost including
+`Interface`. Used by [`adjoint_gather!`](@ref) to drop a running total's stale
+foldable ghosts before an accumulating gather, so `fold_bc!` sees only that call's
+contribution.
+"""
+function zero_bc_ghosts!(data::AbstractArray{<:Any,N}, g::AbstractGrid{N}) where {N}
+    hnb = ntuple(
+        d -> (halo_width(g)[d], local_size(g)[d], boundary_conditions(g)[d]), Val(N)
+    )
+    _zero_bc_ghosts_dims!(data, Val(1), hnb)
+    return data
+end
+
+# Shrinking-tuple recursion for the same reason `_zero_ghosts_dims!` uses one: a
+# forwarded grid boxes at every level and allocates per call.
+function _zero_bc_ghosts_dims!(data::AbstractArray{<:Any,N}, ::Val{D}, hnb::Tuple) where {N,D}
+    h, n, (lo, hi) = first(hnb)
+    for k in 1:h
+        _zero_bc_ghost!(data, Val(D), h + 1 - k, lo)
+        _zero_bc_ghost!(data, Val(D), h + n + k, hi)
+    end
+    return _zero_bc_ghosts_dims!(data, Val(D + 1), Base.tail(hnb))
+end
+_zero_bc_ghosts_dims!(::AbstractArray, ::Val, ::Tuple{}) = nothing
+
+# Interface faces are folded by halo_update_adjoint!, so their slabs must survive.
+_zero_bc_ghost!(::AbstractArray, ::Val, ::Int, ::Interface) = nothing
+function _zero_bc_ghost!(data, dim::Val, ghost::Int, ::AbstractBC)
+    fill!(_dimslice(data, dim, ghost:ghost), zero(eltype(data)))
+    return nothing
+end
+
 #--------------------------------------------------------------------------------# Inhomogeneous ghost offsets
 
 # Writes the affine ghost offsets of the full (inhomogeneous) boundary fill into a
