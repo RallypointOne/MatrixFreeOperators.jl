@@ -4,6 +4,7 @@ using LinearAlgebra
 using Random
 using StaticArrays
 import Adapt
+import DifferentiationInterface
 import Enzyme
 import KernelAbstractions
 import Krylov
@@ -41,5 +42,6 @@ include("test_utils.jl")
     include("reactant.jl")
     include("autodiff.jl")
     include("enzyme_rules.jl")
+    include("differentiation_interface.jl")
     include("ode_rhs.jl")
 end
