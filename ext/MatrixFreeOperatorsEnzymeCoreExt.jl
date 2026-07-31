@@ -34,7 +34,9 @@ using MatrixFreeOperators
 using EnzymeCore
 using EnzymeCore.EnzymeRules
 
-import MatrixFreeOperators: AbstractGrid, apply_bc!, fold_bc!
+import MatrixFreeOperators:
+    AbstractGrid, BlockLayout, ExchangeSchedule, _bc_storage!, _bc_storage_adjoint!,
+    _exchange_storage!, _exchange_storage_adjoint!, apply_bc!, fold_bc!
 
 # Rule-firing counters. Asserting that a rule *fired* is the only way to catch one
 # that silently stopped dispatching — without it every test still passes, via the
@@ -42,6 +44,10 @@ import MatrixFreeOperators: AbstractGrid, apply_bc!, fold_bc!
 const RULE_HITS = Dict{Symbol,Threads.Atomic{Int}}(
     :apply_bc => Threads.Atomic{Int}(0),
     :fold_bc => Threads.Atomic{Int}(0),
+    :exchange => Threads.Atomic{Int}(0),
+    :exchange_adjoint => Threads.Atomic{Int}(0),
+    :bc_faces => Threads.Atomic{Int}(0),
+    :bc_faces_adjoint => Threads.Atomic{Int}(0),
 )
 
 @inline _hit!(k::Symbol) = (Threads.atomic_add!(RULE_HITS[k], 1); nothing)
@@ -141,6 +147,60 @@ function EnzymeRules.reverse(
         apply_bc!(d̄, gv)
     end
     return (nothing, _grid_cotangent(g))
+end
+
+#--------------------------------------------------------------------------------# forest storage seams
+
+# `_exchange_storage!` and `_bc_storage!` are the same story one level up: constant
+# linear maps over a forest's raw block storage, with `_exchange_storage_adjoint!`
+# and `_bc_storage_adjoint!` as their exact transposes. Taking them off the tape is
+# what keeps the coarse–fine `GhostFill` descriptor sweep — a `Vector` of structs
+# each holding another `Vector`, which is not isbits — out of Enzyme's type
+# analysis, and what makes DESIGN.md §6's "never AD through a kernel" rule
+# structural for the packed GPU exchange rather than incidental.
+#
+# Only `store` carries a cotangent. The descriptor arguments — an `ExchangeSchedule`
+# or the grid's already-separated isbits pieces — are read as constants, but Enzyme
+# can still hand the schedule over as `Duplicated` because its interpolation weights
+# are `Float64`. Leaving that shadow untouched reports ∂L/∂weights = 0, which is
+# right: those weights are fixed rationals of the 2:1 refinement ratio, not inputs.
+
+for (fwd, rev, key_f, key_r) in (
+    (:_exchange_storage!, :_exchange_storage_adjoint!, :exchange, :exchange_adjoint),
+    (:_bc_storage!, :_bc_storage_adjoint!, :bc_faces, :bc_faces_adjoint),
+)
+    # Both directions get a rule: an adjoint operator application runs the transpose
+    # in its primal, and (Hᵀ)ᵀ = H makes the forward sweep its reverse body.
+    for (primal, transpose, key) in ((fwd, rev, key_f), (rev, fwd, key_r))
+        @eval function EnzymeRules.augmented_primal(
+            config::EnzymeRules.RevConfig,
+            func::Const{typeof($primal)},
+            ::Type{<:Annotation},
+            store::Annotation,
+            lay::Const{<:BlockLayout},
+            desc::Vararg{Annotation},
+        )
+            _hit!($(QuoteNode(key)))
+            func.val(store.val, lay.val, map(d -> d.val, desc)...)
+            return EnzymeRules.AugmentedReturn(nothing, nothing, nothing)
+        end
+
+        @eval function EnzymeRules.reverse(
+            ::EnzymeRules.RevConfig,
+            ::Const{typeof($primal)},
+            ::Type{<:Annotation},
+            ::Nothing,
+            store::Annotation,
+            lay::Const{<:BlockLayout},
+            desc::Vararg{Annotation},
+        )
+            dvals = map(d -> d.val, desc)
+            for s̄ in _shadows(store)
+                $transpose(s̄, lay.val, dvals...)
+            end
+            return ntuple(_ -> nothing, Val(2 + length(desc)))
+        end
+    end
 end
 
 end

@@ -40,5 +40,6 @@ include("test_utils.jl")
     include("mdla.jl")
     include("reactant.jl")
     include("autodiff.jl")
+    include("enzyme_rules.jl")
     include("ode_rhs.jl")
 end
