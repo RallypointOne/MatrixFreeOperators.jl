@@ -67,6 +67,52 @@ end
         @test dv ≈ fd atol = 1e-5
     end
 
+    @testset "composed operators: repeated exchange of one field" begin
+        # The rules apply the transpose *in place* (x̄ ← Hᵀx̄) rather than
+        # accumulating, which is right only because the exchange overwrites the same
+        # storage it reads. Combinators are where that gets stressed: each operand of
+        # an Added re-exchanges the same input field, and a Composed exchanges a
+        # freshly allocated intermediate as well. If the in-place semantics were
+        # wrong, the second exchange's cotangent would be lost or double-counted.
+        gf = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (8, 8);
+            bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+        )
+        bf = BlockForest(gf; blocksize=(4, 4), maxlevel=2)
+        refine!(bf, x -> x[1] < 0.5)
+        MatrixFreeOperators._exchange_schedule(bf)
+        n = length(flatten(scalar_field(bf)))
+        v = rand(rng, n)
+        wf = rand(rng, n)
+
+        @testset "$(name)" for (name, L, nexchange) in (
+            ("Added: Δ + 2Δ", laplacian(bf) + 2 * laplacian(bf), 2),
+            ("Added: Δ + ∂x", laplacian(bf) + derivative(bf, 1), 2),
+            ("Composed: Δ∘Δ", laplacian(bf) * laplacian(bf), 2),
+        )
+            dv = zero(v)
+            before = ENZ_EXT.rule_hits()
+            Enzyme.autodiff(
+                Enzyme.set_runtime_activity(Enzyme.Reverse),
+                er_forest_loss,
+                Enzyme.Active,
+                Enzyme.Duplicated(v, dv),
+                Enzyme.Const(wf),
+                Enzyme.Const(L),
+                Enzyme.Const(bf),
+            )
+            # One rule invocation per operand exchange — proof the combinator really
+            # did re-exchange, so this test is not vacuous.
+            @test ENZ_EXT.rule_hits().exchange - before.exchange == nexchange
+
+            # Relative, not absolute: Δ∘Δ scales like h⁻⁴, so these gradients run to
+            # ~1e6 and any absolute tolerance is meaningless. 1e-6 is the central
+            # difference's own accuracy — the AD/FD agreement is ~1e-9 relative.
+            fd = fd_gradient(vd -> er_forest_loss(vd, wf, L, bf), v)
+            @test dv ≈ fd rtol = 1e-6
+        end
+    end
+
     @testset "shadow extraction covers the annotation lattice" begin
         # A rule must handle every annotation its signature claims: Enzyme marks the
         # call site as ruled with activity erased, so an uncovered annotation
