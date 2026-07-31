@@ -57,18 +57,30 @@ jobs:
         with:
           name: plots
           path: plots
+      # Time and memory are emitted as two separate tables rather than one
+      # `--mode=time,memory` call: that prints them back to back with no blank line
+      # between, which markdown renders as a single malformed table.
       - name: Create markdown table from benchmarks
         run: |
-          benchpkgtable ${{ steps.extract-package-name.outputs.package_name }} --rev="${{ github.event.pull_request.base.sha }},${{ github.event.pull_request.head.sha }}" --input-dir=results/ --ratio > table.md
-          echo '### Benchmark Results' > body.md
-          echo '' >> body.md
-          echo '' >> body.md
-          cat table.md >> body.md
-          echo '' >> body.md
-          echo '' >> body.md
-          echo '### Benchmark Plots' >> body.md
-          echo 'A plot of the benchmark results have been uploaded as an artifact to the workflow run for this PR.' >> body.md
-          echo 'Go to "Actions"->"Benchmark a pull request"->[the most recent run]->"Artifacts" (at the bottom).' >> body.md
+          NAME='${{ steps.extract-package-name.outputs.package_name }}'
+          REVS='${{ github.event.pull_request.base.sha }},${{ github.event.pull_request.head.sha }}'
+          benchpkgtable "$NAME" --rev="$REVS" --input-dir=results/ --ratio --mode=time > time.md
+          benchpkgtable "$NAME" --rev="$REVS" --input-dir=results/ --ratio --mode=memory > memory.md
+          {
+            echo '### Benchmark Results'
+            echo ''
+            echo '#### Time'
+            echo ''
+            cat time.md
+            echo ''
+            echo '#### Memory and allocations'
+            echo ''
+            cat memory.md
+            echo ''
+            echo '### Benchmark Plots'
+            echo 'A plot of the benchmark results have been uploaded as an artifact to the workflow run for this PR.'
+            echo 'Go to "Actions"->"Benchmark a pull request"->[the most recent run]->"Artifacts" (at the bottom).'
+          } > body.md
       - name: Find Comment
         uses: peter-evans/find-comment@v4
         id: fcbenchmark
