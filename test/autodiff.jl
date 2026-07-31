@@ -16,7 +16,11 @@ function ad_forest_loss(v, w, L, bf)
     return sum(w .* flatten(apply(L, u)))
 end
 
-@testset "Automatic differentiation (Enzyme + Mooncake, no custom rules)" begin
+# Gradients checked against finite differences, against the declared adjoint, and
+# Enzyme against Mooncake. Mooncake is the independent oracle here: EnzymeRules are
+# invisible to it, so it tapes through everything the Enzyme rules short-circuit.
+# Rule-specific assertions (that a rule fired at all) live in enzyme_rules.jl.
+@testset "Automatic differentiation (Enzyme + Mooncake)" begin
     g = CartesianGrid(
         ((0.0, 1.0), (0.0, 1.0)), (5, 4);
         bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),

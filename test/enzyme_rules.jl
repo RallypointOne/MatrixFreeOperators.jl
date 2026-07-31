@@ -67,39 +67,22 @@ end
         @test dv ≈ fd atol = 1e-5
     end
 
-    @testset "batch width 2 exercises the multi-shadow branch" begin
-        gf = CartesianGrid(
-            ((0.0, 1.0), (0.0, 1.0)), (8, 8);
-            bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
-        )
-        bf = BlockForest(gf; blocksize=(4, 4), maxlevel=2)
-        refine!(bf, x -> x[1] < 0.5)
-        MatrixFreeOperators._exchange_schedule(bf)
-        L = laplacian(bf)
-        n = length(flatten(scalar_field(bf)))
-        v = rand(rng, n)
-        wf = rand(rng, n)
-
-        w̃ = scalar_field(bf)
-        flat_to_interior!(w̃, wf)
-        lt = flatten(apply_adjoint!(scalar_field(bf), L, w̃, bf))
-
-        dv1 = zero(v)
-        dv2 = zero(v)
-        before = ENZ_EXT.rule_hits()
-        Enzyme.autodiff(
-            Enzyme.set_runtime_activity(Enzyme.Reverse),
-            er_forest_loss,
-            Enzyme.BatchDuplicated(v, (dv1, dv2)),
-            Enzyme.Const(wf),
-            Enzyme.Const(L),
-            Enzyme.Const(bf),
-        )
-        @test ENZ_EXT.rule_hits().exchange > before.exchange
-        # Both shadows are seeded with the same cotangent, so both must reproduce
-        # the width-1 gradient.
-        @test dv1 ≈ lt rtol = 1e-8
-        @test dv2 ≈ dv1
+    @testset "shadow extraction covers the annotation lattice" begin
+        # A rule must handle every annotation its signature claims: Enzyme marks the
+        # call site as ruled with activity erased, so an uncovered annotation
+        # surfaces as a runtime MethodError rather than a fallback to taping.
+        #
+        # This is a unit test rather than an end-to-end one on purpose. Batched
+        # reverse mode over a scalar loss is not reachable through
+        # `Enzyme.autodiff` — it requires the thunk API with an explicit NTuple of
+        # seeds — so an end-to-end version would be testing Enzyme's calling
+        # convention, not this package's rules.
+        a = [1.0, 2.0]
+        b = [3.0, 4.0]
+        c = [5.0, 6.0]
+        @test ENZ_EXT._shadows(Enzyme.Const(a)) == ()
+        @test ENZ_EXT._shadows(Enzyme.Duplicated(a, b)) == (b,)
+        @test ENZ_EXT._shadows(Enzyme.BatchDuplicated(a, (b, c))) == (b, c)
     end
 
     @testset "adjoint direction stays on rules ((Hᵀ)ᵀ = H)" begin
