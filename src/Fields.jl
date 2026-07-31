@@ -155,6 +155,7 @@ Base.copy(f::Field{L}) where {L} = Field{L}(copy(f.data), f.grid)
 apply_bc!(f::Field) = (apply_bc!(f.data, f.grid); f)
 fold_bc!(f::Field) = (fold_bc!(f.data, f.grid); f)
 zero_ghosts!(f::Field) = (zero_ghosts!(f.data, f.grid); f)
+zero_bc_ghosts!(f::Field) = (zero_bc_ghosts!(f.data, f.grid); f)
 
 function Adapt.adapt_structure(to, f::Field{L}) where {L}
     return Field{L}(Adapt.adapt(to, f.data), Adapt.adapt(to, f.grid))

@@ -222,7 +222,7 @@ end
 # y_int = S·(P·x) (P = homogeneous BC fill, S = stencil into the interior), the
 # adjoint is x̄ = Pᵀ·Sᵀ·ȳ_int. `gather(ȳdata, J)` must compute the flipped-stencil
 # sum Σ_o w_o·ȳ[J−o] (bounds-masked); ghosts of ȳ are zeroed so only interior
-# values enter, and fold_bc! applies Pᵀ. β = 0 runs allocation-free.
+# values enter, and fold_bc! applies Pᵀ. Both branches are allocation-free.
 function adjoint_gather!(x̄::Field, ȳ::Field, gather::F, α::Number, β::Number) where {F}
     zero_ghosts!(ȳ)
     if iszero(β)
@@ -230,10 +230,18 @@ function adjoint_gather!(x̄::Field, ȳ::Field, gather::F, α::Number, β::Numbe
         fold_bc!(x̄)
         isone(α) || (x̄.data .*= α)
     else
-        tmp = similar(x̄.data)
-        tmp .= gather.(Ref(ȳ.data), CartesianIndices(tmp))
-        fold_bc!(tmp, x̄.grid)
-        x̄.data .= α .* tmp .+ β .* x̄.data
+        # Accumulate in place. fold_bc! must see this call's ghost contribution
+        # alone — folding the running total's would double-count — so the
+        # foldable slabs are cleared first. Nothing is lost: fold_bc! zeroes
+        # them on exit anyway and no consumer reads a physical-BC ghost (the
+        # flat boundary takes interiors; halo_update_adjoint!/the distributed
+        # reduction take Interface slabs). Interface slabs are deliberately NOT
+        # cleared — they carry the neighbour-owned cotangents a sibling under
+        # the same Added accumulates into, and they are why the blend spans the
+        # whole padded array rather than just the interior.
+        zero_bc_ghosts!(x̄)
+        x̄.data .= α .* gather.(Ref(ȳ.data), CartesianIndices(x̄.data)) .+ β .* x̄.data
+        fold_bc!(x̄)
     end
     return x̄
 end
