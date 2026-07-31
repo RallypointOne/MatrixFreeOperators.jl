@@ -145,12 +145,33 @@ Newton–Krylov pattern.
 The JVP backend is explicit, because the two available backends differ in accuracy
 *and* in capability:
 
-```julia
-using Enzyme
+```{julia}
+using Enzyme, StaticArrays, LinearAlgebra
 
+g1 = CartesianGrid(((0.0, 2π),), (32,); bc=((Periodic(), Periodic()),))
 F  = advection(g1, SelfAdvection())          # nonlinear u·∇u
+u0 = set!(vector_field(g1), x -> SVector(2 + sin(x[1])))
+
 J  = linearize(F, u0)                        # FiniteDifferenceJVP — the default
 Ja = linearize(F, u0, EnzymeJVP())           # exact, and has a transpose
+
+v = set!(vector_field(g1), x -> SVector(cos(2x[1])))
+Jv  = collect(interior(apply(J,  copy(v))))
+Jav = collect(interior(apply(Ja, copy(v))))
+
+maximum(norm.(Jv .- Jav))                    # ~1e-9: the finite difference's own error
+```
+
+Only the Enzyme-backed one has a transpose:
+
+```{julia}
+# A ramp rather than a trig mode: on this periodic grid J·v is orthogonal to the
+# low harmonics, so a sin/cos test vector would make both sides vanish and the
+# identity would hold vacuously.
+w = set!(vector_field(g1), x -> SVector(x[1] / 2π))
+lhs = sum(dot.(collect(interior(apply(Ja, copy(v)))), collect(interior(w))))
+rhs = sum(dot.(collect(interior(v)), collect(interior(apply(adjoint(Ja), copy(w))))))
+(lhs, rhs, abs(lhs - rhs))                   # ⟨Jv, w⟩ = ⟨v, Jᵀw⟩
 ```
 
 | | `FiniteDifferenceJVP` (default) | `EnzymeJVP` |
