@@ -46,6 +46,46 @@ PK = prepare(K, scalar_field(g2))
 SUITE["grid"]["2D 256²"]["∇·(κ∇u) prepare"] = @benchmarkable prepare($K, $(scalar_field(g2)))
 SUITE["grid"]["2D 256²"]["∇·(κ∇u) mul!"] = @benchmarkable mul!($ys2, $PK, $xs2)
 
+#--------------------------------------------------------------------------------# adjoint action
+
+# The adjoint gather is the one path where an accumulating (β ≠ 0) application does
+# work the forward sweep does not, and it is how `Added` applies its second term.
+# Benchmarked directly rather than through `mul!`: `adjoint(a + b)` distributes into
+# `Added(a', b')`, whose `PreparedAdjoint` nodes each carry their own scratch, so the
+# only prepared shape that reaches an accumulating leaf gather is an `AdjointOp`
+# wrapping a combinator (`_prepare_tree` does not recurse into it) — the last entry
+# below.
+#
+# β = 0.5 rather than 1, so repeated in-place accumulation settles at a fixed point
+# instead of overflowing to Inf over a sample sweep. `Derivative` order 1 and the two
+# rank-changers gather unconditionally; a Laplacian would shortcut to its forward
+# action on this all-physical grid and measure nothing.
+
+sadj = set!(scalar_field(g2), p -> sin(4p[1]) + cos(3p[2]))
+vadj = set!(vector_field(g2), p -> SVector(sin(p[2]), cos(p[1])))
+sadj_out = scalar_field(g2)
+vadj_out = vector_field(g2)
+Dx, Dy = derivative(g2, 1), derivative(g2, 2)
+Dxy = Dx + Dy
+Gr, Dv = gradient(g2), divergence(g2)
+
+# Control: the non-accumulating gather, which the β ≠ 0 branch does not touch.
+SUITE["grid"]["2D 256²"]["∂x adjoint (β = 0)"] =
+    @benchmarkable apply_adjoint!($sadj_out, $Dx, $sadj, $g2, 1.0, 0.0)
+SUITE["grid"]["2D 256²"]["∂x adjoint (β ≠ 0)"] =
+    @benchmarkable apply_adjoint!($sadj_out, $Dx, $sadj, $g2, 1.0, 0.5)
+# How β ≠ 0 arises in practice: the second term of an Added.
+SUITE["grid"]["2D 256²"]["(∂x + ∂y)ᵀ adjoint"] =
+    @benchmarkable apply_adjoint!($sadj_out, $Dxy, $sadj, $g2, 1.0, 0.0)
+# Rank-changers — the SVector-valued output is the largest gather buffer here.
+SUITE["grid"]["2D 256²"]["gradientᵀ adjoint (β ≠ 0)"] =
+    @benchmarkable apply_adjoint!($sadj_out, $Gr, $vadj, $g2, 1.0, 0.5)
+SUITE["grid"]["2D 256²"]["divergenceᵀ adjoint (β ≠ 0)"] =
+    @benchmarkable apply_adjoint!($vadj_out, $Dv, $sadj, $g2, 1.0, 0.5)
+
+PT = prepare(AdjointOp(Dxy), scalar_field(g2))
+SUITE["grid"]["2D 256²"]["adjoint(∂x + ∂y) mul!"] = @benchmarkable mul!($ys2, $PT, $xs2)
+
 #--------------------------------------------------------------------------------# block forest
 
 # 8×8 root tiling of 32² blocks (64 uniform leaves) — same DOFs as the 2D grid above,
