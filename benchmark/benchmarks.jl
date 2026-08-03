@@ -108,3 +108,27 @@ if isdefined(MatrixFreeOperators, :pack)
     yp = similar(yf)
     SUITE["forest"]["2D 64×32²"]["laplacian mul! (packed)"] = @benchmarkable mul!($yp, $Pp, $xf)
 end
+
+#--------------------------------------------------------------------------------# refined forest
+
+# The forest above is uniform, so its schedule carries copies only — `_run_fills!`
+# and `_run_fills_adjoint!` (the 2:1 coarse–fine interpolation/restriction sweeps)
+# never execute. Refining half the domain is what puts them on the clock: this leg
+# is the regression guard for anything that touches the ghost-fill descriptors.
+# Same 32² blocks, so the extra cost over the uniform leg is coarse–fine work.
+bfr = BlockForest(g2; blocksize=(32, 32), maxlevel=2)
+refine!(bfr, p -> p[1] < 0.5)
+xbr = set!(scalar_field(bfr), p -> sin(4p[1]) + cos(3p[2]))
+Lr = laplacian(bfr)
+
+SUITE["forest"]["2D refined"]["halo_update!"] = @benchmarkable halo_update!($xbr, $bfr)
+SUITE["forest"]["2D refined"]["halo_update_adjoint!"] =
+    @benchmarkable MatrixFreeOperators.halo_update_adjoint!($xbr, $bfr)
+
+# The only SUITE entry that reaches `_run_fills_adjoint!` through the operator API:
+# `isselfadjoint` is grid-aware and false once coarse–fine coupling breaks the halo
+# symmetry, so a refined Laplacian takes the gather + fold + halo-adjoint path
+# rather than short-circuiting to the forward action.
+x̄r = scalar_field(bfr)
+SUITE["forest"]["2D refined"]["laplacian apply_adjoint!"] =
+    @benchmarkable apply_adjoint!($x̄r, $Lr, $xbr, $bfr)

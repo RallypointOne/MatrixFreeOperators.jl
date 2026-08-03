@@ -1,6 +1,42 @@
 #--------------------------------------------------------------------------------# Linearization (matrix-free Jacobian)
 
 """
+    AbstractJVPBackend
+
+How a linearized operator evaluates its Jacobian–vector product. Selecting the
+backend is deliberately explicit rather than ambient: the backends differ in
+accuracy and in which operations they support, so which one you get must not depend
+on whether some package happens to be loaded.
+
+- [`FiniteDifferenceJVP`](@ref) — the dependency-free default.
+- [`EnzymeJVP`](@ref) — exact, and the preferred choice; needs `using Enzyme`.
+"""
+abstract type AbstractJVPBackend end
+
+"""
+    FiniteDifferenceJVP()
+
+Evaluate the JVP by a central finite difference, `(F(u₀+εv) - F(u₀-εv))/2ε`. The
+default, because it needs no dependencies — but it costs two operator applications
+per product, is accurate only to about `√eps`, and has no transpose, so
+`adjoint` of the resulting Jacobian throws. Prefer [`EnzymeJVP`](@ref).
+"""
+struct FiniteDifferenceJVP <: AbstractJVPBackend end
+
+"""
+    EnzymeJVP()
+
+Evaluate the JVP by forward-mode automatic differentiation, and the transpose by
+reverse mode. Exact to machine precision, one operator application per product, and
+— unlike [`FiniteDifferenceJVP`](@ref) — it supplies a real `adjoint`, so
+transpose-needing Krylov methods work on a Jacobian-free Newton–Krylov operator.
+
+Provided by the Enzyme extension: `using Enzyme` before calling
+`linearize(F, u₀, EnzymeJVP())`.
+"""
+struct EnzymeJVP <: AbstractJVPBackend end
+
+"""
     LinearizedOp
 
 Matrix-free Jacobian `J = ∂F/∂u` of an operator `F`, frozen at a state `u₀`. Its
@@ -18,12 +54,16 @@ struct LinearizedOp{O<:AbstractOperator,U<:Field,FO<:Field} <: AbstractOperator
 end
 
 """
-    linearize(F::AbstractOperator, u0::Field) -> LinearizedOp
+    linearize(F::AbstractOperator, u0::Field, backend=FiniteDifferenceJVP())
 
 Linearize the (possibly nonlinear) operator `F` at the state `u0`, returning a
 *linear* matrix-free Jacobian operator whose `apply!`/`mul!` is the JVP
 `∂/∂ε F(u0 + εv)|₀`. Owns a copy of `u0`; see [`linearize!`](@ref) for in-place
 refresh inside Newton–Krylov loops.
+
+`backend` selects how the product is evaluated — see [`AbstractJVPBackend`](@ref).
+The default [`FiniteDifferenceJVP`](@ref) keeps the core dependency-free;
+[`EnzymeJVP`](@ref) is exact and additionally provides the transpose.
 
 ### Examples
 
@@ -33,14 +73,29 @@ F = advection(g, SelfAdvection())            # nonlinear u·∇u
 u0 = set!(vector_field(g), x -> SVector(sin(x[1])))
 J = linearize(F, u0)                         # linear: v ↦ (∂F/∂u)|_{u0} · v
 P = prepare(J, u0)                           # Krylov-ready JFNK Jacobian
+
+using Enzyme                                 # exact JVP, and adjoint(J) works
+Jad = linearize(F, u0, EnzymeJVP())
 ```
 
 See also: [`prepare`](@ref), [`apply`](@ref).
 """
-function linearize(F::AbstractOperator, u0::Field)
+linearize(F::AbstractOperator, u0::Field) = linearize(F, u0, FiniteDifferenceJVP())
+
+function linearize(F::AbstractOperator, u0::Field, ::FiniteDifferenceJVP)
     u0c = copy(u0)
     return LinearizedOp(
         F, u0c, similar(u0c), allocate_output(F, u0c), allocate_output(F, u0c)
+    )
+end
+
+# Backends whose implementation lives in an extension land here until it loads.
+function linearize(::AbstractOperator, ::Field, backend::AbstractJVPBackend)
+    throw(
+        ArgumentError(
+            "no linearize method for JVP backend $(nameof(typeof(backend))); " *
+            "EnzymeJVP is provided by the Enzyme extension — run `using Enzyme` first",
+        ),
     )
 end
 

@@ -35,8 +35,13 @@ PackedBlockField{L}(data::AbstractArray, levels::AbstractVector{Int}, grid::Bloc
     return view(data, ntuple(_ -> Colon(), Val(M - 1))..., leaf)
 end
 
-_block_array(f::PackedBlockField, i::Integer) = _leaf_slice(f.data, i)
-_block_view(f::PackedBlockField, i::Integer, ranges) = view(f.data, ranges..., i)
+@inline _leaf_array(store, ::PackedLayout, i::Integer) = _leaf_slice(store, i)
+@inline _leaf_view(store, ::PackedLayout, i::Integer, ranges) = view(store, ranges..., i)
+
+_storage(f::PackedBlockField) = f.data
+_layout(::PackedBlockField) = PackedLayout()
+_block_array(f::PackedBlockField, i::Integer) = _leaf_array(f.data, PackedLayout(), i)
+_block_view(f::PackedBlockField, i::Integer, ranges) = _leaf_view(f.data, PackedLayout(), i, ranges)
 _flat_similar(f::PackedBlockField, ::Type{T}, len::Int) where {T} = similar(f.data, T, len)
 
 function block(f::PackedBlockField{L}, i::Integer, leaf_grid) where {L}

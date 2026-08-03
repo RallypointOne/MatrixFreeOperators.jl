@@ -12,10 +12,12 @@ MatrixFreeOperators.jl provides matrix-free linear (and some nonlinear) operator
 for solving PDEs on structured grids. Operators are lazy, composable symbols
 (`laplacian`, `gradient`, `divergence`, `scaling`, `advection`, …) combined with
 `+`, `-`, `*`, and scalar scaling. Leaves are written as array-level broadcasts,
-so the same operator runs on CPU and GPU arrays, differentiates automatically
-with Enzyme or Mooncake (including gradients w.r.t. operator parameters such as
-material-coefficient fields), and feeds Krylov.jl directly through `prepare` +
-`mul!` with zero steady-state allocations. When one device is not enough,
+so the same operator runs on CPU and GPU arrays, differentiates automatically —
+Enzyme is the default backend, DifferentiationInterface the recommended frontend,
+and gradients extend to operator parameters such as material-coefficient fields
+(see [Automatic Differentiation](pages/autodiff.qmd)) — and feeds Krylov.jl
+directly through `prepare` + `mul!` with zero steady-state allocations. When one
+device is not enough,
 `prepare_distributed` partitions the grid across several GPUs without changing a
 line of operator code — see
 [Distributed Multi-GPU Solves](pages/distributed.qmd).

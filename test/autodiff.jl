@@ -16,7 +16,11 @@ function ad_forest_loss(v, w, L, bf)
     return sum(w .* flatten(apply(L, u)))
 end
 
-@testset "Automatic differentiation (Enzyme + Mooncake, no custom rules)" begin
+# Gradients checked against finite differences, against the declared adjoint, and
+# Enzyme against Mooncake. Mooncake is the independent oracle here: EnzymeRules are
+# invisible to it, so it tapes through everything the Enzyme rules short-circuit.
+# Rule-specific assertions (that a rule fired at all) live in enzyme_rules.jl.
+@testset "Automatic differentiation (Enzyme + Mooncake)" begin
     g = CartesianGrid(
         ((0.0, 1.0), (0.0, 1.0)), (5, 4);
         bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
@@ -104,23 +108,17 @@ end
         fd = fd_gradient(vd -> ad_forest_loss(vd, wf, L, bf), v)
         @test fd ≈ lt atol = 1e-5
 
-        # Enzyme hits EnzymeNoTypeError inside _run_fills! (the coarse–fine fill
-        # sweep) on Julia 1.10 — refined forests only; see issue #26.
-        if !refined || VERSION >= v"1.11"
-            dv = zero(v)
-            Enzyme.autodiff(
-                Enzyme.set_runtime_activity(Enzyme.Reverse),
-                ad_forest_loss,
-                Enzyme.Active,
-                Enzyme.Duplicated(v, dv),
-                Enzyme.Const(wf),
-                Enzyme.Const(L),
-                Enzyme.Const(bf),
-            )
-            @test dv ≈ lt rtol = 1e-8
-        else
-            @test_skip "Enzyme refined-forest gradient — EnzymeNoTypeError on Julia 1.10"
-        end
+        dv = zero(v)
+        Enzyme.autodiff(
+            Enzyme.set_runtime_activity(Enzyme.Reverse),
+            ad_forest_loss,
+            Enzyme.Active,
+            Enzyme.Duplicated(v, dv),
+            Enzyme.Const(wf),
+            Enzyme.Const(L),
+            Enzyme.Const(bf),
+        )
+        @test dv ≈ lt rtol = 1e-8
 
         cache = Mooncake.prepare_gradient_cache(ad_forest_loss, v, wf, L, bf)
         _, grads = Mooncake.value_and_gradient!!(cache, ad_forest_loss, v, wf, L, bf)

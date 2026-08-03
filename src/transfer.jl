@@ -283,31 +283,47 @@ end
 _run_exchange!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =
     _run_exchange_host!(x, sched)
 
-function _run_exchange_host!(x::AbstractBlockField, sched::ExchangeSchedule)
-    _run_copies!(x, sched.copies)
-    _run_fills!(x, sched.interp)
-    _run_fills!(x, sched.restrict)
+_run_exchange_host!(x::AbstractBlockField, sched::ExchangeSchedule) =
+    _exchange_storage!(_storage(x), _layout(x), sched)
+
+"""
+    _exchange_storage!(store, lay::BlockLayout, sched::ExchangeSchedule)
+
+Run the three forward exchange phases over raw block storage. This is the **Enzyme
+rule seam** for the inter-block halo: `store` is a bare block vector or packed
+array, `lay` a singleton, and `sched` a `Const` descriptor struct — none of them
+mixes GC-tracked pointers with inline floats, which a rule argument may not do from
+Julia 1.12 on (EnzymeAD/Enzyme.jl#2707). Keeping the seam here rather than at
+`halo_update!` is also what lets one rule cover both storage layouts.
+
+Restriction runs last because it reads the interpolation-filled fine ghosts; no
+other cross-phase dependency exists.
+"""
+function _exchange_storage!(store, lay::BlockLayout, sched::ExchangeSchedule)
+    _run_copies!(store, lay, sched.copies)
+    _run_fills!(store, lay, sched.interp)
+    _run_fills!(store, lay, sched.restrict)
     return nothing
 end
 
-# Function barrier: specializing on the concrete field type makes each `_block_view`
-# one concrete SubArray, so the loop is dispatch- and allocation-free. `view .= view`
-# broadcasts on GPU arrays without scalar indexing.
-function _run_copies!(x::AbstractBlockField, copies::Vector{CopyDescriptor{N}}) where {N}
+# Function barrier: specializing on the concrete storage type and layout singleton
+# makes each `_leaf_view` one concrete SubArray, so the loop is dispatch- and
+# allocation-free. `view .= view` broadcasts on GPU arrays without scalar indexing.
+function _run_copies!(store, lay::BlockLayout, copies::Vector{CopyDescriptor{N}}) where {N}
     for c in copies
-        _block_view(x, c.dst, c.dst_ranges) .= _block_view(x, c.src, c.src_ranges)
+        _leaf_view(store, lay, c.dst, c.dst_ranges) .= _leaf_view(store, lay, c.src, c.src_ranges)
     end
     return nothing
 end
 
-function _run_fills!(x::AbstractBlockField, fills::Vector{GhostFill{N,T}}) where {N,T}
+function _run_fills!(store, lay::BlockLayout, fills::Vector{GhostFill{N,T}}) where {N,T}
     for f in fills
-        dst = _block_view(x, f.dst_block, f.dst_ranges)
+        dst = _leaf_view(store, lay, f.dst_block, f.dst_ranges)
         t1 = f.terms[1]
-        dst .= t1.weight .* _block_view(x, t1.block, t1.ranges)
+        dst .= t1.weight .* _leaf_view(store, lay, t1.block, t1.ranges)
         for k in 2:length(f.terms)
             tk = f.terms[k]
-            dst .+= tk.weight .* _block_view(x, tk.block, tk.ranges)
+            dst .+= tk.weight .* _leaf_view(store, lay, tk.block, tk.ranges)
         end
     end
     return nothing
@@ -332,30 +348,46 @@ corner-aware exchange.
 """
 function halo_update_adjoint!(x::AbstractBlockField, g::BlockForest)
     _require_current(x)
-    sched = _exchange_schedule(g)
-    _run_fills_adjoint!(x, sched.restrict)
-    _run_fills_adjoint!(x, sched.interp)
-    _run_copies_adjoint!(x, sched.copies)
+    _exchange_storage_adjoint!(_storage(x), _layout(x), _exchange_schedule(g))
     return x
 end
 
+"""
+    _exchange_storage_adjoint!(store, lay::BlockLayout, sched::ExchangeSchedule)
+
+Exact transpose of [`_exchange_storage!`](@ref) over raw block storage, and the
+reverse body of its Enzyme rule. Phases and, within each phase, descriptors run in
+exact reverse order — the transpose of a composition is the reversed composition of
+transposes.
+"""
+function _exchange_storage_adjoint!(store, lay::BlockLayout, sched::ExchangeSchedule)
+    _run_fills_adjoint!(store, lay, sched.restrict)
+    _run_fills_adjoint!(store, lay, sched.interp)
+    _run_copies_adjoint!(store, lay, sched.copies)
+    return nothing
+end
+
 # Transposed reverse-order run: fold each ghost slab into its source, zero it.
-function _run_copies_adjoint!(x::AbstractBlockField, copies::Vector{CopyDescriptor{N}}) where {N}
+function _run_copies_adjoint!(
+    store, lay::BlockLayout, copies::Vector{CopyDescriptor{N}}
+) where {N}
     for c in Iterators.reverse(copies)
-        ghost = _block_view(x, c.dst, c.dst_ranges)
-        _block_view(x, c.src, c.src_ranges) .+= ghost
-        fill!(ghost, zero(eltype(x)))
+        ghost = _leaf_view(store, lay, c.dst, c.dst_ranges)
+        _leaf_view(store, lay, c.src, c.src_ranges) .+= ghost
+        fill!(ghost, zero(eltype(ghost)))
     end
     return nothing
 end
 
-function _run_fills_adjoint!(x::AbstractBlockField, fills::Vector{GhostFill{N,T}}) where {N,T}
+function _run_fills_adjoint!(
+    store, lay::BlockLayout, fills::Vector{GhostFill{N,T}}
+) where {N,T}
     for f in Iterators.reverse(fills)
-        dst = _block_view(x, f.dst_block, f.dst_ranges)
+        dst = _leaf_view(store, lay, f.dst_block, f.dst_ranges)
         for tk in f.terms
-            _block_view(x, tk.block, tk.ranges) .+= tk.weight .* dst
+            _leaf_view(store, lay, tk.block, tk.ranges) .+= tk.weight .* dst
         end
-        fill!(dst, zero(eltype(x)))
+        fill!(dst, zero(eltype(dst)))
     end
     return nothing
 end
@@ -386,30 +418,45 @@ end
 _run_bc!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =
     _run_bc_host!(x, g, sched)
 
-function _run_bc_host!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule)
-    _fill_bcfaces_dims!(x, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
+_run_bc_host!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =
+    _bc_storage!(_storage(x), _layout(x), g.bc, sched.bcfaces, g.halo, g.blocksize)
+
+"""
+    _bc_storage!(store, lay::BlockLayout, bcs, faces, halo, sz)
+
+Forest physical-BC ghost fill over raw block storage — the Enzyme rule seam for the
+face pass, split out of the field struct for the same Julia 1.12 reason as
+[`_exchange_storage!`](@ref). The grid arrives as its already-separated isbits
+pieces (`bcs`, `halo`, `sz`) plus the per-generation face lists.
+"""
+function _bc_storage!(store, lay::BlockLayout, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple)
+    _fill_bcfaces_dims!(store, lay, bcs, faces, halo, sz, Val(1))
     return nothing
 end
 
 function _fill_bcfaces_dims!(
-    x::AbstractBlockField, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
+    store, lay::BlockLayout, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
 ) where {D}
     lo, hi = first(bcs)
     flo, fhi = first(faces)
     h, n = first(halo), first(sz)
     for k in 1:h
         for i in flo
-            _fill_ghost!(_block_array(x, i), Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
+            _fill_ghost!(
+                _leaf_array(store, lay, i), Val(D), h + 1 - k, lo, _source_low(lo, h, n, k)
+            )
         end
         for i in fhi
-            _fill_ghost!(_block_array(x, i), Val(D), h + n + k, hi, _source_high(hi, h, n, k))
+            _fill_ghost!(
+                _leaf_array(store, lay, i), Val(D), h + n + k, hi, _source_high(hi, h, n, k)
+            )
         end
     end
     return _fill_bcfaces_dims!(
-        x, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
+        store, lay, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
     )
 end
-_fill_bcfaces_dims!(::AbstractBlockField, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =
+_fill_bcfaces_dims!(_, ::BlockLayout, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =
     nothing
 
 """
@@ -423,30 +470,47 @@ reverse order `N:1`, transposing the fill. Runs after the per-leaf adjoint gathe
 function fold_bc!(x̄::AbstractBlockField, g::BlockForest)
     _require_current(x̄)
     sched = _exchange_schedule(g)
-    _fold_bcfaces_dims!(x̄, g.bc, sched.bcfaces, g.halo, g.blocksize, Val(1))
+    _bc_storage_adjoint!(_storage(x̄), _layout(x̄), g.bc, sched.bcfaces, g.halo, g.blocksize)
     return x̄
 end
 
+"""
+    _bc_storage_adjoint!(store, lay::BlockLayout, bcs, faces, halo, sz)
+
+Exact transpose of [`_bc_storage!`](@ref) over raw block storage, and the reverse
+body of its Enzyme rule.
+"""
+function _bc_storage_adjoint!(
+    store, lay::BlockLayout, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple
+)
+    _fold_bcfaces_dims!(store, lay, bcs, faces, halo, sz, Val(1))
+    return nothing
+end
+
 function _fold_bcfaces_dims!(
-    x̄::AbstractBlockField, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
+    store, lay::BlockLayout, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}
 ) where {D}
     _fold_bcfaces_dims!(
-        x̄, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
+        store, lay, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)
     )
     lo, hi = first(bcs)
     flo, fhi = first(faces)
     h, n = first(halo), first(sz)
     for k in 1:h
         for i in flo
-            _fold_ghost!(_block_array(x̄, i), Val(D), h + 1 - k, lo, _source_low(lo, h, n, k))
+            _fold_ghost!(
+                _leaf_array(store, lay, i), Val(D), h + 1 - k, lo, _source_low(lo, h, n, k)
+            )
         end
         for i in fhi
-            _fold_ghost!(_block_array(x̄, i), Val(D), h + n + k, hi, _source_high(hi, h, n, k))
+            _fold_ghost!(
+                _leaf_array(store, lay, i), Val(D), h + n + k, hi, _source_high(hi, h, n, k)
+            )
         end
     end
     return nothing
 end
-_fold_bcfaces_dims!(::AbstractBlockField, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =
+_fold_bcfaces_dims!(_, ::BlockLayout, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =
     nothing
 
 # Forest counterpart of the single-grid fill_bc_inhomogeneous!: write the affine

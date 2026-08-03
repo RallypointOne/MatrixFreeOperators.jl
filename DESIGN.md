@@ -498,11 +498,29 @@ present, so the **core has zero AD dependencies**. Do not route custom rules
 through DifferentiationInterface.jl (it cannot carry custom Enzyme rules); DI may
 be offered as a user-facing convenience for generic code.
 
-> **API to verify at implementation:** EnzymeRules `augmented_primal`/`reverse`
-> exact signatures and `RevConfig`/activity types; Mooncake `rrule!!` / `CoDual`
-> / `@from_rrule`. (One research subagent emitted a non-existent
-> `EnzymeCore.register_primitive`; the correct mechanism is EnzymeRules — pin
-> against Enzyme docs when coding.)
+> **API verified at implementation (2026-07-31).** EnzymeRules
+> `augmented_primal(config, func, RT, args...)` → `AugmentedReturn(primal, shadow,
+> tape)` and `reverse(config, func, RT, tape, args...)` → one slot per argument;
+> `RevConfig{NeedsPrimal,NeedsShadow,Width,Overwritten,RuntimeActivity,StrongZero}`.
+> Rules live in `EnzymeCore`, so the rules extension weak-depends on **EnzymeCore**
+> (tiny, LLVM-free) and only the AD-*powered* Jacobian needs full `Enzyme`.
+>
+> Two constraints the design did not anticipate, both learned by hitting them:
+>
+> 1. **A rule argument may not mix GC-tracked pointers with inline floats.** From
+>    Julia 1.12 that is a hard `CallingConventionMismatchError`
+>    (EnzymeAD/Enzyme.jl#2707), and a `Field`/`BlockField`/`BlockForest` qualifies
+>    through its embedded grid. Rule seams therefore take **raw storage** —
+>    `_exchange_storage!`/`_bc_storage!` over a block vector or packed array plus
+>    isbits descriptors — which is what `_storage`/`_layout`/`BlockLayout` exist
+>    for. This also blocks the planned rules on `apply`/`apply!` and on
+>    `mul!(::PreparedOperator)`: `apply` both takes *and returns* a `Field`.
+> 2. **A rule body must not allocate.** Rule bodies are compiled into Enzyme's
+>    generated code; a `Dict` lookup and a closure in an augmented-primal body
+>    segfaulted on Linux x86_64 while running clean on macOS/aarch64.
+>
+> Corollary: the "custom rules for linear leaves" plan below is **deferred**, not
+> abandoned — it is blocked on #2707, not on this package's design.
 
 **Adjoint correctness is testable** and must be tested: the dot-product identity
 ⟨L x, y⟩ = ⟨x, Lᵀ y⟩ for random x, y, and AD gradients checked against
@@ -597,8 +615,9 @@ rejected loudly.
 - *Implicit/stiff* solvers (needed for diffusion): the idiomatic way to give
   OrdinaryDiffEq a **matrix-free Jacobian** is `ODEFunction(f; jac_prototype = J)`
   where `J` is a SciML-style lazy operator. Here `J` is the linear
-  `linearize(F, u₀)` operator from §10.8 — its `mul!` is the forward-mode-AD JVP,
-  so the matrix-free Jacobian comes from the AD layer, not by hand. We ship a
+  `linearize(F, u₀)` operator from §10.8 — its `mul!` is a central finite-difference
+  JVP by default, or the forward-mode-AD JVP under `EnzymeJVP()`, so the matrix-free
+  Jacobian comes from the AD layer rather than by hand. We ship a
   **thin optional SciMLOperators adapter** (a `FunctionOperator`-style wrapper
   exposing that `mul!`) *only* for this one hook — in `ext/…SciMLExt.jl`, not in
   the core, and not adopting the `(u,p,t)` model anywhere else.
@@ -675,10 +694,11 @@ pre-built.
   local-vs-global index ranges and neighbor topology. Operators are written once
   against it. Concrete backends, in priority order: **(1) compose with your MDLA
   `GhostExchange`/`scatter!`** for multi-GPU (it is the closest existing model
-  and it's yours); **(2) MPI + halo** via ImplicitGlobalGrid.jl / MPIHaloArrays.jl
-  for multi-node CPU+GPU; **(3) Reactant XLA sharding** for automatic
+  and it's yours); **(2) MPI + halo** via ImplicitGlobalGrid.jl for multi-node
+  CPU+GPU; **(3) Reactant XLA sharding** for automatic
   partitioning. The seam supports all three; we do not hard-depend on any
-  distributed-array type. (See §10 for the pick-order decision.) *Not free:* an
+  distributed-array type. (Pick-order **resolved** in §10.4: MDLA done, IGG is
+  the multi-node backend, uniform `CartesianGrid` only.) *Not free:* an
   explicit `halo_update!` (MPI sends, `CUDA.device!` context switches) is **not**
   Reactant-traceable, while the Reactant sharding path wants the halo **implicit**
   (XLA inserts the communication during compilation). These are therefore
@@ -857,18 +877,69 @@ Presented one at a time with a recommendation; none block writing v1's spine.
    *Recommendation:* collocated v1; encode location as the `Field` trait `L` so
    staggered is purely additive.
 
-3. **AD backend default.** Enzyme (GPU + best mutation) vs Mooncake (CPU, pure
-   Julia, gentler). *Recommendation:* ship both via extensions; document Enzyme
-   as primary for GPU, Mooncake for CPU-only / where Enzyme struggles. Note
-   Mooncake has no GPU support today.
+3. ~~**AD backend default.**~~ **Resolved (2026-07-31): Enzyme.** It is the
+   documented default and preferred backend, and the only one the custom rules in
+   `ext/…EnzymeCoreExt.jl` apply to. Mooncake stays a tested CPU-only cross-check:
+   because EnzymeRules are invisible to it, it tapes through everything and is
+   therefore a genuinely independent oracle rather than a second view of the same
+   machinery. Mooncake still has no GPU support, and no Mooncake rules are
+   written. DifferentiationInterface.jl is the recommended *frontend* — never a
+   dependency, and never a route for rules (§6).
 
-4. **Distributed target to implement *first* (when we get there).** MDLA
-   `GhostExchange` (multi-GPU, yours, CUDA-only today) vs MPI+halo
-   (ImplicitGlobalGrid/MPIHaloArrays, multi-node, CPU+GPU) vs Reactant sharding.
-   *Recommendation:* MDLA first (matches your stack and is multi-GPU now), MPI+halo
-   for multi-node next, Reactant sharding opportunistically. The seam keeps all
-   three open. **Does MDLA need to grow beyond CUDA (KernelAbstractions backends)
-   for this?** — your call, since it's your package.
+4. ~~**Distributed target to implement *first*.**~~ **Resolved (2026-08-03):
+   MDLA first (done), ImplicitGlobalGrid.jl for multi-node next.** MDLA is
+   implemented in `ext/MatrixFreeOperatorsMDLAExt.jl` behind the
+   `_dist_scatter!`/`_dist_reduce!` seam (§9) and covers single-node multi-GPU,
+   adjoint included. **The multi-node backend is ImplicitGlobalGrid.jl**, added
+   as a further extension behind that same seam — not MPIHaloArrays, and not a
+   dependency of the core. Reactant sharding stays opportunistic.
+
+   *Why IGG:* it is production-proven GPU-aware MPI halo exchange over a
+   Cartesian MPI topology for exactly our uniform `CartesianGrid` case,
+   multi-node and CPU+GPU — the one capability MDLA structurally cannot provide
+   (single node, CUDA-only). We take **its halo only**, underneath our seam.
+
+   *Why the split is at "one node", precisely.* The two exchanges differ on both
+   topology and decomposition, in opposite directions. MDLA's `GhostExchange` is
+   **more** general in topology — an index-list SpMV halo built by
+   `_compute_ghost_map` from a sparse matrix's column structure, so neighbors are
+   whoever the sparsity says — while IGG only ever does structured Cartesian face
+   exchange. But MDLA's `PartitionSpec` is contiguous ranges over a **flat** index
+   space, so on a lexicographically flattened 3D grid it can only cut **slabs**
+   along the slowest axis, whereas IGG does true 3D blocking. That is what bounds
+   MDLA to one node: for `P` devices on an `n³` grid, slab halo traffic scales as
+   `2Pn²` against `6n²P^(1/3)` for 3D blocks — a ratio of `P^(2/3)/3`, so ≈1.3× at
+   `P=8` (noise), ≈5× at `P=64`, ≈33× at `P=1000`. Slabs also cap the device count
+   at `nz` and want each slab thicker than the halo. Right for a node's worth of
+   GPUs, hopeless past it. Note also that MDLA has **no MPI dependency at all**
+   (CUDA/Krylov/LinearAlgebra/SparseArrays) — it is single-process by design, not
+   MPI-made-easy, so growing it multi-node is the same work as adopting IGG.
+   Corollary: if an *irregular* (non-Cartesian) distributed coupling is ever
+   needed, MDLA's index-list model is the starting point, not IGG's.
+
+   *Why not ParallelStencil (evaluated, not adopted).* PS is the kernel-authoring
+   DSL that usually ships alongside IGG, and it is a poor fit here on three
+   counts. `@init_parallel_stencil(backend, precision, ndims)` is module-level
+   global state fixed at load, which is incompatible with keeping GPU support in
+   a weak-dep extension. It offers no operator algebra, no linear-solve path (the
+   ecosystem's scaling comes from pseudo-transient relaxation, which does not
+   apply to an IVP where the transient is the answer), and no AMR. Our hot-stencil
+   escape hatch is KernelAbstractions `@kernel` (§1.A), which has none of those
+   problems. Adopting IGG's halo does **not** pull in PS.
+
+   *Calibrate the expected payoff.* For the driving workload — reaction-diffusion
+   where a large local ODE dominates each node (cardiac monodomain: ~65 states,
+   ~255 `exp` per node per step) — only the scalar field crosses a boundary while
+   the full state churns over the volume. For a 256³ subdomain that is roughly a
+   2800:1 byte ratio, so even a naive blocking exchange costs low single-digit
+   percent of a step. IGG is chosen for **correctness and multi-node CPU+GPU
+   portability, not because the halo is a bottleneck.** Do not pre-invest in
+   `@hide_communication`-style overlap; measure first.
+
+   *Scope boundary.* IGG assumes one fixed uniform Cartesian decomposition, so it
+   serves the uniform `CartesianGrid` multi-node case only. **Multi-node AMR
+   (`BlockForest`) stays open** — the forest's own `halo_update!` is intra-forest
+   and a distributed forest needs a different answer. See issue #46.
 
 5. **How operators carry the grid.** Bind the grid into the leaf at construction
    (RBF-style: `laplacian(grid; …)` returns a bound operator) vs pass grid to
@@ -953,8 +1024,18 @@ Presented one at a time with a recommendation; none block writing v1's spine.
      operator whose `mul!(Jv, J, v)` is the JVP `∂/∂ε F(u₀+εv)|₀`. With Decision
      A (array-level leaves) this JVP is **free via forward-mode AD** — the
      matrix-free Jacobian falls straight out of the autodiff layer. (A
-     finite-difference JVP `(F(u₀+εv)−F(u₀))/ε` is the classic fallback.) That
-     linear `J` is what feeds Krylov and the `jac_prototype` hook in §7.
+     finite-difference JVP is the classic fallback.) That linear `J` is what feeds
+     Krylov and the `jac_prototype` hook in §7.
+
+     *As built (2026-07-31):* the backend is an explicit argument, not ambient.
+     `FiniteDifferenceJVP()` is the default — central-difference, two operator
+     applications per product, ~`√eps` accurate, and **no transpose** (its
+     `adjoint` throws). `EnzymeJVP()` is the preferred choice where Enzyme is
+     available: exact, one application per product, and it supplies a real
+     reverse-mode VJP so `adjoint(J)` works and transpose-needing Krylov methods
+     can run against a JFNK Jacobian. Explicit rather than ambient because the two
+     differ in *numbers* as well as capability, and that must not depend on which
+     packages happen to be loaded.
 
 9. **Vector-field memory layout.** Given the §Core-abstraction-1 decision that a
    field's element type carries its rank, what is the *concrete default layout* for

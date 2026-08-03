@@ -20,7 +20,8 @@ open/deferred choices (staggered grids, distributed backends, AMR, multigrid).
 - **Linear/affine split.** `apply!` / `apply_bc!` enforce homogeneous BCs only, so `islinear(L)` ⇒ `L(0) = 0`. Inhomogeneous boundary data goes out separately through `boundary_rhs` and is folded into the solve RHS.
 - **Interior-only flat vectors.** Flat (Krylov) vectors span interior DOFs only. Ghost cells are scratch filled by `halo_update!` / `apply_bc!` and are never solver unknowns.
 - **Element type carries tensor rank.** A vector field is a `Field` over `Array{SVector{N,T}}` — operators have no rank parameter. Only the rank-changers `Gradient` / `Divergence` touch components.
-- **Nonlinear operators never masquerade as linear maps.** They support `apply!` and AD but not `adjoint` / `prepare`; `linearize(F, u₀)` yields the AD-powered Jacobian operator that feeds Krylov.
+- **Nonlinear operators never masquerade as linear maps.** They support `apply!` and AD but not `adjoint` / `prepare`; `linearize(F, u₀)` yields the Jacobian operator that feeds Krylov — a finite-difference JVP by default, an exact forward-mode AD JVP (plus a real reverse-mode transpose) under `linearize(F, u₀, EnzymeJVP())`.
+- **AD rules route through declared adjoints, never around them.** A custom rule exists only where an exact transpose is already written and tested; it substitutes that transpose for the tape, so it must be an exact substitution, not an approximation. Rules must never fire on a path carrying operator *parameters* — they would silently zero coefficient-field gradients.
 
 Two structural rules follow from these: leaf bodies stay array-level (broadcast/slicing) so they are
 device-agnostic and AD-friendly with no per-backend code — KernelAbstractions `@kernel` is the
@@ -28,7 +29,9 @@ per-operator escape hatch, not the default. And `halo_update!` is a deliberate n
 distributed/AMR work later changes only the grid and that function, never operator code.
 
 ## Gotchas
-- The core depends only on Adapt, KernelAbstractions, LinearAlgebra, and StaticArrays. AD, MDLA, SciML, and Reactant integrations belong in `ext/` — don't add them to `[deps]`.
+- The core depends only on Adapt, KernelAbstractions, LinearAlgebra, and StaticArrays. AD, MDLA, SciML, and Reactant integrations belong in `ext/` — don't add them to `[deps]`. DifferentiationInterface is the documented *frontend* and belongs only in `test/`, `docs/`, and `examples/`; rules can't be routed through it.
+- Enzyme custom rules have two non-obvious constraints, both discovered by hitting them. A rule argument may **not** be a type mixing GC pointers with inline floats — on Julia 1.12 that is a hard `CallingConventionMismatchError` (EnzymeAD/Enzyme.jl#2707), and `Field`/`BlockField`/`BlockForest` all qualify via their embedded grid; that is why the seams are `_exchange_storage!`/`_bc_storage!` over raw storage plus a `BlockLayout` tag. And a rule body must **not allocate** — a `Dict` lookup and a closure in an augmented-primal body segfaulted on Linux x86_64 while passing on macOS/aarch64.
+- Enzyme behaves differently across platforms. Issue #26's `EnzymeNoTypeError` never reproduced on macOS/aarch64 on any Julia or Enzyme version tried; the segfault above only ever appeared on Linux x86_64. A local green run is not evidence about CI — push and read the matrix.
 - A `partition_grid` slab keeps the **global** `extent`; only `local_range` says which part it owns, and `cell_center` evaluates at the global cell index. Don't "fix" a slab's extent to describe its own span — that reintroduces an ulp of coordinate drift and makes a slab-assembled RHS depend on the partition count.
 - The distributability guards run once on the *global* operator tree, before `_slab_op` localizes field coefficients per slab. Re-checking a localized tree rejects it: a localized `ScalingOp` reports the slab grid from `operator_grid` while its `Laplacian` sibling still reports the global one.
 - `prepare` is stateful and single-threaded: call it once per concurrent solve, not once globally.

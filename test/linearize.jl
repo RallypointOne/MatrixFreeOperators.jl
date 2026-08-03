@@ -81,4 +81,86 @@
         mul!(r, P, x)
         @test maximum(abs, r .- b) < 1e-6
     end
+
+    @testset "EnzymeJVP: exact JVP and a real transpose" begin
+        g = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (6, 5);
+            bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+        )
+        rng = Random.MersenneTwister(93)
+        vel = set!(vector_field(g), x -> SVector(x[1], 1.0))
+
+        @testset "Jacobian of the linear $(name) is the operator, exactly" for (name, F) in
+                                                                              (
+            ("Laplacian", laplacian(g)), ("Advection", advection(g, vel))
+        )
+            u0 = scalar_field(g)
+            interior(u0) .= rand(rng, local_size(g)...)
+            J = linearize(F, u0, EnzymeJVP())
+            @test islinear(J)
+            x = scalar_field(g)
+            interior(x) .= rand(rng, local_size(g)...)
+            # Forward-mode AD of a linear map returns the map itself — no ε, so this
+            # is exact rather than the 1e-6 the finite-difference JVP can manage.
+            @test collect(interior(apply(J, copy(x)))) ≈
+                collect(interior(apply(F, copy(x)))) rtol = 1e-14
+
+            # The transpose the finite-difference Jacobian cannot provide.
+            y = scalar_field(g)
+            interior(y) .= rand(rng, local_size(g)...)
+            lhs = dot(collect(interior(apply(J, copy(x)))), collect(interior(y)))
+            rhs = dot(collect(interior(x)), collect(interior(apply(adjoint(J), copy(y)))))
+            @test lhs ≈ rhs rtol = 1e-12
+        end
+
+        @testset "nonlinear self-advection: JVP vs FD, and the adjoint identity" begin
+            g1 = CartesianGrid(((0.0, 2π),), (16,); bc=((Periodic(), Periodic()),))
+            F = advection(g1, SelfAdvection())
+            u0 = set!(vector_field(g1), x -> SVector(2 + sin(x[1])))
+            J = linearize(F, u0, EnzymeJVP())
+
+            x = vector_field(g1)
+            interior(x) .= [SVector(randn(rng)) for _ in 1:16]
+            Jx = collect(interior(apply(J, copy(x))))
+
+            ε = 1e-6
+            up = copy(u0)
+            up.data .= u0.data .+ ε .* x.data
+            um = copy(u0)
+            um.data .= u0.data .- ε .* x.data
+            fd = (collect(interior(apply(F, up))) .- collect(interior(apply(F, um)))) ./ (2ε)
+            @test maximum(norm.(Jx .- fd)) < 1e-6
+
+            # ⟨Jx, y⟩ = ⟨x, Jᵀy⟩ for the frozen Jacobian of a nonlinear operator.
+            for _ in 1:3
+                y = vector_field(g1)
+                interior(y) .= [SVector(randn(rng)) for _ in 1:16]
+                lhs = sum(dot.(collect(interior(apply(J, copy(x)))), collect(interior(y))))
+                rhs = sum(
+                    dot.(
+                        collect(interior(x)),
+                        collect(interior(apply(adjoint(J), copy(y)))),
+                    )
+                )
+                @test lhs ≈ rhs rtol = 1e-10
+            end
+        end
+
+        @testset "linearize! refresh, and the unloaded-backend error" begin
+            g1 = CartesianGrid(((0.0, 2π),), (16,); bc=((Periodic(), Periodic()),))
+            F = advection(g1, SelfAdvection())
+            u0 = set!(vector_field(g1), x -> SVector(sin(x[1])))
+            u1 = set!(vector_field(g1), x -> SVector(cos(x[1])))
+            v = set!(vector_field(g1), x -> SVector(sin(2 * x[1])))
+            J = linearize(F, u0, EnzymeJVP())
+            linearize!(J, u1)
+            fresh = linearize(F, u1, EnzymeJVP())
+            @test collect(interior(apply(J, copy(v)))) ≈
+                collect(interior(apply(fresh, copy(v))))
+
+            # A backend with no loaded implementation must say so, not fall back.
+            struct _UnloadedJVP <: MatrixFreeOperators.AbstractJVPBackend end
+            @test_throws ArgumentError linearize(F, u0, _UnloadedJVP())
+        end
+    end
 end
