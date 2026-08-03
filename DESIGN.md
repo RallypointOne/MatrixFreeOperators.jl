@@ -694,10 +694,11 @@ pre-built.
   local-vs-global index ranges and neighbor topology. Operators are written once
   against it. Concrete backends, in priority order: **(1) compose with your MDLA
   `GhostExchange`/`scatter!`** for multi-GPU (it is the closest existing model
-  and it's yours); **(2) MPI + halo** via ImplicitGlobalGrid.jl / MPIHaloArrays.jl
-  for multi-node CPU+GPU; **(3) Reactant XLA sharding** for automatic
+  and it's yours); **(2) MPI + halo** via ImplicitGlobalGrid.jl for multi-node
+  CPU+GPU; **(3) Reactant XLA sharding** for automatic
   partitioning. The seam supports all three; we do not hard-depend on any
-  distributed-array type. (See §10 for the pick-order decision.) *Not free:* an
+  distributed-array type. (Pick-order **resolved** in §10.4: MDLA done, IGG is
+  the multi-node backend, uniform `CartesianGrid` only.) *Not free:* an
   explicit `halo_update!` (MPI sends, `CUDA.device!` context switches) is **not**
   Reactant-traceable, while the Reactant sharding path wants the halo **implicit**
   (XLA inserts the communication during compilation). These are therefore
@@ -885,13 +886,60 @@ Presented one at a time with a recommendation; none block writing v1's spine.
    written. DifferentiationInterface.jl is the recommended *frontend* — never a
    dependency, and never a route for rules (§6).
 
-4. **Distributed target to implement *first* (when we get there).** MDLA
-   `GhostExchange` (multi-GPU, yours, CUDA-only today) vs MPI+halo
-   (ImplicitGlobalGrid/MPIHaloArrays, multi-node, CPU+GPU) vs Reactant sharding.
-   *Recommendation:* MDLA first (matches your stack and is multi-GPU now), MPI+halo
-   for multi-node next, Reactant sharding opportunistically. The seam keeps all
-   three open. **Does MDLA need to grow beyond CUDA (KernelAbstractions backends)
-   for this?** — your call, since it's your package.
+4. ~~**Distributed target to implement *first*.**~~ **Resolved (2026-08-03):
+   MDLA first (done), ImplicitGlobalGrid.jl for multi-node next.** MDLA is
+   implemented in `ext/MatrixFreeOperatorsMDLAExt.jl` behind the
+   `_dist_scatter!`/`_dist_reduce!` seam (§9) and covers single-node multi-GPU,
+   adjoint included. **The multi-node backend is ImplicitGlobalGrid.jl**, added
+   as a further extension behind that same seam — not MPIHaloArrays, and not a
+   dependency of the core. Reactant sharding stays opportunistic.
+
+   *Why IGG:* it is production-proven GPU-aware MPI halo exchange over a
+   Cartesian MPI topology for exactly our uniform `CartesianGrid` case,
+   multi-node and CPU+GPU — the one capability MDLA structurally cannot provide
+   (single node, CUDA-only). We take **its halo only**, underneath our seam.
+
+   *Why the split is at "one node", precisely.* The two exchanges differ on both
+   topology and decomposition, in opposite directions. MDLA's `GhostExchange` is
+   **more** general in topology — an index-list SpMV halo built by
+   `_compute_ghost_map` from a sparse matrix's column structure, so neighbors are
+   whoever the sparsity says — while IGG only ever does structured Cartesian face
+   exchange. But MDLA's `PartitionSpec` is contiguous ranges over a **flat** index
+   space, so on a lexicographically flattened 3D grid it can only cut **slabs**
+   along the slowest axis, whereas IGG does true 3D blocking. That is what bounds
+   MDLA to one node: for `P` devices on an `n³` grid, slab halo traffic scales as
+   `2Pn²` against `6n²P^(1/3)` for 3D blocks — a ratio of `P^(2/3)/3`, so ≈1.3× at
+   `P=8` (noise), ≈5× at `P=64`, ≈33× at `P=1000`. Slabs also cap the device count
+   at `nz` and want each slab thicker than the halo. Right for a node's worth of
+   GPUs, hopeless past it. Note also that MDLA has **no MPI dependency at all**
+   (CUDA/Krylov/LinearAlgebra/SparseArrays) — it is single-process by design, not
+   MPI-made-easy, so growing it multi-node is the same work as adopting IGG.
+   Corollary: if an *irregular* (non-Cartesian) distributed coupling is ever
+   needed, MDLA's index-list model is the starting point, not IGG's.
+
+   *Why not ParallelStencil (evaluated, not adopted).* PS is the kernel-authoring
+   DSL that usually ships alongside IGG, and it is a poor fit here on three
+   counts. `@init_parallel_stencil(backend, precision, ndims)` is module-level
+   global state fixed at load, which is incompatible with keeping GPU support in
+   a weak-dep extension. It offers no operator algebra, no linear-solve path (the
+   ecosystem's scaling comes from pseudo-transient relaxation, which does not
+   apply to an IVP where the transient is the answer), and no AMR. Our hot-stencil
+   escape hatch is KernelAbstractions `@kernel` (§1.A), which has none of those
+   problems. Adopting IGG's halo does **not** pull in PS.
+
+   *Calibrate the expected payoff.* For the driving workload — reaction-diffusion
+   where a large local ODE dominates each node (cardiac monodomain: ~65 states,
+   ~255 `exp` per node per step) — only the scalar field crosses a boundary while
+   the full state churns over the volume. For a 256³ subdomain that is roughly a
+   2800:1 byte ratio, so even a naive blocking exchange costs low single-digit
+   percent of a step. IGG is chosen for **correctness and multi-node CPU+GPU
+   portability, not because the halo is a bottleneck.** Do not pre-invest in
+   `@hide_communication`-style overlap; measure first.
+
+   *Scope boundary.* IGG assumes one fixed uniform Cartesian decomposition, so it
+   serves the uniform `CartesianGrid` multi-node case only. **Multi-node AMR
+   (`BlockForest`) stays open** — the forest's own `halo_update!` is intra-forest
+   and a distributed forest needs a different answer. See issue #46.
 
 5. **How operators carry the grid.** Bind the grid into the leaf at construction
    (RBF-style: `laplacian(grid; …)` returns a bound operator) vs pass grid to
