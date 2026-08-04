@@ -3,6 +3,9 @@ project:
   output-dir: _site
   resources:
     - assets/monodomain_amr.gif
+    - assets/niederer_benchmark.png
+    - assets/niederer_activation.png
+    - assets/niederer_cost.png
 
 engines: ['julia']
 julia:
@@ -29,6 +32,7 @@ book:
         - index.qmd
         - pages/autodiff.qmd
         - pages/amr.qmd
+        - pages/benchmark.qmd
         - pages/multigrid.qmd
         - pages/distributed.qmd
     - part: "API"
