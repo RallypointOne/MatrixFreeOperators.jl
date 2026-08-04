@@ -234,6 +234,10 @@ field rides the transfer), and everything tied to the old leaf set — fields,
 `PreparedForest`s — is rebuilt after; using stale state throws rather than
 silently reading wrong-shaped storage.
 
+For the same loop driving a time-dependent 3D problem, with the adaptive answer
+checked against an equal-resolution uniform run and an independent code, see the
+[Niederer Benchmark](benchmark.qmd).
+
 ## Status
 
 Every AMR phase is built, including the packed-storage performance phase: the

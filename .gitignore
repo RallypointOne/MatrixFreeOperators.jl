@@ -22,3 +22,4 @@ docs/*_files/
 examples/heat_equation.gif
 examples/monodomain_amr.gif
 examples/monodomain_amr.mp4
+examples/niederer_smoke_*
