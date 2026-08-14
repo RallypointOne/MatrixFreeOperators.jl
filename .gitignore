@@ -23,3 +23,4 @@ examples/heat_equation.gif
 examples/monodomain_amr.gif
 examples/monodomain_amr.mp4
 examples/niederer_smoke_*
+comparisons/chmy_diffusion_2d/results/
