@@ -32,6 +32,10 @@ _distributable(::ScalingOp{<:Number}) = true
 _distributable(S::ScalingOp{<:Field}) = _partitionable_coeff(S.coeff)
 # An AbstractBlockField coefficient belongs to a forest, not to a slab.
 _distributable(::ScalingOp) = false
+# Same coefficient requirement as ScalingOp, for the same two reasons — and the
+# face averaging needs κ one cell PAST the cut as well, which `_slab_coeff_field`
+# supplies at construction rather than by exchanging anything.
+_distributable(D::Diffusion) = _partitionable_coeff(D.κ)
 _distributable(L::Scaled) = _distributable(L.op)
 _distributable(L::Added) = _distributable(L.a) && _distributable(L.b)
 _distributable(L::AdjointOp) = _distributable(L.op)
@@ -42,10 +46,11 @@ _distributable(::AbstractOperator) = false
 
 Whether a field-valued operator parameter can be sliced onto slabs (internal).
 
-Requires an undistributed `CartesianGrid` — the layout [`_slab_field`](@ref)
-slices — and a **real** element type. Real only because
-`adjoint_operator(::ScalingOp{<:Field})` builds `conj.(κ.data)` on every call
-(`src/operators/scaling.jl`), which in the distributed adjoint would allocate a
+Requires an undistributed `CartesianGrid` — the layout [`_slab_field`](@ref) and
+[`_slab_coeff_field`](@ref) slice — and a **real** element type. Real only
+because `adjoint_operator(::ScalingOp{<:Field})` and `_conj_op(::Diffusion)`
+build `conj.(κ.data)` on every call (`src/operators/scaling.jl`,
+`src/operators/diffusion.jl`), which in the distributed adjoint would allocate a
 full coefficient array per partition per Krylov iteration.
 """
 function _partitionable_coeff(κ::Field)
@@ -102,9 +107,11 @@ _undistributable_reason(::Prolongation) =
 _undistributable_reason(S::ScalingOp) =
     "its coefficient must be a Number or a real-eltype Field on an undistributed " *
     "CartesianGrid, so it can be sliced onto the slabs"
+# Reaching this means the coefficient failed `_partitionable_coeff`: the cut
+# itself is no longer a reason, since `_slab_coeff_field` carries κ across it.
 _undistributable_reason(::Diffusion) =
-    "its face-averaged coefficient needs κ values across the partition cut, which the " *
-    "coefficient slicing does not yet supply — see issue #54"
+    "its coefficient must be a real-eltype Field on an undistributed CartesianGrid, " *
+    "so it can be sliced onto the slabs"
 _undistributable_reason(::Advection) =
     "the velocity field is bound to the global grid; it must be partitioned onto the slabs first"
 _undistributable_reason(::Gradient) =
@@ -145,8 +152,9 @@ function _check_distributable(L::AbstractOperator)
         ArgumentError(
             "prepare_distributed cannot distribute $(nameof(typeof(culprit)))$detail. " *
             "Supported: Laplacian, Derivative, IdentityOp, ScalingOp with a Number or " *
-            "real-eltype Field coefficient, and their Scaled/Added/Composed/adjoint " *
-            "combinations on one grid; got $(sprint(show, L)).",
+            "real-eltype Field coefficient, Diffusion with a real-eltype Field " *
+            "coefficient, and their Scaled/Added/Composed/adjoint combinations on one " *
+            "grid; got $(sprint(show, L)).",
         ),
     )
 end
@@ -244,6 +252,10 @@ once, before rewriting.
 """
 _slab_op(L::AbstractOperator, ::AbstractGrid) = L
 _slab_op(S::ScalingOp{<:Field}, lg::AbstractGrid) = ScalingOp(_slab_field(S.coeff, lg))
+# The INNER constructor, deliberately: `diffusion(g, κ)` refuses Interface faces,
+# and this is the seam its docstring reserves for supplying cross-block
+# coefficient ghosts. The validation it skips already ran on the global operator.
+_slab_op(D::Diffusion, lg::AbstractGrid) = Diffusion(lg, _slab_coeff_field(D.κ, lg), D.avg)
 _slab_op(L::Added, lg::AbstractGrid) = Added(_slab_op(L.a, lg), _slab_op(L.b, lg))
 _slab_op(L::Scaled, lg::AbstractGrid) = Scaled(_slab_op(L.op, lg), L.α)
 _slab_op(L::Composed, lg::AbstractGrid) = Composed(_slab_op(L.a, lg), _slab_op(L.b, lg))
@@ -255,11 +267,15 @@ _slab_op(L::AdjointOp, lg::AbstractGrid) = AdjointOp(_slab_op(L.op, lg))
 The slab window of a global field, as a field on `lg` (internal).
 
 A *restriction*, never a re-evaluation — slicing is exact by construction and
-needs nothing from the caller. Ghosts are left zero: every field-valued parameter
-in the whitelist is read pointwise at the cell being written
-(`_coeff_values(c::Field)` is `interior(c)`), so a parameter's ghosts are never
-consulted. That is what lets a coefficient be partitioned with no exchange of
-its own.
+needs nothing from the caller. Ghosts are left zero, which is correct for a
+parameter read **pointwise at the cell being written** — `ScalingOp`, whose
+`_coeff_values(c::Field)` is `interior(c)`, never consults them. That is what
+lets such a coefficient be partitioned with no exchange of its own.
+
+A parameter read at a *neighbour* needs its ghosts and takes
+[`_slab_coeff_field`](@ref) instead; `Diffusion` is the one such leaf today.
+That widens the rule rather than breaking it — this function's contract is
+unchanged, and so is every caller of it.
 
 Its pullback, should distributed AD ever arrive, is the transpose gather — a
 scatter-add of each partition's `∂/∂κ` into the global coefficient over owned
@@ -277,6 +293,47 @@ function _slab_field(f::Field{L}, lg::AbstractGrid{N}) where {L,N}
     fill!(lf.data, zero(eltype(lf.data)))
     interior(lf) .= view(interior(f), win...)
     return lf
+end
+
+"""
+    _slab_coeff_field(f::Field, lg::AbstractGrid) -> Field
+
+The slab window of a global coefficient **including its ghosts**, as a field on
+`lg` (internal).
+
+The widened variant of [`_slab_field`](@ref), for a coefficient that is *not*
+read pointwise: [`Diffusion`](@ref) averages κ to faces, so it reads κ one cell
+past every face of the interior — across a partition cut included, where that
+cell belongs to the neighbour. `_slab_field`'s zero ghosts would silently corrupt
+the face coefficient on the cut plane — `κ_I/2` under an arithmetic mean, `0`
+under a harmonic one, and plausible-looking numbers either way.
+
+It still costs no communication. `f` is the global coefficient, whose ghosts
+`diffusion` already extended over an all-physical grid, and slab padded index `p`
+is global padded index `first(local_range[d]) - 1 + p`. So one padded window
+lands every ghost on the value it should hold, with no per-face logic:
+
+  - an `Interface` ghost maps onto a global *interior* plane — the neighbour's κ;
+  - a physical ghost on the end slabs maps onto a global ghost plane, already
+    even-mirrored by [`fill_coefficient_ghosts!`](@ref);
+  - a periodic cut maps onto the global ghost planes too, which already hold the
+    wrap, so the wrap-around neighbour needs no special case;
+  - a transverse dimension has `local_range == 1:n`, so the window is that
+    dimension's whole padded extent and its ghosts come across verbatim.
+
+The window is `first(zr):(last(zr) + 2h) ⊆ 1:(n + 2h)`, so it never needs
+clamping. The precondition is that `f`'s own ghosts are already extended for
+`f.grid`, which `_check_one_grid` is what enforces: a coefficient on any grid
+other than the one being partitioned is rejected before this runs.
+"""
+function _slab_coeff_field(f::Field{L}, lg::AbstractGrid{N}) where {L,N}
+    f.grid === lg && return f
+    h = halo_width(lg)
+    win = ntuple(Val(N)) do d
+        r = lg.local_range[d] .- (first(f.grid.local_range[d]) - 1)
+        first(r):(last(r) + 2 * h[d])
+    end
+    return Field{L}(copy(view(f.data, win...)), lg)
 end
 
 #--------------------------------------------------------------------------------# Backend primitives (no methods in core)

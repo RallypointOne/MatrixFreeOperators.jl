@@ -602,6 +602,33 @@ grids, where `first(local_range[d]) == 1`. The user-facing surface is
 because only it shadows a single-device function; everything downstream dispatches
 on `P` and is named for what it computes, not for where it runs.
 
+*Built (issue #57, slice 2c):* the compact flux-form `Diffusion` leaf on slabs —
+the first whitelisted operator whose coefficient is read at a *neighbour* rather
+than pointwise, so `_slab_field`'s zero ghosts do not serve it.
+
+It still costs no communication, and the reason is worth stating because it is
+what makes stage 2 of #56 the cheap stage. `_slab_op` runs on the host holding
+the **global** κ, whose ghosts `diffusion` already extended by an even mirror and
+a periodic wrap at construction. Slab padded index `p` is global padded index
+`first(local_range[d]) - 1 + p`, so one *padded* window — `_slab_coeff_field`,
+beside `_slab_field` — lands every ghost on the value it should hold with no
+per-face logic: an `Interface` ghost onto a global interior plane (the
+neighbour's κ), a wall ghost onto the global mirror, a periodic cut onto the
+global wrap. Widening the slice is a setup-time indexing change, not a transport,
+so the per-apply exchange count is unchanged from the `Laplacian` baseline — the
+"one halo exchange per application" invariant holds trivially rather than by
+construction. It is legitimate only because κ is *constant through a solve*; a
+coefficient that changed per iteration would owe an exchange per iteration.
+
+`_slab_field`'s invariant is **narrowed, not broken**: it still holds verbatim
+for `ScalingOp`, which reads its coefficient pointwise. The real-eltype
+restriction in `_partitionable_coeff` carries over unchanged, for the same reason
+— `_conj_op(::Diffusion)` rebuilds `conj.(κ)` per call. This is also the first
+production path to reach the leaf's mechanical transpose: a slab carries
+`Interface` faces, so `apply_adjoint!` takes the `adjoint_gather!` branch that
+scatters cotangents into ghosts for the slab reduction to fold, rather than the
+self-adjoint shortcut an all-physical grid takes.
+
 *Deferred:* rank-changing intermediates (`Divergence ∘ Gradient` needs its own
 `ncomp = N` spec and ghost layout — `_slab_ghost_layout` and `_owned_flat_range`
 already take the kwarg), transfer chains (factors on two grids, each needing a

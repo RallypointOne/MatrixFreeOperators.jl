@@ -34,6 +34,24 @@ let M = MatrixFreeOperators
     _scaling_leaves(::M.AbstractOperator) = ()
 end
 
+# The same walk for Diffusion leaves (slice 2c). A separate function rather than a
+# widened `_scaling_leaves`, because the two carry their coefficient under
+# different names — `S.coeff` vs `D.κ` — and every existing caller indexes the
+# former.
+let M = MatrixFreeOperators
+    global _diffusion_leaves
+    _diffusion_leaves(D::M.Diffusion) = (D,)
+    _diffusion_leaves(L::M.Scaled) = _diffusion_leaves(L.op)
+    _diffusion_leaves(L::M.AdjointOp) = _diffusion_leaves(L.op)
+    _diffusion_leaves(L::M.PreparedAdjoint) = _diffusion_leaves(L.op)
+    _diffusion_leaves(L::M.Added) = (_diffusion_leaves(L.a)..., _diffusion_leaves(L.b)...)
+    _diffusion_leaves(L::M.Composed) =
+        (_diffusion_leaves(L.a)..., _diffusion_leaves(L.b)...)
+    _diffusion_leaves(L::M.PreparedComposed) =
+        (_diffusion_leaves(L.a)..., _diffusion_leaves(L.b)...)
+    _diffusion_leaves(::M.AbstractOperator) = ()
+end
+
 function dist_apply_emulated(L, g, parts, ghost_globals, plans, xflat)
     T = eltype(xflat)
     yflat = similar(xflat)
@@ -913,6 +931,11 @@ end
                 # when it runs first, and stay a no-op when it accumulates
                 adjoint(D1) + laplacian(g),
                 laplacian(g) + adjoint(D1),
+                # slice 2c: the lift reads κ at the wall ghost, where the even
+                # mirror gives the one-sided face coefficient — so a slab's lift
+                # is only exact if its coefficient ghosts survived localization.
+                diffusion(g, κ),
+                laplacian(g) * diffusion(g, κ),
             )
             for L in ops
                 @test dist_boundary_rhs(dist_prepare(L, g, np)) ==
@@ -992,6 +1015,141 @@ end
         end
     end
 
+    #----------------------------------------------------------------# Compact diffusion leaf (2c)
+
+    # A coefficient the compact flux form can actually be wrong about: strictly
+    # POSITIVE, so HarmonicMean is defined, and varying across the cut so that
+    # κ differs on the two sides of every cut face. A κ constant in the cut
+    # dimension would average to the same face value from either side and would
+    # hide a zeroed ghost entirely — see the negative control below.
+    diff_coeff_fun(x) = 1.5 + sum(d -> d * x[d]^2, eachindex(x)) + 0.4 * prod(x)
+
+    # Every grid rank, because `partition_grid` always cuts dimension N — so
+    # "a cut in each dimension" is reached by varying the rank, not the axis.
+    diff_exts = (
+        (((0.0, 1.0),), (8,)),
+        (((0.0, 1.0), (0.0, 2.0)), (4, 6)),
+        (((0.0, 1.0), (0.0, 1.0), (0.0, 2.0)), (3, 3, 6)),
+    )
+    diff_grid(ext, sz, cut) = CartesianGrid(
+        ext, sz; bc=ntuple(d -> d == length(sz) ? cut : (Dirichlet(), Dirichlet()), length(sz))
+    )
+
+    # The positive twin of "_slab_field restricts the global coefficient exactly":
+    # `_slab_coeff_field` slices the PADDED window, so the assertion covers the
+    # ghosts too — which is the entire difference between the two functions.
+    @testset "_slab_coeff_field restricts the padded coefficient exactly" begin
+        for (ext, sz) in diff_exts, cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+            g = diff_grid(ext, sz, cut)
+            N = length(sz)
+            D = diffusion(g, set!(scalar_field(g), diff_coeff_fun))
+            for np in (1, 2, 3)
+                for lp in partition_grid(g, np)
+                    lκ = MatrixFreeOperators._slab_coeff_field(D.κ, lp)
+                    @test lκ.grid === lp
+                    @test size(lκ.data) == MatrixFreeOperators.padded_size(lp)
+                    # Slab padded index p is global padded first(local_range)-1+p,
+                    # in every dimension. Spelled out cell by cell rather than as
+                    # the same `ntuple` the implementation uses, so a wrong window
+                    # cannot agree with a wrong oracle.
+                    for I in CartesianIndices(lκ.data)
+                        J = CartesianIndex(
+                            ntuple(d -> first(lp.local_range[d]) - 1 + I[d], N)
+                        )
+                        @test lκ.data[I] == D.κ.data[J]
+                    end
+                    # ...and no ghost is left at the zero `_slab_field` would leave.
+                    @test !any(iszero, lκ.data)
+                end
+            end
+        end
+    end
+
+    @testset "forward parity, adjoint identity, and dense structure: Diffusion" begin
+        rng = MersenneTwister(20260814)
+        for (ext, sz) in diff_exts,
+            cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic())),
+            avg in (ArithmeticMean(), HarmonicMean()),
+            np in (2, 3)
+
+            g = diff_grid(ext, sz, cut)
+            n = prod(local_size(g))
+            κ = set!(scalar_field(g), diff_coeff_fun)
+            Dop = diffusion(g, κ; averaging=avg)
+            x, y = rand(rng, n), rand(rng, n)
+            for L in (Dop, laplacian(g) * Dop, Dop * laplacian(g), 2.0 * Dop + identity_op())
+                D = dist_prepare(L, g, np)
+                @test dist_mul(D, x) == flatten(apply(L, _field(g, x)))
+                @test dot(dist_mul(D, x), y) ≈ dot(x, dist_adjoint(D, y)) rtol = 1e-12
+                A_fwd, A_adj = dist_materialize(D, n)
+                @test A_fwd ≈ materialize(prepare(D.L))
+                @test A_adj ≈ A_fwd'
+            end
+            # A real κ makes the leaf its own transpose globally, so the
+            # distributed adjoint must reproduce the distributed forward action —
+            # a claim the `Interface` gather path has to earn, since it is a
+            # different code path from `apply!` (`src/operators/diffusion.jl`).
+            Ds = dist_prepare(Dop, g, np)
+            @test dist_adjoint(Ds, y) ≈ dist_mul(Ds, y) rtol = 1e-13
+        end
+    end
+
+    # The claim this whole slice rests on: the cut-plane ghosts of a localized κ
+    # ARE read, so they must carry the neighbour's values. Zero them — exactly
+    # what `_slab_field` would have left — and demand the answer move. Verified
+    # load-bearing: swapping `_slab_coeff_field` for `_slab_field` in `_slab_op`
+    # fails this testset and the dense-parity one above.
+    @testset "a localized diffusion coefficient's cut-plane ghosts ARE read" begin
+        for (ext, sz) in diff_exts,
+            cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+
+            g = diff_grid(ext, sz, cut)
+            N = length(sz)
+            n = prod(local_size(g))
+            x = rand(MersenneTwister(23), n)
+            κ = set!(scalar_field(g), diff_coeff_fun)
+            for L in (diffusion(g, κ), laplacian(g) * diffusion(g, κ))
+                D = dist_prepare(L, g, 2)
+                clean = dist_mul(D, x)
+                for (p, lp) in enumerate(D.parts)
+                    h, nn = halo_width(lp)[N], local_size(lp)[N]
+                    bc = boundary_conditions(lp)[N]
+                    planes = Int[]
+                    bc[1] isa MatrixFreeOperators.Interface && append!(planes, 1:h)
+                    bc[2] isa MatrixFreeOperators.Interface &&
+                        append!(planes, (h + nn + 1):(h + nn + h))
+                    @test !isempty(planes)          # a 2-way cut always has one
+                    for Dl in _diffusion_leaves(D.prepared[p].op), pl in planes
+                        fill!(halo_plane_view(Dl.κ, pl), 0)
+                    end
+                end
+                @test dist_mul(D, x) != clean
+            end
+        end
+    end
+
+    # #56's invariant: κ is constant through a solve, so localizing it costs a
+    # slice at prepare time and nothing per apply. The exchange structure must
+    # therefore be bit-for-bit the Laplacian's — same gating rule, same nodes.
+    @testset "Diffusion adds no per-apply exchange" begin
+        g = gridof((Dirichlet(), Neumann()))
+        κ = set!(scalar_field(g), diff_coeff_fun)
+        Dop = diffusion(g, κ)
+        # A bare stencil leaf: no mid-tree node exists to hold an exchange.
+        @test dist_prepare(Dop, g, 2).tree isa MatrixFreeOperators.DistLeaf
+        @test dist_prepare(laplacian(g), g, 2).tree isa MatrixFreeOperators.DistLeaf
+        # ...and inside a composition it gates identically to a Laplacian: an
+        # exchange when the OUTER factor reads ghosts, none when it is diagonal.
+        for (dif, lap) in (
+            (laplacian(g) * Dop, laplacian(g) * laplacian(g)),
+            (Dop * scaling(κ), laplacian(g) * scaling(κ)),
+            (scaling(κ) * Dop, scaling(κ) * laplacian(g)),
+        )
+            @test (dist_prepare(dif, g, 2).tree.xch === nothing) ==
+                (dist_prepare(lap, g, 2).tree.xch === nothing)
+        end
+    end
+
     # Steady-state work must not scale with the grid: a per-call scratch
     # allocation inside the walk would show as a ~4x jump when cells quadruple.
     @testset "walk allocations do not scale with grid size" begin
@@ -1011,6 +1169,9 @@ end
             g -> laplacian(g) * laplacian(g),
             # A localized leaf dispatches dynamically; that must stay O(1), not O(cells).
             g -> laplacian(g) * scaling(set!(scalar_field(g), coeff_fun)),
+            # ...including the one whose localization copies a padded coefficient:
+            # that copy belongs to prepare, and must not reappear per apply.
+            g -> laplacian(g) * diffusion(g, set!(scalar_field(g), diff_coeff_fun)),
         )
             small, large = steady((16, 16), mk, dist_mul!), steady((32, 32), mk, dist_mul!)
             @test large < 2 * small
@@ -1064,6 +1225,18 @@ end
             @test distributable(scaling(κ) + laplacian(g))
             @test distributable(laplacian(g) * scaling(κ))
             @test distributable(adjoint(derivative(g, 1) * scaling(κ)))
+
+            # slice 2c: the compact diffusion leaf joins on the same coefficient
+            # terms. Its face averaging reads κ across the cut, which
+            # `_slab_coeff_field` supplies at localization time — no exchange, so
+            # nothing further to require of it here.
+            κp = set!(scalar_field(g), x -> 1 + x[1] + x[2])
+            for avg in (ArithmeticMean(), HarmonicMean())
+                @test distributable(diffusion(g, κp; averaging=avg))
+            end
+            @test distributable(laplacian(g) * diffusion(g, κp))
+            @test distributable(2.0 * diffusion(g, κp) + identity_op())
+            @test distributable(adjoint(diffusion(g, κp) * derivative(g, 1)))
         end
 
         @testset "rejected: field-valued parameters" begin
@@ -1090,6 +1263,18 @@ end
             end
             @test errc isa ArgumentError
             @test occursin("real-eltype", errc.msg)
+
+            # ...and rejected for Diffusion for exactly the same reason: its
+            # adjoint is the conjugated leaf, rebuilt per call.
+            @test !distributable(diffusion(g, κc))
+            errd = try
+                check(diffusion(g, κc))
+            catch e
+                e
+            end
+            @test errd isa ArgumentError
+            @test occursin("Diffusion", errd.msg)
+            @test occursin("real-eltype", errd.msg)
         end
 
         # A coefficient on a *different* grid is only visible from the tree, not
@@ -1121,6 +1306,19 @@ end
             @test err isa ArgumentError
             @test occursin("ScalingOp", err.msg)
             @test occursin("different grid", err.msg)
+
+            # Same trap for the diffusion leaf, and it is `_check_one_grid` that
+            # has to catch it: `_slab_coeff_field` reads the coefficient's OWN
+            # ghosts, so a κ carrying another grid's ghosts is the one input that
+            # would slice into plausible numbers rather than an error.
+            errd = try
+                check1(laplacian(g) + diffusion(gc, κc), g)
+            catch e
+                e
+            end
+            @test errd isa ArgumentError
+            @test occursin("Diffusion", errd.msg)
+            @test occursin("different grid", errd.msg)
         end
 
         @testset "rejected: transfer operators span two grids" begin

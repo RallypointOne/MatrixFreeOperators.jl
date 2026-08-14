@@ -166,8 +166,9 @@ end
 
 Compact flux-form variable-coefficient diffusion `∇·(κ∇u)`. Construct with
 [`diffusion`](@ref), which is what extends `κ` into its ghost layers; the inner
-constructor takes `κ` as given and is the seam the forest and distributed paths will use
-to supply cross-block coefficient ghosts themselves.
+constructor takes `κ` as given and is the seam the forest and distributed paths use to
+supply cross-block coefficient ghosts themselves — `_slab_op` (`src/distributed.jl`)
+already builds through it, with a κ sliced from the global one *including* its ghosts.
 """
 struct Diffusion{G<:AbstractGrid,K,AV} <: AbstractOperator
     grid::G
@@ -234,8 +235,11 @@ function diffusion(g::AbstractGrid, κ::Field; averaging=ArithmeticMean(), check
     )
     _has_interface(g) && throw(
         ArgumentError(
-            "diffusion does not support Interface faces yet (forest leaves and partition " *
-            "slabs); the coefficient has no cross-block ghost values to average — see issue #54",
+            "diffusion cannot build directly on a grid with Interface faces (forest leaves " *
+            "and partition slabs): κ's cross-block ghosts are an external input, and this " *
+            "entry point has only the one grid to fill them from. Build it on the " *
+            "undistributed grid and pass that to prepare_distributed, which slices κ with " *
+            "its ghosts onto each slab; BlockForest support is tracked in issue #54",
         ),
     )
     eltype(κ.data) <: Number || throw(

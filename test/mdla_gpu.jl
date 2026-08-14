@@ -52,6 +52,11 @@ end
         scaling(κ) + laplacian(g),
         laplacian(g) * scaling(κ),
         adjoint(derivative(g, 1) * scaling(κ)),
+        # slice 2c
+        diffusion(g, κ),
+        diffusion(g, κ; averaging=HarmonicMean()),
+        laplacian(g) * diffusion(g, κ),
+        2.0 * diffusion(g, κ) + identity_op(),
     )
         @test prepare_distributed(L, 1) isa MDLA_EXT.MDLAPreparedOperator
     end
@@ -393,6 +398,37 @@ mdla_coeff(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
     end
 end
 
+# Slice 2c. The diffusion leaf averages κ to faces, so it reads κ one cell PAST
+# every face — the cut plane included. `_slab_coeff_field` therefore uploads the
+# PADDED window, and asserting only `interior` equality (as above) would pass on
+# a slab whose cut-plane ghost was left at zero.
+@testset "the diffusion coefficient is uploaded with its cut-plane ghosts" begin
+    if NGPUS_MDLA >= 2
+        g = mdla_grid((Dirichlet(), Neumann()))
+        κ = set!(scalar_field(g), mdla_coeff)
+        Dg = diffusion(g, κ)
+        P = prepare_distributed(laplacian(g) * Dg, 2)
+        locals = partition_grid(g, 2)
+        for d in 1:2
+            # Composed(laplacian, diffusion) ⇒ the inner factor `b` is the leaf
+            Dd = P.tree.b.ops[d]
+            @test Dd isa MatrixFreeOperators.Diffusion
+            @test Dd.κ.data isa CuArray
+            @test size(Dd.κ.data) == MatrixFreeOperators.padded_size(locals[d])
+            win = ntuple(2) do dd
+                lr = locals[d].local_range[dd]
+                first(lr):(last(lr) + 2 * halo_width(locals[d])[dd])
+            end
+            @test Array(Dd.κ.data) == collect(view(Dg.κ.data, win...))
+            # Every ghost carries a real value: the neighbour's κ at the cut, the
+            # even mirror at a wall. A zero anywhere means a ghost was dropped.
+            @test !any(iszero, Array(Dd.κ.data))
+        end
+    else
+        @test_skip "per-partition diffusion coefficient upload — needs ≥ 2 CUDA devices"
+    end
+end
+
 @testset "Field coefficient: 2-partition forward parity" begin
     if NGPUS_MDLA >= 2
         rng = Random.MersenneTwister(61)
@@ -407,6 +443,12 @@ end
                 scaling(κ) * laplacian(g),
                 2.0 * scaling(κ) + laplacian(g),
                 derivative(g, 1) * scaling(κ) * derivative(g, 1),
+                # slice 2c: both averaging policies, since only the arithmetic
+                # mean is linear in κ and a dropped ghost shows differently.
+                diffusion(g, κ),
+                diffusion(g, κ; averaging=HarmonicMean()),
+                laplacian(g) * diffusion(g, κ),
+                2.0 * diffusion(g, κ) + identity_op(),
             )
                 P1 = prepare_distributed(L, 1)
                 y1 = MultiDeviceVector(zeros(n), P1.spec)
@@ -430,7 +472,15 @@ end
         n = prod(local_size(g))
         κ = set!(scalar_field(g), mdla_coeff)
         x, y = rand(rng, n), rand(rng, n)
-        for L in (scaling(κ) * laplacian(g), laplacian(g) * scaling(κ))
+        for L in (
+            scaling(κ) * laplacian(g),
+            laplacian(g) * scaling(κ),
+            # slice 2c: on a slab the leaf's Interface faces send `apply_adjoint!`
+            # down the mechanical gather instead of the self-adjoint shortcut, so
+            # this is the first place that transpose runs in production.
+            diffusion(g, κ),
+            laplacian(g) * diffusion(g, κ),
+        )
             P = prepare_distributed(L, 2)
             Lx = MultiDeviceVector(zeros(n), P.spec)
             mul!(Lx, P, MultiDeviceVector(copy(x), P.spec))
@@ -444,7 +494,13 @@ end
             bc=((Dirichlet(), Dirichlet()), (Dirichlet(), Neumann())))
         ns = prod(local_size(gs))
         κs = set!(scalar_field(gs), mdla_coeff)
-        for Lt in (scaling(κs) * laplacian(gs), adjoint(derivative(gs, 1) * scaling(κs)))
+        for Lt in (
+            scaling(κs) * laplacian(gs),
+            adjoint(derivative(gs, 1) * scaling(κs)),
+            diffusion(gs, κs),
+            diffusion(gs, κs; averaging=HarmonicMean()),
+            laplacian(gs) * diffusion(gs, κs),
+        )
             P = prepare_distributed(Lt, 2)
             A_fwd, A_adj = mdla_materialize(P, ns)
             @test A_fwd ≈ materialize(prepare(MatrixFreeOperators._push_adjoints(Lt)))
@@ -473,6 +529,10 @@ end
             scaling(κ) * laplacian(g),
             adjoint(D1) + laplacian(g),
             laplacian(g) + adjoint(D1),
+            # slice 2c: the lift reads κ at the wall ghost, where the even mirror
+            # supplies the one-sided face coefficient the FV balance calls for.
+            diffusion(g, κ),
+            laplacian(g) * diffusion(g, κ),
         )
             ref = flatten(boundary_rhs(L, g))
             for nd in 1:min(NGPUS_MDLA, 2)
@@ -497,7 +557,16 @@ end
     )
     κ = set!(scalar_field(g), mdla_coeff)
     fun = x -> sin(π * x[1]) * sin(π * x[2]) + 0.3x[2]
-    for L in (-1.0 * laplacian(g), -1.0 * (scaling(κ) * laplacian(g)))
+    # `-diffusion` is the compact-form counterpart of `-(scaling(κ)*laplacian)`:
+    # SPD, so cg applies, and exactly symmetric rather than merely close — an
+    # iteration count that moved with the partition count would say the slab
+    # coefficients disagree with the global one.
+    for L in (
+        -1.0 * laplacian(g),
+        -1.0 * (scaling(κ) * laplacian(g)),
+        -1.0 * diffusion(g, κ),
+        -1.0 * diffusion(g, κ; averaging=HarmonicMean()),
+    )
         bflat = flatten(set!(scalar_field(g), fun)) .- flatten(boundary_rhs(L, g))
         u_cpu, stats_cpu = Krylov.cg(prepare(L), bflat; atol=1e-10, rtol=1e-10)
         @test stats_cpu.solved
