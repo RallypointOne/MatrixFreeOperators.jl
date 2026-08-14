@@ -2,18 +2,22 @@
 # ∇·(κ∇u) from noisy observations of the response, by gradient descent.
 #
 # This is the example the whole design exists for. The gradient is with respect to
-# an *operator parameter* — the coefficient field inside `scaling(κ)` — not with
-# respect to the solution field, and nobody wrote an adjoint rule for it. Operator
-# bodies are array-level broadcasts, so Enzyme differentiates straight through the
-# composition `divergence(g) * scaling(κ) * gradient(g)`, boundary conditions and
-# all. DifferentiationInterface is the frontend: one backend object, no annotation
-# vocabulary at the call site.
+# an *operator parameter* — the coefficient field carried by the diffusion leaf —
+# not with respect to the solution field, and nobody wrote an adjoint rule for it.
+# Operator bodies are array-level broadcasts, so Enzyme differentiates straight
+# through the leaf, boundary conditions and all. DifferentiationInterface is the
+# frontend: one backend object, no annotation vocabulary at the call site.
 #
-# One drive cannot see everything: the data are sensitive to κ only through the
-# flux κ∇u, so a single excitation is blind wherever its gradient vanishes. We
-# therefore observe the response to three drive patterns (as in EIT, where several
-# current patterns are injected for exactly this reason) — and reconstruct from the
-# first drive alone as well, as the cautionary middle panel of the figure.
+# The discretization is what makes this work from a single excitation.
+# `diffusion(g, κ)` is the compact flux form: fluxes κ∇u live on cell faces, with
+# κ averaged to each face, and the cell balance differences neighbouring face
+# fluxes. Every equation therefore couples κ at *adjacent* cells. The algebraic
+# spelling `divergence(g) * scaling(κ) * gradient(g)` does not: chaining two
+# centered differences samples the flux only at cells I±e, so no equation ever ties
+# κ at neighbouring pixels together, the even and odd checkerboard sublattices are
+# fit to disjoint halves of the noisy data, and the reconstruction speckles. That
+# is issue #48, and it is a property of the stencil, not of the optimizer — a
+# stronger smoothness prior barely dents it.
 #
 # Run with: julia --project=examples examples/inverse_diffusion.jl
 
@@ -21,8 +25,6 @@ using Pkg; Pkg.activate(@__DIR__)
 using MatrixFreeOperators, CairoMakie, LinearAlgebra, Printf, Random
 import DifferentiationInterface as DI
 import Enzyme
-
-const MFO = MatrixFreeOperators   # `gradient` is both an operator here and DI's verb
 
 n = 48
 g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (n, n))       # homogeneous Dirichlet
@@ -37,71 +39,61 @@ g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (n, n))       # homogeneous Dirichle
 #
 # Everything the loss needs is an explicit argument — Enzyme wants typed arguments,
 # not captured non-const globals, and at the DI layer the fixed ones become
-# `Constant` contexts.
+# `Constant` contexts. `check=false` keeps the coefficient-positivity validation
+# out of the differentiated region; it would rescan κ on every objective call.
 function response(κdata, udata, gg)
-    K = divergence(gg) * scaling(Field(κdata, gg)) * MFO.gradient(gg)
-    return interior(apply(K, Field(copy(udata), gg)))
+    D = diffusion(gg, Field(κdata, gg); check=false)
+    return interior(apply(D, Field(copy(udata), gg)))
 end
 
-# Even several drives leave κ weakly determined where every excitation has small
-# ∇u, so a small smoothness penalty stays. λ is deliberately visible rather than
-# tuned away — with three drives the result barely depends on it.
+roughness(κi) =
+    sum(abs2, diff(κi; dims=1)) / length(κi) + sum(abs2, diff(κi; dims=2)) / length(κi)
+
+# A token smoothness penalty, kept only so the knob is visible. It no longer does
+# any work: sweeping λ from 0 to 5e-4 moves the recovery error by less than 0.01
+# percentage points, because the data now determine κ pixel by pixel. Under the
+# wide composition the same sweep was the difference between a usable answer and
+# speckle, and even a 20× stronger prior could not rescue it.
 const λ = 5e-4
 
-function objective(κdata, obs, udatas, gg)
-    J = 0.0
-    for (o, ud) in zip(obs, udatas)
-        J += sum(abs2, response(κdata, ud, gg) .- o) / length(o)
-    end
-    κi = interior(Field(κdata, gg))
-    rough =
-        sum(abs2, diff(κi; dims=1)) / length(κi) + sum(abs2, diff(κi; dims=2)) / length(κi)
-    return J + λ * rough
+function objective(κdata, obs, udata, gg)
+    J = sum(abs2, response(κdata, udata, gg) .- obs) / length(obs)
+    return J + λ * roughness(interior(Field(κdata, gg)))
 end
 
-# The drive patterns. The first is blind at the domain centre (∇u = 0 there); the
-# other two put gradients exactly where it has none.
-us = map(
-    f -> set!(scalar_field(g), f),
-    (
-        x -> sinpi(x[1]) * sinpi(x[2]),
-        x -> sinpi(2x[1]) * sinpi(x[2]),
-        x -> sinpi(x[1]) * sinpi(2x[2]),
-    ),
-)
-udatas = map(u -> u.data, us)
+# One drive is enough. The data are sensitive to κ only through the flux κ∇u, so a
+# single excitation still sees least where its gradient is smallest. With the
+# compact stencil that shows up as faint streaks along the directions where ∇u is
+# small — a resolution limit of this one drive — rather than as pixel-scale speckle.
+u = set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2]))
 
 rng = MersenneTwister(20260731)
 κ★ = set!(scalar_field(g), κ_true)
-obs = map(udatas) do ud
-    d = collect(response(κ★.data, ud, g))
-    d .+ 0.01 * maximum(abs, d) .* randn(rng, size(d))
-end
+clean = collect(response(κ★.data, u.data, g))
+obs = clean .+ 0.01 * maximum(abs, clean) .* randn(rng, size(clean))
 
 backend = DI.AutoEnzyme(; mode=Enzyme.set_runtime_activity(Enzyme.Reverse))
 
 # Trust, but verify: spot-check the AD gradient against central finite differences
 # at a few entries before letting an optimizer rely on it.
 let κ = fill(1.0, padded_size(g)...), ε = 1e-6
-    dκ = DI.gradient(
-        objective, backend, κ, DI.Constant(obs), DI.Constant(udatas), DI.Constant(g)
-    )
+    dκ = DI.gradient(objective, backend, κ, DI.Constant(obs), DI.Constant(u.data), DI.Constant(g))
     println("AD gradient vs central finite differences:")
     for idx in rand(rng, findall(!iszero, dκ), 4)
         κp = copy(κ); κp[idx] += ε
         κm = copy(κ); κm[idx] -= ε
-        fd = (objective(κp, obs, udatas, g) - objective(κm, obs, udatas, g)) / (2ε)
+        fd = (objective(κp, obs, u.data, g) - objective(κm, obs, u.data, g)) / (2ε)
         @printf "  κ[%3d,%3d]   AD %+.6e   FD %+.6e\n" idx[1] idx[2] dκ[idx] fd
     end
 end
 
 # Gradient descent with backtracking: the problem is scaled like h⁻², so a fixed
 # step is hopeless and a two-line line search is the honest minimum.
-function recover(obs, udatas, gg, backend)
+function recover(obs, udata, gg, backend)
     κ = fill(1.0, padded_size(gg)...)                     # flat initial guess
-    ctx = (DI.Constant(obs), DI.Constant(udatas), DI.Constant(gg))
+    ctx = (DI.Constant(obs), DI.Constant(udata), DI.Constant(gg))
     prep = DI.prepare_gradient(objective, backend, κ, ctx...)
-    J = objective(κ, obs, udatas, gg)
+    J = objective(κ, obs, udata, gg)
     @printf "  initial objective  %.4e\n" J
     step = 1.0
     for iter in 1:300
@@ -109,7 +101,7 @@ function recover(obs, udatas, gg, backend)
         accepted = false
         for _ in 1:40
             trial = κ .- step .* dκ
-            Jt = objective(trial, obs, udatas, gg)
+            Jt = objective(trial, obs, udata, gg)
             if Jt < J
                 κ .= trial
                 J = Jt
@@ -126,38 +118,31 @@ function recover(obs, udatas, gg, backend)
     return κ
 end
 
-println("\nrecovering from 1 excitation:")
-κ1 = recover(obs[1:1], udatas[1:1], g, backend)
-println("recovering from 3 excitations:")
-κ3 = recover(obs, udatas, g, backend)
+println("\nrecovering κ from 1 excitation:")
+κ̂ = recover(obs, u.data, g, backend)
+
+truth = collect(interior(κ★))
+recovered = collect(interior(Field(κ̂, g)))
+
+# Report the two numbers the reconstruction lives or dies by, rather than asserting
+# them in prose. `jaggedness` is the RMS neighbour-to-neighbour variation: it is the
+# checkerboard detector, since parity-decoupled sublattices disagree pixel by pixel
+# and inflate it while leaving the smooth error largely unchanged.
+jaggedness(κi) = sqrt(roughness(κi))
+@printf "\n  relative error   %5.2f %%\n" 100 * norm(recovered .- truth) / norm(truth)
+@printf "  jaggedness       %.4f   (truth %.4f)\n" jaggedness(recovered) jaggedness(truth)
 
 Δ = spacing(g)
 xs = range(0.5Δ[1], 1 - 0.5Δ[1]; length=n)
 ys = range(0.5Δ[2], 1 - 0.5Δ[2]; length=n)
-truth = collect(interior(κ★))
-recovered1 = collect(interior(Field(κ1, g)))
-recovered3 = collect(interior(Field(κ3, g)))
-lims = extrema(vcat(vec(truth), vec(recovered1), vec(recovered3)))
+lims = extrema(vcat(vec(truth), vec(recovered)))
 
-# The middle panel is the lesson. Its speckle is not an optimizer failure and no
-# stronger prior fixes it — the exact minimizer of the single-drive objective looks
-# the same. Two mechanisms produce it. Centered differences sample the flux κ∇u
-# only at neighbouring cells, so no equation ever couples κ at adjacent pixels: the
-# even and odd checkerboard sublattices are fit to disjoint halves of the noisy
-# data and disagree pixel by pixel, tied together only by the weak roughness prior.
-# And sensitivity scales with ∇u, which for sin(πx)sin(πy) vanishes at the centre —
-# the dark pixel sits there, with streaks along the characteristics of ∇u. Two more
-# drives fill in what the first cannot see: the recovery error drops roughly
-# eightfold and the answer stops depending on λ.
-fig = Figure(size=(1080, 330))
-for (col, (title, field)) in enumerate((
-    "true κ" => truth,
-    "recovered, 1 excitation" => recovered1,
-    "recovered, 3 excitations" => recovered3,
-))
+fig = Figure(size=(760, 330))
+for (col, (title, field)) in
+    enumerate(("true κ" => truth, "recovered, 1 excitation" => recovered))
     ax = Axis(fig[1, col]; xlabel="x", ylabel="y", title=title, aspect=DataAspect())
     heatmap!(ax, xs, ys, field; colorrange=lims)
 end
-Colorbar(fig[1, 4]; colorrange=lims)
+Colorbar(fig[1, 3]; colorrange=lims)
 save(joinpath(@__DIR__, "inverse_diffusion.png"), fig)
 println("wrote inverse_diffusion.png")

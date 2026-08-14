@@ -59,9 +59,11 @@ for hot stencils. Custom AD rules exist as an *optimization* on top of that path
 not as a prerequisite for it. On top of that sit:
 
 - a **lazy operator algebra** — leaves like `laplacian`, `gradient`,
-  `divergence`, `scaling`, `advection` bind a grid at construction and compose
-  under `+`, `-`, `*`, scalar scaling, and `adjoint`, so variable-coefficient
-  diffusion is literally `divergence(g) * scaling(κ) * gradient(g)`;
+  `divergence`, `scaling`, `diffusion`, `advection` bind a grid at construction
+  and compose under `+`, `-`, `*`, scalar scaling, and `adjoint`, so
+  variable-coefficient diffusion is literally
+  `divergence(g) * scaling(κ) * gradient(g)` — or, in the compact flux form that
+  a κ-inversion wants, the fused leaf `diffusion(g, κ)`;
 - **declared adjoints with correct boundary contributions** for every linear
   leaf, verified by the dot-product identity, with a strict linear/affine split
   (inhomogeneous boundary data is exported via `boundary_rhs`, never baked into
@@ -121,6 +123,9 @@ Everything composes from here with the same pieces:
 
 - `divergence(g) * scaling(κ) * gradient(g)` — variable-coefficient diffusion
   ∇·(κ∇u), built from rank-changing leaves;
+- `diffusion(g, κ)` — the same operator as a single compact flux-form leaf:
+  exactly symmetric, with an `operator_diagonal`, and free of the wide stencil's
+  odd–even decoupling, which is what a parameter inversion in κ needs;
 - `adjoint(L)` — the declared adjoint including boundary contributions, ready
   for adjoint-based optimization;
 - `boundary_rhs(L, g)` — the lift vector for inhomogeneous BCs, folded into the

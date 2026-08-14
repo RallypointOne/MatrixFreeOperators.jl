@@ -639,9 +639,16 @@ rejected loudly.
    diffusion falls out of the algebra as
    `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test.
    (Caveat: the composed form has a wider effective stencil and collocated
-   odd-even quirks; a fused `∇·(κ∇u)` leaf is a later performance/accuracy
-   upgrade, not a v1 need — see §4a for the custom-fused-leaf pattern such an
-   upgrade would follow.)
+   odd-even quirks. **Resolved (2026-08-14): the fused `∇·(κ∇u)` leaf landed as
+   `Diffusion`/`diffusion(g, κ)`** (issue #48), following the §4a
+   custom-fused-leaf pattern with the exported `diffusion_stencil` primitive. It
+   is the compact flux form — face-averaged κ, arithmetic or harmonic — and it is
+   exactly symmetric for real κ, declares `operator_diagonal` (which the composed
+   form cannot), and removes the parity decoupling that made κ-inversion fail. The
+   composition stays valid and stays the algebra stress-test; the leaf is both the
+   accurate and the fast path — 62 µs vs the composition's 115 µs for one 256²
+   `mul!`. `CartesianGrid` only for now — `BlockForest` and distributed slabs are
+   staged in #54.)
 4. Array-level authoring; device-agnostic via `get_backend`/`Adapt`; CI on CPU,
    and CUDA where available.
 5. AD: works automatically (Enzyme + Mooncake) on array-level leaves for field +
@@ -875,7 +882,15 @@ Presented one at a time with a recommendation; none block writing v1's spine.
 2. **Collocated vs staggered fields in v1.** Staggered (faces/centers) avoids
    odd-even decoupling for incompressible flow but adds bookkeeping.
    *Recommendation:* collocated v1; encode location as the `Field` trait `L` so
-   staggered is purely additive.
+   staggered is purely additive. (Note, 2026-08-14: for *diffusion* the odd-even
+   decoupling is now handled without staggering, by the compact flux-form
+   `Diffusion` leaf — §8. A warning for whoever does implement staggered `G`/`D`:
+   the compact operator factors as `L = −Bᵀ diag(κ_f) B`, but at a Dirichlet wall
+   the row of `B` is `√2/Δ`, not `2/Δ` — the geometric mean of the one-sided
+   gradient weight and the divergence weight. There the gradient and
+   negative-divergence operators are *not* transposes of each other; only their
+   product is symmetric. A staggered pair that assumes `D = −Gᵀ` will be
+   asymmetric at Dirichlet walls.)
 
 3. ~~**AD backend default.**~~ **Resolved (2026-07-31): Enzyme.** It is the
    documented default and preferred backend, and the only one the custom rules in

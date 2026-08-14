@@ -57,8 +57,9 @@ MatrixFreeOperators deliberately owns neither.
 
 ## Anisotropy without a tensor operator
 
-The package has no tensor-valued coefficient: `scaling` accepts scalars only, and
-there is no `DivGrad` leaf. It does not need one here. The fibres lie along `x`,
+The package has no tensor-valued coefficient: `scaling` and `diffusion` accept
+scalar coefficients only, and there is no tensor `DivGrad` leaf. It does not need
+one here. The fibres lie along `x`,
 so `D` is constant and axis-aligned, and the identity
 
 ```
