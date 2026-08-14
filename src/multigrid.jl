@@ -192,6 +192,12 @@ _rediscretize(L::ScalingOp{<:Number}, ::CartesianGrid) = L
 function _rediscretize(L::ScalingOp{<:Field}, gc::CartesianGrid)
     return ScalingOp(_average_to_coarse(L.coeff, gc))
 end
+# The coarse coefficient goes through the child mean, not Restriction — see
+# _average_to_coarse. check=false: the fine κ was already validated at construction, and
+# both means map positive values to positive values.
+function _rediscretize(L::Diffusion, gc::CartesianGrid)
+    return diffusion(gc, _average_to_coarse(L.κ, gc); averaging=L.avg, check=false)
+end
 _rediscretize(L::Scaled, gc::CartesianGrid) = Scaled(_rediscretize(L.op, gc), L.α)
 function _rediscretize(L::Added, gc::CartesianGrid)
     return Added(_rediscretize(L.a, gc), _rediscretize(L.b, gc))
@@ -202,7 +208,7 @@ end
 _rediscretize(L::AbstractOperator, ::CartesianGrid) = throw(
     ArgumentError(
         "multigrid rediscretization does not support $(nameof(typeof(L))); supported " *
-        "leaves: Laplacian, Derivative, Gradient, Divergence, ScalingOp, IdentityOp",
+        "leaves: Laplacian, Derivative, Gradient, Divergence, ScalingOp, Diffusion, IdentityOp",
     ),
 )
 

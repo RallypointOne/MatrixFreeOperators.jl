@@ -115,6 +115,14 @@ end
         )
         gpc = coarsen(gp)
 
+        # Diffusion refuses Interface faces through its public constructor (nothing
+        # supplies κ's cross-block ghosts yet), so the inner constructor is used here to
+        # exercise the declared transpose the forest path will need. κ ghosts are filled
+        # explicitly, which is what the coefficient exchange will do.
+        κi = scalar_field(gi)
+        κi.data .= 1 .+ rand(rng, padded_size(gi)...)
+        Di = MatrixFreeOperators.Diffusion(gi, κi, ArithmeticMean())
+
         # run!(out, in, α, β) — `out`/`in` prototypes, and the grid `out` lives on
         # (Prolongation/Restriction land on the coarse grid).
         cases = (
@@ -124,6 +132,8 @@ end
                 (o, i, α, β) -> apply_adjoint!(o, derivative(gi, 1), i, gi, α, β)),
             ("Derivative order 2", () -> scalar_field(gi), () -> scalar_field(gi), gi,
                 (o, i, α, β) -> apply_adjoint!(o, derivative(gi, 2; order=2), i, gi, α, β)),
+            ("Diffusion", () -> scalar_field(gi), () -> scalar_field(gi), gi,
+                (o, i, α, β) -> apply_adjoint!(o, Di, i, gi, α, β)),
             ("Gradient (rank-reducing adjoint)", () -> scalar_field(gi),
                 () -> vector_field(gi), gi,
                 (o, i, α, β) -> apply_adjoint!(o, gradient(gi), i, gi, α, β)),
@@ -181,7 +191,14 @@ end
             a = @allocated apply_adjoint!(x̄, L, ȳ, g, 1.5, 2.0)
             return a, sum(interior(x̄))   # DCE-proof: consume the output
         end
-        for L in (laplacian(ga), derivative(ga, 1), laplacian(ga) + derivative(ga, 2; order=2))
+        κa = set!(scalar_field(ga), x -> 1 + x[1] * x[2])
+        κa.data .= ifelse.(iszero.(κa.data), one(eltype(κa.data)), κa.data)   # incl. ghosts
+        for L in (
+            laplacian(ga),
+            derivative(ga, 1),
+            laplacian(ga) + derivative(ga, 2; order=2),
+            MatrixFreeOperators.Diffusion(ga, κa, ArithmeticMean()),
+        )
             ȳ = set!(scalar_field(ga), x -> sinpi(x[1]) * exp(-x[2]))
             a, s = alloc_adjoint(L, scalar_field(ga), ȳ, ga)
             @test isfinite(s) && !iszero(s)

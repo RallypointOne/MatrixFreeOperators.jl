@@ -102,6 +102,9 @@ _undistributable_reason(::Prolongation) =
 _undistributable_reason(S::ScalingOp) =
     "its coefficient must be a Number or a real-eltype Field on an undistributed " *
     "CartesianGrid, so it can be sliced onto the slabs"
+_undistributable_reason(::Diffusion) =
+    "its face-averaged coefficient needs κ values across the partition cut, which the " *
+    "coefficient slicing does not yet supply — see issue #54"
 _undistributable_reason(::Advection) =
     "the velocity field is bound to the global grid; it must be partitioned onto the slabs first"
 _undistributable_reason(::Gradient) =

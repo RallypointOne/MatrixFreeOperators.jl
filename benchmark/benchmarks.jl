@@ -46,6 +46,24 @@ PK = prepare(K, scalar_field(g2))
 SUITE["grid"]["2D 256²"]["∇·(κ∇u) prepare"] = @benchmarkable prepare($K, $(scalar_field(g2)))
 SUITE["grid"]["2D 256²"]["∇·(κ∇u) mul!"] = @benchmarkable mul!($ys2, $PK, $xs2)
 
+# The fused compact leaf, head to head with the composition above. isdefined guard:
+# benchpkg runs this file on the PR's base branch too, where Diffusion does not exist.
+if isdefined(MatrixFreeOperators, :Diffusion)
+    for (dim, g, xf, yf) in (("2D 256²", g2, xs2, ys2),)
+        D = diffusion(g, set!(scalar_field(g), p -> 1 + 0.5 * sin(p[1])))
+        PDf = prepare(D, scalar_field(g))
+        SUITE["grid"][dim]["diffusion prepare"] = @benchmarkable prepare(
+            $D, $(scalar_field(g))
+        )
+        SUITE["grid"][dim]["diffusion mul!"] = @benchmarkable mul!($yf, $PDf, $xf)
+    end
+    D3 = diffusion(g3, set!(scalar_field(g3), p -> 1 + 0.5 * sin(p[1])))
+    x3 = flatten(set!(scalar_field(g3), p -> sin(4p[1]) + cos(3p[3])))
+    y3 = similar(x3)
+    PD3 = prepare(D3, scalar_field(g3))
+    SUITE["grid"]["3D 64³"]["diffusion mul!"] = @benchmarkable mul!($y3, $PD3, $x3)
+end
+
 #--------------------------------------------------------------------------------# adjoint action
 
 # The adjoint gather is the one path where an accumulating (β ≠ 0) application does
