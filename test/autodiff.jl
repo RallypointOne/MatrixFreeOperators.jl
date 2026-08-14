@@ -102,8 +102,12 @@ end
         u = set!(scalar_field(g), x -> sin(3 * x[1]) * x[2])
         κ = 1.0 .+ rand(rng, padded_size(g)...)
         dκ = zero(κ)
+        # set_runtime_activity, mirror image of the field-gradient case above: the leaf
+        # is built *inside* the differentiated region, so the Const grid is stored into
+        # the freshly built active coefficient Field. Static activity analysis clears
+        # that on Julia 1.12 but not on 1.10 or 1.11.
         Enzyme.autodiff(
-            Enzyme.Reverse,
+            Enzyme.set_runtime_activity(Enzyme.Reverse),
             ad_diffusion_kappa_loss,
             Enzyme.Active,
             Enzyme.Duplicated(κ, dκ),

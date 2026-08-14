@@ -238,8 +238,11 @@ end
         # arithmetic, so the whole κ path stays on the tape with no rule in sight.
         dκd = zero(κ)
         before = ENZ_EXT.rule_hits()
+        # Runtime activity: constructing the leaf inside the differentiated region
+        # stores the Const grid into the active coefficient Field. It does not affect
+        # rule dispatch, so the rule_hits assertion below still means what it says.
         Enzyme.autodiff(
-            Enzyme.Reverse,
+            Enzyme.set_runtime_activity(Enzyme.Reverse),
             er_diffusion_kappa_loss,
             Enzyme.Active,
             Enzyme.Duplicated(κ, dκd),

@@ -60,9 +60,12 @@ dκ = DI.gradient(diffusion_loss, backend, κ, DI.Constant(u.data), DI.Constant(
 extrema(dκ)
 ```
 
-`set_runtime_activity` is needed whenever a `Const` coefficient field flows into an
-active output buffer — static activity analysis cannot prove that safe. Setting it
-once on the backend object is why the DI frontend is pleasant to use.
+`set_runtime_activity` is needed whenever constant and active memory meet in the same
+place, and both directions show up here: a `Const` coefficient field flowing into an
+active output buffer, and — when the operator is *built* inside the differentiated
+region, as an inversion loop does — the `Const` grid being stored into the freshly
+built active coefficient field. Static activity analysis cannot prove either safe.
+Setting it once on the backend object is why the DI frontend is pleasant to use.
 
 For a real optimization loop, prepare once and reuse:
 

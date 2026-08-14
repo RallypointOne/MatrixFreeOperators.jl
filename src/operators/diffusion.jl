@@ -212,6 +212,12 @@ the operator. Pass `check=false` to skip the `κ > 0` validation that
 rebuilt every objective evaluation and the check would run inside the differentiated
 region.
 
+Building the leaf inside that region — which is exactly what an inversion loop does —
+needs `Enzyme.set_runtime_activity(Enzyme.Reverse)`: the operator stores the `Const` grid
+alongside the active coefficient, and static activity analysis cannot clear that store
+before Julia 1.12. See `examples/inverse_diffusion.jl`, which sets it once on the backend
+object.
+
 ### Examples
 
 ```julia
