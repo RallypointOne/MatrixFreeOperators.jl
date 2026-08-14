@@ -39,7 +39,9 @@ end
 Build a matrix-free divergence operator (∇⋅) bound to `g`, discretized with
 second-order central differences. Maps an `SVector{N}`-valued vector field to a
 scalar field — one of the two rank-changing leaves (with [`gradient`](@ref)).
-Variable-coefficient diffusion composes as `divergence(g) * scaling(κ) * gradient(g)`.
+Variable-coefficient diffusion can be assembled as
+`divergence(g) * scaling(κ) * gradient(g)`, but prefer the compact flux-form leaf
+[`diffusion`](@ref) — chaining two centered differences doubles the stencil width.
 
 ### Examples
 
@@ -50,7 +52,7 @@ v = set!(vector_field(g), x -> SVector(sin(x[1]), cos(x[2])))
 divv = divergence(g) * v
 ```
 
-See also: [`gradient`](@ref), [`scaling`](@ref).
+See also: [`diffusion`](@ref), [`gradient`](@ref), [`scaling`](@ref).
 """
 divergence(g::AbstractGrid) = Divergence(g)
 

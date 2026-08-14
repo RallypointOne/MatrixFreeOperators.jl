@@ -60,10 +60,10 @@ not as a prerequisite for it. On top of that sit:
 
 - a **lazy operator algebra** — leaves like `laplacian`, `gradient`,
   `divergence`, `scaling`, `diffusion`, `advection` bind a grid at construction
-  and compose under `+`, `-`, `*`, scalar scaling, and `adjoint`, so
-  variable-coefficient diffusion is literally
-  `divergence(g) * scaling(κ) * gradient(g)` — or, in the compact flux form that
-  a κ-inversion wants, the fused leaf `diffusion(g, κ)`;
+  and compose under `+`, `-`, `*`, scalar scaling, and `adjoint`, so an operator
+  like ∇·(κ∇u) is a one-liner — `diffusion(g, κ)` for the compact flux form a
+  κ-inversion wants, and the algebra is general enough that
+  `divergence(g) * scaling(κ) * gradient(g)` assembles one too;
 - **declared adjoints with correct boundary contributions** for every linear
   leaf, verified by the dot-product identity, with a strict linear/affine split
   (inhomogeneous boundary data is exported via `boundary_rhs`, never baked into
@@ -121,11 +121,13 @@ maximum(abs, u .- u_exact)   # ~1e-3, second-order accurate
 
 Everything composes from here with the same pieces:
 
-- `divergence(g) * scaling(κ) * gradient(g)` — variable-coefficient diffusion
-  ∇·(κ∇u), built from rank-changing leaves;
-- `diffusion(g, κ)` — the same operator as a single compact flux-form leaf:
-  exactly symmetric, with an `operator_diagonal`, and free of the wide stencil's
-  odd–even decoupling, which is what a parameter inversion in κ needs;
+- `diffusion(g, κ)` — variable-coefficient diffusion ∇·(κ∇u) as a single compact
+  flux-form leaf: exactly symmetric, with an `operator_diagonal`, free of the
+  wide stencil's odd–even decoupling, and ~3× faster than composing it;
+- `divergence(g) * scaling(κ) * gradient(g)` — the same PDE term assembled from
+  rank-changing leaves. Reach for `diffusion` instead: this spelling exists to
+  show the algebra composes, and chaining two centered differences gives it a
+  stencil that reaches `u[I±2δ]` but never `u[I±δ]`;
 - `adjoint(L)` — the declared adjoint including boundary contributions, ready
   for adjoint-based optimization;
 - `boundary_rhs(L, g)` — the lift vector for inhomogeneous BCs, folded into the
