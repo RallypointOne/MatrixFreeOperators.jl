@@ -646,8 +646,9 @@ rejected loudly.
    exactly symmetric for real κ, declares `operator_diagonal` (which the composed
    form cannot), and removes the parity decoupling that made κ-inversion fail. The
    composition stays valid and stays the algebra stress-test; the leaf is both the
-   accurate and the fast path — 62 µs vs the composition's 115 µs for one 256²
-   `mul!`. `CartesianGrid` only for now — `BlockForest` and distributed slabs are
+   accurate and the fast path — 115 µs against the composition's 337 µs for one
+   256² prepared `mul!`, and 1.7× the `Laplacian`'s 67.5 µs for 2× the memory
+   traffic. `CartesianGrid` only for now — `BlockForest` and distributed slabs are
    staged in #54.)
 4. Array-level authoring; device-agnostic via `get_backend`/`Adapt`; CI on CPU,
    and CUDA where available.
