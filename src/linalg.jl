@@ -208,6 +208,10 @@ _prepare_tree(L::AbstractOperator, ::AbstractField) = L
 _prepare_tree(S::ScalingOp{<:BlockField}, ::PackedBlockField) = ScalingOp(pack(S.coeff))
 _prepare_tree(L::Advection{<:BlockForest,<:BlockField}, ::PackedBlockField) =
     Advection(L.grid, pack(L.velocity))
+# `pack` copies padded storage verbatim, so the coefficient ghosts the leaf already carries
+# survive — no re-exchange, and none would be legal here anyway (κ is `isconstant`).
+_prepare_tree(D::Diffusion{<:BlockForest,<:BlockField}, ::PackedBlockField) =
+    Diffusion(D.grid, pack(D.κ), D.avg)
 _prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))
 _prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)
 

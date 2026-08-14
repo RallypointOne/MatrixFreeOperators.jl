@@ -63,6 +63,160 @@ function _copy_coeff_ghost!(data, dim::Val, ghost::Int, ::AbstractBC, source::In
     return nothing
 end
 
+#--------------------------------------------------------------------------------# Coefficient ghosts across a forest
+
+"""
+    fill_coefficient_ghosts!(κ::AbstractBlockField, bf::BlockForest) -> κ
+
+Extend a *coefficient* field into every block's ghost layers: same-level face copies,
+coarse→fine injection, fine→coarse volume averaging, and an even mirror at physical walls.
+The forest counterpart of the single-grid method above, run once by [`diffusion`](@ref) at
+construction so the per-application exchange count is unchanged from the `Laplacian`
+baseline. A forest has no global coefficient array to window, so unlike a partition slab
+(`_slab_coeff_field`) this is a real exchange — legitimate only because κ is constant
+through a solve.
+
+Deliberately **not** [`halo_update!`](@ref), whose coarse–fine phases are tuned for a
+*solution*: the Martin–Cartwright quadratic interpolant assumes a smoothness a material
+coefficient need not have, and the flux-matching restriction is a stencil on `u`, not a
+volume average. Deliberately not [`apply_bc!`](@ref) either, which antisymmetrizes at a
+Dirichlet wall and would negate the coefficient there — the same hazard the single-grid
+method and `_average_to_coarse` document.
+
+Written as a plain topology walk rather than through the cached [`ExchangeSchedule`](@ref)
+descriptors on purpose. It must stay differentiable with respect to κ, and the `GhostFill`
+descriptor loop is precisely the shape the halo Enzyme rules exist to hide (issue #26);
+those rules report `nothing` for every derivative slot, so routing a coefficient through
+them would silently zero its gradient. Recomputing topology here is free — this runs once
+per operator, never per application.
+"""
+function fill_coefficient_ghosts!(κ::AbstractBlockField, bf::BlockForest{N}) where {N}
+    _require_current(κ)
+    forest = bf.forest
+    forest.uniform[] || _validate_coarse_fine(bf)
+    store, lay = _storage(κ), _layout(κ)
+    h, n = bf.halo, bf.blocksize
+    # Dimensions outermost and in order 1:N, so a corner ghost ends up a consistent
+    # ghost-of-ghost value — the ordering the single-grid method and `apply_bc!` use.
+    for d in 1:N, (i, K) in enumerate(forest.leaves), side in (-1, 1)
+        nbr = face_neighbor(forest, K, d, side)
+        if nbr === nothing
+            _coeff_mirror!(store, lay, i, d, side, h, n)
+            continue
+        end
+        if is_leaf(forest, nbr)
+            _coeff_face_copy!(store, lay, leaf_index(forest, nbr), i, d, side, h, n)
+            continue
+        end
+        # A coarse–fine fill spans the tangential *interiors* only, matching the solution
+        # path. Mirroring first leaves this plane's tangential fringe holding the block's
+        # own value rather than a zero — which `HarmonicMean` would turn into a NaN in the
+        # adjoint gather, since 2·0·0/(0+0) is not 0. No stencil reads those cells.
+        _coeff_mirror!(store, lay, i, d, side, h, n)
+        cover = leaf_covering(forest, nbr)
+        if cover !== nothing                      # this leaf is the finer side
+            cover.level == K.level - 1 || _throw_unbalanced(K)
+            _coeff_inject!(store, lay, bf, i, K, leaf_index(forest, cover), d, side)
+        else                                      # this leaf is the coarser side
+            _coeff_average!(store, lay, bf, i, K, nbr, d, side)
+        end
+    end
+    return κ
+end
+
+# Even mirror of a block's own interior into one ghost face: the physical-wall fill, and
+# the seed a coarse–fine fill's tangential fringe keeps.
+function _coeff_mirror!(
+    store, lay::BlockLayout, i::Int, d::Int, side::Int, h::NTuple{N,Int}, n::NTuple{N,Int}
+) where {N}
+    hd, nd = h[d], n[d]
+    for k in 1:hd
+        ghost, source = side == -1 ? (hd + 1 - k, hd + k) : (hd + nd + k, hd + nd + 1 - k)
+        _leaf_view(store, lay, i, _face_box(d, ghost:ghost, h, n)) .=
+            _leaf_view(store, lay, i, _face_box(d, source:source, h, n))
+    end
+    return nothing
+end
+
+# Same-level face: an exact copy, identical to the solution path's `_run_copies!` — the one
+# phase where a coefficient and a solution want the same thing.
+function _coeff_face_copy!(
+    store, lay::BlockLayout, src::Int, dst::Int, d::Int, side::Int,
+    h::NTuple{N,Int}, n::NTuple{N,Int},
+) where {N}
+    ghost, source = _face_slabs(side, h[d], n[d])
+    _leaf_view(store, lay, dst, _face_box(d, ghost, h, n)) .=
+        _leaf_view(store, lay, src, _face_box(d, source, h, n))
+    return nothing
+end
+
+# The two same-parity runs of fine ghost columns sharing a coarse column range: fine ghost
+# column j (padded j+1) lies inside coarse column (q·nt + j + 1) >> 1 (padded +1), so each
+# coarse column covers exactly one even and one odd fine column. The same 2:1 mapping
+# `_tangential_classes` encodes, minus the tangential quadratic a coefficient does not want.
+@inline function _coeff_tang_classes(nt::Int, q::Int)
+    half = nt >> 1
+    coarse = q == 0 ? (2:(half + 1)) : ((half + 2):(nt + 1))
+    return ((2:2:nt, coarse), (3:2:(nt + 1), coarse))
+end
+
+# Coarse→fine: the fine ghost cell lies wholly inside one coarse cell, so the coarse value
+# already IS the volume average of κ over the ghost's footprint. Inject it.
+function _coeff_inject!(
+    store, lay::BlockLayout, bf::BlockForest{N}, i::Int, K::LeafKey{N}, ci::Int,
+    d::Int, side::Int,
+) where {N}
+    n = bf.blocksize
+    nd = n[d]
+    g_n = side == -1 ? 1 : nd + 2                # this leaf's ghost layer
+    U1_n = side == -1 ? nd + 1 : 2               # coarse first interior layer at the face
+    tdims = Tuple(filter(!=(d), ntuple(identity, Val(N))))
+    classlists = map(t -> _coeff_tang_classes(n[t], K.coords[t] & 1), tdims)
+    for combo in Iterators.product(classlists...)
+        fine_t, coarse_t = map(first, combo), map(last, combo)
+        _leaf_view(store, lay, i, _cf_box(Val(N), d, g_n:1:g_n, tdims, fine_t)) .=
+            _leaf_view(store, lay, ci, _cf_box(Val(N), d, U1_n:1:U1_n, tdims, coarse_t))
+    end
+    return nothing
+end
+
+# Fine→coarse: the coarse ghost cell's footprint is exactly 2ᴺ fine cells — two layers deep
+# normal to the face, 2^(N−1) across it — so its volume average is their plain mean. That is
+# the policy `_average_to_coarse`/`_child_mean` already use to coarsen a coefficient, and it
+# is emphatically not the solution path's flux-matching restriction.
+function _coeff_average!(
+    store, lay::BlockLayout, bf::BlockForest{N}, i::Int, K::LeafKey{N}, nbr::LeafKey{N},
+    d::Int, side::Int,
+) where {N}
+    forest, n = bf.forest, bf.blocksize
+    nd = n[d]
+    gC_n = side == -1 ? 1 : nd + 2                        # this leaf's ghost layer
+    layers = side == -1 ? (nd + 1, nd) : (2, 3)           # the two fine layers beneath it
+    tdims = Tuple(filter(!=(d), ntuple(identity, Val(N))))
+    facing = side == 1 ? 0 : 1                            # child d-bit on the shared face
+    for child in children(nbr)
+        (child.coords[d] & 1) == facing || continue
+        is_leaf(forest, child) || _throw_unbalanced(K)
+        cj = leaf_index(forest, child)
+        dst_t = map(tdims) do t
+            lo = 2 + (child.coords[t] & 1) * (n[t] >> 1)
+            lo:1:(lo + (n[t] >> 1) - 1)
+        end
+        dst = _leaf_view(store, lay, i, _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t))
+        w = one(eltype(dst)) / (1 << N)
+        fill!(dst, zero(eltype(dst)))
+        for layer in layers,
+            parities in Iterators.product(ntuple(_ -> (0, 1), length(tdims))...)
+
+            fine_t = map(tdims, parities) do t, p
+                (2 + p):2:(n[t] + p)
+            end
+            dst .+= w .* _leaf_view(store, lay, cj, _cf_box(Val(N), d, layer:1:layer, tdims, fine_t))
+        end
+    end
+    return nothing
+end
+
 #--------------------------------------------------------------------------------# Stencil
 
 # Dimensions are unrolled by RECURSION, not by an `ntuple(Val(N)) do d` closure. With two
@@ -229,8 +383,8 @@ See also: [`laplacian`](@ref), [`scaling`](@ref), [`diffusion_stencil`](@ref).
 function diffusion(g::AbstractGrid, κ::Field; averaging=ArithmeticMean(), check::Bool=true)
     g isa CartesianGrid || throw(
         ArgumentError(
-            "diffusion supports CartesianGrid only, got $(nameof(typeof(g))); " *
-            "BlockForest support is tracked in issue #58",
+            "diffusion supports CartesianGrid and BlockForest, got $(nameof(typeof(g))); " *
+            "on a BlockForest the coefficient must be a BlockField on the same forest",
         ),
     )
     _has_interface(g) && throw(
@@ -239,8 +393,8 @@ function diffusion(g::AbstractGrid, κ::Field; averaging=ArithmeticMean(), check
             "cross-block ghosts are an external input, and this entry point has only the " *
             "one grid to fill them from. On a partition slab, build it on the undistributed " *
             "grid and pass that to prepare_distributed, which slices κ with its ghosts onto " *
-            "each slab. On a BlockForest leaf there is no such path yet; forest support is " *
-            "tracked in issue #58",
+            "each slab. On a BlockForest leaf, build it on the whole forest with a " *
+            "BlockField coefficient, which exchanges them",
         ),
     )
     eltype(κ.data) <: Number || throw(
@@ -268,6 +422,64 @@ function diffusion(g::AbstractGrid, κ::Field; averaging=ArithmeticMean(), check
     return Diffusion(g, _extended_coeff(κ, g), averaging)
 end
 
+"""
+    diffusion(bf::BlockForest, κ::AbstractBlockField; averaging=ArithmeticMean(), check=true) -> Diffusion
+
+Build the same compact flux-form operator over a block-structured forest. Semantics,
+boundary treatment, and the constant-κ reduction to `c * laplacian(bf)` are exactly the
+single-grid method's; only the coefficient's ghost fill differs, because a forest's blocks
+are separate arrays. `κ` must be a scalar-eltype block field on **the same forest** as
+`bf` — `_leaf_op` slices it by this forest's leaf indices, so a coefficient bound to a
+different topology would alias the wrong leaves.
+
+The operator stores its own copy with every ghost layer filled by
+[`fill_coefficient_ghosts!`](@ref), so mutating `κ` afterwards does not affect it, and the
+exchange is paid once here rather than per application.
+
+On a **non-uniform** forest coarse–fine coupling is not symmetric, so `isselfadjoint` is
+false (via `_selfadjoint_grid`) and the adjoint runs the declared transpose gather rather
+than the forward action. `operator_diagonal` is unavailable on forest leaves, matching
+[`laplacian`](@ref).
+
+### Examples
+
+```julia
+bf = BlockForest(CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16)); blocksize=(8, 8), maxlevel=2)
+κ = set!(scalar_field(bf), x -> 1 + x[1]^2)
+L = diffusion(bf, κ)
+```
+"""
+function diffusion(
+    bf::BlockForest, κ::AbstractBlockField; averaging=ArithmeticMean(), check::Bool=true
+)
+    eltype(κ) <: Number || throw(
+        ArgumentError(
+            "diffusion coefficient must be a scalar-eltype field, got eltype $(eltype(κ))"
+        ),
+    )
+    # Topology identity, not wrapper identity: adaptation clones the BlockForest but shares
+    # the forest and its generation Ref, so `===` on the wrapper would reject device twins.
+    κ.grid.forest === bf.forest || throw(
+        ArgumentError(
+            "diffusion coefficient must be a field on the same forest as the operator"
+        ),
+    )
+    if check && averaging isa HarmonicMean
+        _all_positive(κ) || throw(
+            ArgumentError(
+                "HarmonicMean requires κ > 0 everywhere (2κaκb/(κa+κb) is singular " *
+                "otherwise); pass check=false to skip this validation",
+            ),
+        )
+    end
+    return Diffusion(bf, _extended_coeff(κ, bf), averaging)
+end
+
+function _all_positive(κ::AbstractBlockField)
+    z = zero(eltype(κ))
+    return all(i -> all(>(z), interior(block(κ, i))), 1:nleaves(κ.grid))
+end
+
 # The leaf's own ghost-extended copy. Built out of place so the caller's coefficient is
 # never mutated and the whole thing stays on an AD tape.
 function _extended_coeff(κ::Field, g::AbstractGrid)
@@ -276,18 +488,31 @@ function _extended_coeff(κ::Field, g::AbstractGrid)
     return Field(data, g)
 end
 
+_extended_coeff(κ::AbstractBlockField, bf::BlockForest) =
+    fill_coefficient_ghosts!(copy(κ), bf)
+
 islinear(::Diffusion) = true
 isconstant(::Diffusion) = true
 isdiagonal(::Diffusion) = false
-isselfadjoint(D::Diffusion) = _selfadjoint_grid(D.grid) && eltype(D.κ.data) <: Real
+isselfadjoint(D::Diffusion) = _selfadjoint_grid(D.grid) && eltype(D.κ) <: Real
 operator_grid(D::Diffusion) = D.grid
 
 # Complex κ makes the operator symmetric but not Hermitian, and both means commute with
 # conjugation — so the conjugated-coefficient leaf is the exact adjoint, cheaper than the
 # lazy wrapper. Conjugation commutes with the ghost extension, so no refill is needed.
 function _conj_op(D::Diffusion)
-    eltype(D.κ.data) <: Real && return D
-    return Diffusion(D.grid, Field(conj.(D.κ.data), D.κ.grid), D.avg)
+    eltype(D.κ) <: Real && return D
+    return Diffusion(D.grid, _conj_coeff(D.κ), D.avg)
+end
+
+_conj_coeff(κ::Field) = Field(conj.(κ.data), κ.grid)
+# Layout-agnostic, so it serves BlockField and PackedBlockField alike.
+function _conj_coeff(κ::AbstractBlockField)
+    c = similar(κ)
+    for i in 1:nleaves(κ.grid)
+        _block_array(c, i) .= conj.(_block_array(κ, i))
+    end
+    return c
 end
 
 function adjoint_operator(D::Diffusion)
