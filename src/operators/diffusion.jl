@@ -581,10 +581,18 @@ The operator stores its own copy with every ghost layer filled by
 [`fill_coefficient_ghosts!`](@ref), so mutating `κ` afterwards does not affect it, and the
 exchange is paid once here rather than per application.
 
-On a **non-uniform** forest coarse–fine coupling is not symmetric, so `isselfadjoint` is
-false (via `_selfadjoint_grid`) and the adjoint runs the declared transpose gather rather
-than the forward action. `operator_diagonal` is unavailable on forest leaves, matching
-[`laplacian`](@ref).
+On a **non-uniform** forest the operator is discretely conservative: each application
+rewrites every coarse-side coarse–fine ghost so the coarse stencil's κ-weighted face flux
+equals the area-weighted sum of the abutting fine-face fluxes (`_cf_flux_rewrite!` — one
+authoritative flux per interface, issue #58), and `Σ V·(Lu)` telescopes to the net
+boundary flux to roundoff exactly as on a single grid. The rewrite divides by the coarse
+face coefficient, so construction additionally validates that `avg(κ₁, κ_ghost)` is
+finite and nonzero on every coarse–fine face — with `check=false` that validation (like
+the HarmonicMean one) is skipped, and a sign-changing `κ` under [`ArithmeticMean`](@ref)
+can then produce `Inf` at apply time. Coarse–fine coupling is not symmetric, so
+`isselfadjoint` is false (via `_selfadjoint_grid`) and the adjoint runs the declared
+transpose — the per-leaf gather plus the rewrite's exact transpose. `operator_diagonal`
+is unavailable on forest leaves, matching [`laplacian`](@ref).
 
 ### Examples
 
