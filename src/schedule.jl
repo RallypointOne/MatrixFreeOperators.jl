@@ -46,6 +46,33 @@ struct GhostFill{N,T}
 end
 
 """
+    CFFluxDescriptor{N}
+
+One (coarse face × abutting fine child) record of a 2:1 refinement interface —
+the topology input of the `Diffusion` coarse-ghost flux rewrite
+(`_cf_flux_rewrite!` in operators/diffusion.jl). Emitted by `_emit_restrict!`
+from the same child walk as the solution restriction, so the index arithmetic
+cannot fork; empty on a uniform forest. Deliberately carries **no weights**: the
+κ-dependent face factors are formed per application from the operator's own
+coefficient storage, keeping κ on the AD tape (a κ-dependent `SlabTerm.weight`
+would be hidden by the halo Enzyme rules, which report zero derivative for
+schedule weights — the coefficient-gradient failure mode the package forbids).
+Fully isbits, so a loop over `Vector{CFFluxDescriptor}` is a shape Enzyme can
+type-analyze inside a differentiated apply (unlike `GhostFill`, issue #26). The
+per-parity fine boxes are reconstructed at use from `d`, the layer indices, and
+the blocksize.
+"""
+struct CFFluxDescriptor{N}
+    coarse::Int32
+    fine::Int32
+    d::Int32                              # face-normal dimension
+    uf_n::Int32                           # fine interior layer facing the coarse block
+    gf_n::Int32                           # fine interp-filled ghost layer facing it
+    gC::NTuple{N,StepRange{Int,Int}}      # coarse ghost sub-slab (the rewrite dst)
+    u1::NTuple{N,StepRange{Int,Int}}      # coarse first-interior box, same tangential
+end
+
+"""
     ExchangeSchedule{N,T}
 
 Halo-exchange plan for one forest generation, replacing every runtime topology
@@ -58,7 +85,10 @@ The adjoint runs the phases, and each phase's descriptors, in exact reverse
 order, making it the exact transpose of the forward composition. Each ghost
 region is the dst of exactly one descriptor across all three vectors. The
 descriptor list is also the send/recv list a future distributed backend
-consumes. `bcfaces` lists, per dimension and (low, high) side, the leaves whose
+consumes. `cfflux` is not a sweep phase: it is the weight-free
+coarse–fine-face topology list ([`CFFluxDescriptor`](@ref)) the `Diffusion`
+leaf's κ-weighted coarse-ghost rewrite consumes after the exchange, riding the
+same build pass and generation key rather than adding a second schedule. `bcfaces` lists, per dimension and (low, high) side, the leaves whose
 face lies on the physical domain boundary — the input of the forest-level
 physical-BC passes ([`apply_bc!`](@ref)/[`fold_bc!`](@ref)/
 `fill_bc_inhomogeneous!` on a [`BlockField`](@ref)); periodic dimensions stay
@@ -72,6 +102,7 @@ struct ExchangeSchedule{N,T}
     copies::Vector{CopyDescriptor{N}}
     interp::Vector{GhostFill{N,T}}
     restrict::Vector{GhostFill{N,T}}
+    cfflux::Vector{CFFluxDescriptor{N}}
     bcfaces::NTuple{N,NTuple{2,Vector{Int}}}
     generation::Int
 end
@@ -79,7 +110,7 @@ end
 # Sentinel: generation -1 never matches a live forest generation (construction
 # already bumps it to ≥ 1), so the first _exchange_schedule fetch always builds.
 _empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(
-    CopyDescriptor{N}[], GhostFill{N,T}[], GhostFill{N,T}[],
+    CopyDescriptor{N}[], GhostFill{N,T}[], GhostFill{N,T}[], CFFluxDescriptor{N}[],
     ntuple(_ -> (Int[], Int[]), Val(N)), -1,
 )
 
@@ -160,3 +191,10 @@ _cf_normal_weights(::Type{T}) where {T} = _lagrange3(-T(1) / 4, T(1) / 2, T(3) /
 # tangential extremes so coarse–fine fills only ever read block interiors.
 _cf_tangential_weights(offs::NTuple{3,Int}, ξ::T) where {T} =
     _lagrange3(T(offs[1]), T(offs[2]), T(offs[3]), ξ)
+
+# Fine→coarse flux-matching weight 2/2^(N−1): with H = 2h, equating the coarse
+# face flux to the area-weighted sum of the abutting fine fluxes leaves the
+# factor h^(N−2)/H^(N−2) = 2^(2−N). Single-sourced so the solution restriction
+# (_emit_restrict!) and the Diffusion κ-weighted coarse-ghost rewrite
+# (_cf_flux_rewrite!) cannot drift apart — constant κ must reduce one to the other.
+_cf_flux_weight(::Val{N}, ::Type{T}) where {N,T} = T(2) / (1 << (N - 1))

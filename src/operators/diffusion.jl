@@ -217,6 +217,150 @@ function _coeff_average!(
     return nothing
 end
 
+#--------------------------------------------------------------------------------# Coarse–fine flux rewrite
+
+# Parity axes of one coarse–fine face: the 2^(N−1) same-parity fine-column classes
+# `_emit_restrict!` tiles the coarse ghost slab with, as an N-slot product — (0:0)
+# on the normal dimension (a dummy singleton keeping the product uniform), (0:1)
+# tangentially.
+@inline _cf_parity_axes(d::Int, ::Val{N}) where {N} =
+    ntuple(k -> k == d ? (0:0) : (0:1), Val(N))
+
+# The fine child's box for one normal layer and one tangential parity class. The
+# step-2 tangential runs put fine columns 2m, 2m+1 (padded) elementwise under
+# coarse ghost cell m — the same correspondence the restriction's SlabTerms and
+# `_coeff_average!` broadcast over.
+@inline function _cf_parity_box(
+    d::Int, layer::Int, parities::NTuple{N,Int}, n::NTuple{N,Int}
+) where {N}
+    return ntuple(Val(N)) do k
+        k == d ? (layer:1:layer) : ((2 + parities[k]):2:(n[k] + parities[k]))
+    end
+end
+
+# One authoritative flux per coarse–fine face (issue #58): overwrite the coarse
+# solution ghost with the value that makes the coarse stencil's κ-weighted face
+# flux equal the area-weighted sum of the abutting fine-face fluxes,
+#
+#     g_C := u₁ + wf · Σ_p avg(κ_f, κ_gf)·(u_f1 − g_f) / avg(κ_u1, κ_gC),
+#
+# the flux-matching restriction (`_emit_restrict!`) generalized to a variable
+# coefficient — with κ ≡ c it reduces to the solution restriction up to one
+# (c·x)/c rounding. The ghost `(g_C)` is read by exactly one stencil term (the
+# coarse first-interior cell, normal axis), so the division cancels against the
+# sweep's own multiplication: the rewrite IS the flux replacement. Conservation
+# cannot come from the operator-independent exchange, whose per-side face
+# coefficients (2⁻ᴺ volume average against injection) disagree —
+# test/forest_diffusion.jl measures the defect. Runs after halo_update! and
+# apply_bc!, before the sweep; ghost slots are scratch by package contract, and
+# the exchange-filled g_C is discarded unread. Reads only the exchange's own
+# solution ghosts and the operator's construction-filled κ ghosts, keeping the
+# per-apply exchange count at the Laplacian baseline. Coarse-side CF ghosts are
+# never rewrite sources (u₁/u_f1 are interiors, g_f is a fine-side ghost), so
+# descriptors are order-independent. Plain taped array code over the isbits
+# `CFFluxDescriptor` vector — κ gradients must flow through here, and the halo
+# Enzyme rules must not (see the descriptor's docstring).
+function _cf_flux_rewrite!(
+    store, lay::BlockLayout, κstore, κlay::BlockLayout, avg,
+    cfflux::Vector{CFFluxDescriptor{N}}, n::NTuple{N,Int},
+) where {N}
+    for r in cfflux
+        d = Int(r.d)
+        ci, fi = Int(r.coarse), Int(r.fine)
+        dst = _leaf_view(store, lay, ci, r.gC)
+        fill!(dst, zero(eltype(dst)))
+        for parities in Iterators.product(_cf_parity_axes(d, Val(N))...)
+            ufbox = _cf_parity_box(d, Int(r.uf_n), parities, n)
+            gfbox = _cf_parity_box(d, Int(r.gf_n), parities, n)
+            dst .+=
+                avg.(
+                    _leaf_view(κstore, κlay, fi, ufbox),
+                    _leaf_view(κstore, κlay, fi, gfbox),
+                ) .* (_leaf_view(store, lay, fi, ufbox) .- _leaf_view(store, lay, fi, gfbox))
+        end
+        wf = _cf_flux_weight(Val(N), real(float(eltype(dst))))
+        dst .=
+            _leaf_view(store, lay, ci, r.u1) .+
+            wf .* dst ./
+            avg.(_leaf_view(κstore, κlay, ci, r.u1), _leaf_view(κstore, κlay, ci, r.gC))
+    end
+    return nothing
+end
+
+# Exact conjugate transpose of `_cf_flux_rewrite!`, run after the per-leaf adjoint
+# gathers and before fold_bc!/halo_update_adjoint!: distribute each coarse-ghost
+# cotangent to the slots the rewrite read — +1 to the coarse first interior layer,
+# ±wf·conj(κ̄_f)/conj(κ̄_C) to the fine interior/ghost layers (the fine-ghost
+# additions are folded across blocks by the interp transpose inside
+# halo_update_adjoint! afterwards) — then zero it: the rewrite overwrote g_C, so
+# no cotangent flows to its exchange-filled value, which is exactly what makes
+# the restrict transpose downstream fire on a dead slot. Conjugation mirrors
+# `_conj_op` (both means commute with it; a no-op for real κ). Every scatter
+# target is tangentially interior-only, so corner-ghost cotangents stay exactly
+# zero — the `halo_update_adjoint!` precondition.
+function _cf_flux_rewrite_adjoint!(
+    store, lay::BlockLayout, κstore, κlay::BlockLayout, avg,
+    cfflux::Vector{CFFluxDescriptor{N}}, n::NTuple{N,Int},
+) where {N}
+    for r in Iterators.reverse(cfflux)
+        d = Int(r.d)
+        ci, fi = Int(r.coarse), Int(r.fine)
+        ḡ = _leaf_view(store, lay, ci, r.gC)
+        _leaf_view(store, lay, ci, r.u1) .+= ḡ
+        wf = _cf_flux_weight(Val(N), real(float(eltype(ḡ))))
+        for parities in Iterators.product(_cf_parity_axes(d, Val(N))...)
+            ufbox = _cf_parity_box(d, Int(r.uf_n), parities, n)
+            gfbox = _cf_parity_box(d, Int(r.gf_n), parities, n)
+            _leaf_view(store, lay, fi, ufbox) .+=
+                wf .* ḡ .*
+                avg.(
+                    conj.(_leaf_view(κstore, κlay, fi, ufbox)),
+                    conj.(_leaf_view(κstore, κlay, fi, gfbox)),
+                ) ./
+                avg.(
+                    conj.(_leaf_view(κstore, κlay, ci, r.u1)),
+                    conj.(_leaf_view(κstore, κlay, ci, r.gC)),
+                )
+            _leaf_view(store, lay, fi, gfbox) .-=
+                wf .* ḡ .*
+                avg.(
+                    conj.(_leaf_view(κstore, κlay, fi, ufbox)),
+                    conj.(_leaf_view(κstore, κlay, fi, gfbox)),
+                ) ./
+                avg.(
+                    conj.(_leaf_view(κstore, κlay, ci, r.u1)),
+                    conj.(_leaf_view(κstore, κlay, ci, r.gC)),
+                )
+        end
+        fill!(ḡ, zero(eltype(ḡ)))
+    end
+    return nothing
+end
+
+# Divisor guard for the coarse-ghost rewrite: ArithmeticMean imposes no sign
+# restriction, so a sign-changing κ can average to exactly zero on a coarse–fine
+# face, where the rewrite divides by the face coefficient. Fail at construction
+# with the cause named, not at apply with an Inf. (HarmonicMean's κ > 0 check
+# already implies nonzero faces; running this unconditionally is cheap and keeps
+# the two averagings on one code path.)
+function _check_cf_divisors(κ::AbstractBlockField, bf::BlockForest{N}, avg) where {N}
+    κstore, κlay = _storage(κ), _layout(κ)
+    for r in _exchange_schedule(bf).cfflux
+        faceκ = avg.(
+            _leaf_view(κstore, κlay, Int(r.coarse), r.u1),
+            _leaf_view(κstore, κlay, Int(r.coarse), r.gC),
+        )
+        all(x -> isfinite(x) && !iszero(x), faceκ) || throw(
+            ArgumentError(
+                "the face coefficient avg(κ) vanishes or is not finite on a coarse–fine " *
+                "interface; the conservative coarse-ghost rewrite divides by it. Pass " *
+                "check=false to skip this validation",
+            ),
+        )
+    end
+    return nothing
+end
+
 #--------------------------------------------------------------------------------# Stencil
 
 # Dimensions are unrolled by RECURSION, not by an `ntuple(Val(N)) do d` closure. With two
@@ -473,7 +617,9 @@ function diffusion(
             ),
         )
     end
-    return Diffusion(bf, _extended_coeff(κ, bf), averaging)
+    κx = _extended_coeff(κ, bf)
+    check && !bf.forest.uniform[] && _check_cf_divisors(κx, bf, averaging)
+    return Diffusion(bf, κx, averaging)
 end
 
 function _all_positive(κ::AbstractBlockField)

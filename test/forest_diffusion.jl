@@ -85,9 +85,12 @@
                 y = diffusion(bf, κv; averaging=avg) * u
                 defect, scale = conservation_defect(y, bf)
                 @info "conservation Σ V·(Lu)" case = "$name varying-κ $(nameof(typeof(avg)))" defect scale
-                # The verdict on issue #58's question 2: the existing coarse–fine ghost
-                # machinery does NOT deliver one authoritative κ-weighted flux.
-                @test_broken abs(defect) ≤ 1e3 * eps() * scale
+                # The verdict on issue #58's question 2 (recorded in the commit that
+                # introduced this file): the operator-independent exchange does NOT
+                # deliver one authoritative κ-weighted flux — the defect was ~1e-2
+                # against a ~1e3 scale. The Diffusion coarse-ghost rewrite
+                # (`_cf_flux_rewrite!`) is what makes this hold to roundoff.
+                @test abs(defect) ≤ 1e3 * eps() * scale
             end
         end
     end
