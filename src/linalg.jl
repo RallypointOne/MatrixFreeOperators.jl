@@ -225,8 +225,13 @@ end
 # tmp is a whole BlockField, and _forest_capply! recurses at the forest level so
 # the intermediate gets its inter-block exchange.
 
+# Recurse into the wrapped operator so its coefficient layout is normalized too:
+# without this, prepare(adjoint(D), packed) would keep a BlockField κ and the
+# adjoint hot path would silently stay on the per-leaf fallback. The recursion is
+# type-driven only (the coefficient methods above never read x's shape), so the
+# prototype's adjoint-vs-forward shape is irrelevant here.
 function _prepare_tree(L::AdjointOp, x::AbstractField)
-    return PreparedAdjoint(L.op, allocate_output(L, x))
+    return PreparedAdjoint(_prepare_tree(L.op, x), allocate_output(L, x))
 end
 
 # Composed twin holding its concretely-typed intermediate field.

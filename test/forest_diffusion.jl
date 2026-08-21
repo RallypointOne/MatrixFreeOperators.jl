@@ -497,12 +497,102 @@
         uf = set!(scalar_field(bf), u_fun)
         P = prepare(D, pack(uf))
         @test P.xpad isa PackedBlockField            # packed prototype ⇒ packed scratch
+        @test P.op.κ isa PackedBlockField            # _prepare_tree packed the coefficient
         v = flatten(uf)
         out = similar(v)
         mul!(out, P, v)
         @test out ≈ flatten(D * copy(uf))
         Pt = prepare(adjoint(D), pack(uf))
+        # the AdjointOp _prepare_tree recursion packs the wrapped leaf's κ too, so
+        # the adjoint hot path dispatches to the kernel sweep instead of the fallback
+        @test Pt.op.op.κ isa PackedBlockField
         mul!(out, Pt, v)
         @test out ≈ materialize(prepare(D))' * v
+    end
+
+    @testset "packed sweeps: public parity and direct kernel launch (CPU backend)" begin
+        # The public API routes non-GPU backends to the per-leaf fallback (with the
+        # coarse–fine rewrite still applied), so the kernel bodies are exercised by
+        # direct launch on the KA CPU backend — the same coverage MFO_TEST_GPU gets
+        # through the API on CUDA (the forest_packed.jl idiom).
+        cpu = KernelAbstractions.CPU()
+        for refined in (false, true), avg in FOREST_DIFF_AVGS
+            base = CartesianGrid(
+                ((0.0, 1.0), (0.0, 1.0)), (8, 8);
+                bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+            )
+            bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+            refined && refine!(bf, x -> x[1] < 0.5)
+            uf = set!(scalar_field(bf), u_fun)
+            D = diffusion(bf, set!(scalar_field(bf), κ_fun); averaging=avg)
+            Dp = MFO.Diffusion(bf, pack(D.κ), D.avg)  # inner ctor: ghosts ride pack
+
+            # public packed path: packed κ on packed x hits the new override; a
+            # BlockField κ on packed x is the documented mismatch fallback — both
+            # must reproduce the reference-layout action exactly
+            yref = D * copy(uf)
+            for L in (Dp, D)
+                yp = L * pack(copy(uf))
+                @test all(
+                    i -> collect(interior(MFO.block(yp, i))) ==
+                         collect(interior(MFO.block(yref, i))),
+                    1:MFO.nleaves(bf),
+                )
+            end
+
+            # direct forward launch: bit-parity with the per-leaf reference on the
+            # SAME rewritten input, overwrite and accumulate blends
+            x = pack(copy(uf))
+            MFO.halo_update!(x, bf)
+            MFO.apply_bc!(x, bf)
+            MFO._cf_flux_rewrite!(
+                MFO._storage(x), MFO._layout(x), MFO._storage(Dp.κ), MFO._layout(Dp.κ),
+                Dp.avg, MFO._exchange_schedule(bf).cfflux, bf.blocksize,
+            )
+            nd = (bf.blocksize..., MFO.nleaves(bf))
+            y = MFO._zero_all!(MFO.allocate_output(Dp, x))
+            MFO._diff_forest_kernel!(cpu)(
+                y.data, x.data, Dp.κ.data, x.levels, bf.spacing0, bf.halo, Dp.avg,
+                2.0, false; ndrange=nd,
+            )
+            ref = MFO._forest_sweep_leaves!(
+                MFO._zero_all!(MFO.allocate_output(Dp, x)), Dp, x, bf, 2.0, false
+            )
+            @test y.data == ref.data
+            y2 = copy(y)
+            ref2 = copy(ref)
+            MFO._diff_forest_kernel!(cpu)(
+                y2.data, x.data, Dp.κ.data, x.levels, bf.spacing0, bf.halo, Dp.avg,
+                2.0, 3.0; ndrange=nd,
+            )
+            MFO._forest_sweep_leaves!(ref2, Dp, x, bf, 2.0, 3.0)
+            @test y2.data == ref2.data
+
+            # direct adjoint launch: full padded equality pre-fold (the ghost
+            # cotangents are the point of the padded ndrange)
+            ndp = (bf.blocksize .+ 2 .* bf.halo..., MFO.nleaves(bf))
+            ȳ = pack(set!(scalar_field(bf), x -> cospi(x[1]) + x[2]^2))
+            ȳk = copy(ȳ)
+            ȳr = copy(ȳ)
+            x̄k = MFO.allocate_input(Dp, ȳk)
+            x̄r = MFO.allocate_input(Dp, ȳr)
+            MFO.zero_ghosts!(ȳk)    # the seam zeroes before launching
+            MFO._diff_adjoint_forest_kernel!(cpu)(
+                x̄k.data, ȳk.data, Dp.κ.data, ȳk.levels, bf.spacing0, Dp.avg, 2.0;
+                ndrange=ndp,
+            )
+            MFO._forest_adjoint_sweep_leaves!(x̄r, Dp, ȳr, bf, 2.0)
+            @test x̄k.data == x̄r.data
+
+            # full adjoint through the public packed path (kernel-fallback + seam
+            # transpose + folds) against the reference layout
+            x̄p = apply_adjoint!(similar(ȳ), Dp, copy(ȳ), bf)
+            x̄b = apply_adjoint!(scalar_field(bf), D, unpack(copy(ȳ)), bf)
+            @test all(
+                i -> collect(interior(MFO.block(x̄p, i))) ==
+                     collect(interior(MFO.block(x̄b, i))),
+                1:MFO.nleaves(bf),
+            )
+        end
     end
 end

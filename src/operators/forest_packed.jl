@@ -240,6 +240,55 @@ function _forest_sweep!(
     return y
 end
 
+@kernel function _diff_forest_kernel!(
+    y, @Const(x), @Const(κ), @Const(levels), spacing0, h, avg, α, β
+)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    I = _halo_cell(idx, h)
+    ℓ = @inbounds levels[leaf]
+    v =
+        α * _diff_at(
+            _leaf_slice(x, leaf), _leaf_slice(κ, leaf), I, _leaf_inv_h2(spacing0, ℓ), avg
+        )
+    @inbounds y[I, leaf] = iszero(β) ? v : muladd(β, y[I, leaf], v)
+end
+
+# Diffusion's packed sweep keeps the conservative coarse–fine seam: the rewrite
+# runs unconditionally before the backend guard (on GPU it is a host descriptor
+# loop of device-view broadcasts — a few small launches per coarse–fine face on
+# top of the one stencil launch; a batched device twin of `cfflux` is a possible
+# follow-up), and the CPU fallback goes straight to `_forest_sweep_leaves!`
+# because the rewrite is already done — routing back through the
+# AbstractBlockField override would run it twice.
+function _forest_sweep!(
+    y::PackedBlockField,
+    D::Diffusion{<:BlockForest,<:PackedBlockField},
+    x::PackedBlockField,
+    g::BlockForest,
+    α,
+    β,
+)
+    _require_current(D.κ)
+    # @inbounds in the kernel would turn a foreign coefficient into UB, not an
+    # error (mirrors the ScalingOp wrapper's extent check).
+    size(D.κ.data) == size(x.data) || throw(
+        ArgumentError("diffusion coefficient does not match the packed field extents")
+    )
+    _cf_flux_rewrite!(
+        _storage(x), _layout(x), _storage(D.κ), _layout(D.κ), D.avg,
+        _exchange_schedule(g).cfflux, g.blocksize,
+    )
+    backend = KernelAbstractions.get_backend(g)
+    backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, D, x, g, α, β)
+    kernel! = _diff_forest_kernel!(backend)
+    kernel!(
+        y.data, x.data, D.κ.data, x.levels, g.spacing0, g.halo, D.avg, α, β;
+        ndrange=(g.blocksize..., nleaves(g)),
+    )
+    return y
+end
+
 #--------------------------------------------------------------------------------# Adjoint transpose-gather kernels (packed sweeps)
 
 # Single-launch transposes of the stencil sweeps, mirroring the per-leaf
@@ -348,6 +397,55 @@ function _forest_adjoint_sweep!(
     kernel!(
         x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;
         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),
+    )
+    return x̄
+end
+
+@kernel function _diff_adjoint_forest_kernel!(
+    x̄, @Const(ȳ), @Const(κ), @Const(levels), spacing0, avg, α
+)
+    idx = @index(Global, NTuple)
+    leaf = idx[end]
+    J = CartesianIndex(Base.front(idx))
+    ℓ = @inbounds levels[leaf]
+    v =
+        α * _diff_adjoint_gather(
+            _leaf_slice(ȳ, leaf), _leaf_slice(κ, leaf), J, _leaf_inv_h2(spacing0, ℓ), avg
+        )
+    @inbounds x̄[J, leaf] = v
+end
+
+# The adjoint keeps the seam's transpose after the gather, mirroring the
+# AbstractBlockField override in forest.jl. The kernel path is real-κ only: the
+# adjoint of a complex-symmetric leaf needs the conjugated coefficient, which the
+# per-leaf reference builds through `_conj_op` — falling back keeps that path
+# allocation-shaped exactly as before rather than conjugating a packed copy per
+# apply.
+function _forest_adjoint_sweep!(
+    x̄::PackedBlockField,
+    D::Diffusion{<:BlockForest,<:PackedBlockField},
+    ȳ::PackedBlockField,
+    g::BlockForest,
+    α,
+)
+    _require_current(D.κ)
+    backend = KernelAbstractions.get_backend(g)
+    if backend isa KernelAbstractions.GPU && eltype(D.κ) <: Real
+        size(D.κ.data) == size(ȳ.data) || throw(
+            ArgumentError("diffusion coefficient does not match the packed field extents")
+        )
+        zero_ghosts!(ȳ)
+        kernel! = _diff_adjoint_forest_kernel!(backend)
+        kernel!(
+            x̄.data, ȳ.data, D.κ.data, ȳ.levels, g.spacing0, D.avg, α;
+            ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),
+        )
+    else
+        _forest_adjoint_sweep_leaves!(x̄, D, ȳ, g, α)
+    end
+    _cf_flux_rewrite_adjoint!(
+        _storage(x̄), _layout(x̄), _storage(D.κ), _layout(D.κ), D.avg,
+        _exchange_schedule(g).cfflux, g.blocksize,
     )
     return x̄
 end
