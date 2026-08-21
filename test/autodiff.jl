@@ -23,6 +23,19 @@ function ad_forest_loss(v, w, L, bf)
     return sum(w .* flatten(apply(L, u)))
 end
 
+"""Forest counterpart of `ad_diffusion_kappa_loss`: flat interior κ in, the leaf built
+inside the differentiated region — `fill_coefficient_ghosts!`'s topology walk and the
+coarse–fine flux rewrite both ride the tape, which is the whole reason neither goes
+through the rule-hidden descriptor machinery."""
+function ad_forest_diffusion_kappa_loss(κv, v, w, bf, avg)
+    κ = scalar_field(bf)
+    flat_to_interior!(κ, κv)
+    D = diffusion(bf, κ; averaging=avg, check=false)
+    u = scalar_field(bf)
+    flat_to_interior!(u, v)
+    return sum(w .* flatten(apply(D, u)))
+end
+
 # Gradients checked against finite differences, against the declared adjoint, and
 # Enzyme against Mooncake. Mooncake is the independent oracle here: EnzymeRules are
 # invisible to it, so it tapes through everything the Enzyme rules short-circuit.
@@ -173,6 +186,71 @@ end
         cache = Mooncake.prepare_gradient_cache(ad_forest_loss, v, wf, L, bf)
         _, grads = Mooncake.value_and_gradient!!(cache, ad_forest_loss, v, wf, L, bf)
         @test grads[2] ≈ lt rtol = 1e-8
+    end
+
+    @testset "forest Diffusion on a refined forest ($(nameof(typeof(avg))))" for avg in (
+        ArithmeticMean(), HarmonicMean()
+    )
+        base = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (8, 8);
+            bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+        )
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=2)
+        refine!(bf, x -> x[1] < 0.5 && x[2] < 0.5)   # the flux rewrite is on the tape
+        MatrixFreeOperators._exchange_schedule(bf)
+        n = length(flatten(scalar_field(bf)))
+        v = rand(rng, n)
+        wf = rand(rng, n)
+        D = diffusion(bf, set!(scalar_field(bf), x -> 1.2 + 0.8 * x[1]^2 + 0.5 * x[2]);
+                      averaging=avg)
+
+        # Field gradient: Enzyme's taped derivative of the coarse-ghost flux rewrite
+        # must agree with the declared adjoint's hand-written transpose of it — the
+        # independent cross-check of the seam adjoint.
+        w̃ = scalar_field(bf)
+        flat_to_interior!(w̃, wf)
+        lt = flatten(apply_adjoint!(scalar_field(bf), D, w̃, bf))
+        fd = fd_gradient(vd -> ad_forest_loss(vd, wf, D, bf), v)
+        @test fd ≈ lt atol = 1e-5
+        dv = zero(v)
+        Enzyme.autodiff(
+            Enzyme.set_runtime_activity(Enzyme.Reverse),
+            ad_forest_loss,
+            Enzyme.Active,
+            Enzyme.Duplicated(v, dv),
+            Enzyme.Const(wf),
+            Enzyme.Const(D),
+            Enzyme.Const(bf),
+        )
+        @test dv ≈ lt rtol = 1e-8
+        cache = Mooncake.prepare_gradient_cache(ad_forest_loss, v, wf, D, bf)
+        _, grads = Mooncake.value_and_gradient!!(cache, ad_forest_loss, v, wf, D, bf)
+        @test grads[2] ≈ lt rtol = 1e-8
+
+        # κ gradient with the leaf built inside the loss: the exchange walk and the
+        # rewrite's κ-dependent weights are both differentiated.
+        κv = 1.0 .+ rand(rng, n)
+        dκ = zero(κv)
+        Enzyme.autodiff(
+            Enzyme.set_runtime_activity(Enzyme.Reverse),
+            ad_forest_diffusion_kappa_loss,
+            Enzyme.Active,
+            Enzyme.Duplicated(κv, dκ),
+            Enzyme.Const(v),
+            Enzyme.Const(wf),
+            Enzyme.Const(bf),
+            Enzyme.Const(avg),
+        )
+        fdκ = fd_gradient(κd -> ad_forest_diffusion_kappa_loss(κd, v, wf, bf, avg), κv)
+        @test any(!iszero, fdκ)
+        @test dκ ≈ fdκ atol = 1e-5
+        cache = Mooncake.prepare_gradient_cache(
+            ad_forest_diffusion_kappa_loss, κv, v, wf, bf, avg
+        )
+        _, grads = Mooncake.value_and_gradient!!(
+            cache, ad_forest_diffusion_kappa_loss, κv, v, wf, bf, avg
+        )
+        @test grads[2] ≈ dκ rtol = 1e-9
     end
 
     @testset "gradient through the nonlinear leaf u·∇u" begin
