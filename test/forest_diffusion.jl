@@ -453,6 +453,44 @@
         @test_throws ArgumentError Dold * u                                # stale operator
     end
 
+    @testset "steady-state allocations of prepared mul! (seam included)" begin
+        # Pkg.test runs under --check-bounds=yes, where every per-leaf forest sweep
+        # allocates a small constant per leaf (72 B/leaf for Diffusion, 48 for the
+        # Laplacian on Julia 1.12; exactly 0 B under default flags — the
+        # forest_packed.jl precedent), so an absolute bound measures the flags, not
+        # the seam. The guard is relative instead: on the refined forest the rewrite
+        # runs on every coarse–fine face, and it must cost no more per leaf than the
+        # uniform forest, where `cfflux` is empty and the seam is a no-op. A boxed
+        # capture or a dynamic ntuple in the rewrite would add ~180 B per coarse–fine
+        # face while producing the right numbers — only this catches it.
+        function alloc_mul(P, out, v)
+            mul!(out, P, v)
+            mul!(out, P, v)
+            a = @allocated mul!(out, P, v)
+            return a, sum(out)                          # DCE-proof: consume the output
+        end
+        function forest_alloc(bf, adj)
+            L = diffusion(bf, set!(scalar_field(bf), κ_fun))
+            P = prepare(adj ? adjoint(L) : L)
+            v = rand(Random.MersenneTwister(3), size(P, 2))
+            a, s = alloc_mul(P, similar(v), v)
+            @test !iszero(s)
+            return a
+        end
+        bcs = ((Dirichlet(), Dirichlet()), (Neumann(), Neumann()))
+        base = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bcs)
+        uniform = BlockForest(base; blocksize=(4, 4), maxlevel=3)   # 16 leaves, no CF faces
+        refined = BlockForest(base; blocksize=(4, 4), maxlevel=3)
+        refine!(refined, x -> x[1] < 0.5 && x[2] < 0.5)
+        refine!(refined, x -> x[1] < 0.2 && x[2] < 0.2)             # 40 leaves, three levels
+        @test isempty(MFO._exchange_schedule(uniform).cfflux)
+        @test length(MFO._exchange_schedule(refined).cfflux) == 16
+        for adj in (false, true)
+            per_leaf = forest_alloc(uniform, adj) / MFO.nleaves(uniform)
+            @test forest_alloc(refined, adj) ≤ per_leaf * MFO.nleaves(refined) + 256
+        end
+    end
+
     @testset "packed coefficient path (prepared prototype packs κ)" begin
         bf = small_refined(((Dirichlet(), Dirichlet()), (Neumann(), Neumann())))
         D = diffusion(bf, set!(scalar_field(bf), κ_fun))
