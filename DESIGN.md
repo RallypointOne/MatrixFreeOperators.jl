@@ -839,6 +839,21 @@ pre-built.
     code** (`examples/adaptive_poisson.jl` is the canonical form; solver must be
     a nonsymmetric Krylov method on an adapted forest) — an `adaptive_solve`
     export would guess the interface from one use case (rule of three).
+    **Transfer policy is per field, explicit, and resolved at transfer time**
+    (issue #59, #54 §4): a `BlockField` carries a regrid-transfer trait as a type
+    parameter — `Interpolated` (default: the linear interpolation above, exact on
+    linears, *not* mean-preserving — its side-biased child slopes leave the child
+    mean off by ⅛·δ²u per dim), `Conservative` (cell-conservative reconstruction
+    `u_p + Σ_d ξ_d·σ_d`, one shared slope per parent cell: mean-preserving for
+    any slope, exactly, including at block and physical edges), and
+    `SlopeLimited` (minmod slopes, zero at parent-block edges: additionally
+    bounds-preserving, for fronts). Conservation is an opt-in, never a default,
+    so indicators, coefficients, and conserved state cannot silently share one
+    policy; the trait is a phantom type parameter, so no operator hot path ever
+    consults it, and it survives `pack`/`unpack`, `similar`/`copy`, `Adapt`, and
+    the regrid round-trip. Measured, not assumed: `Σ V·u` holds to roundoff
+    across refine, coarsen, and balance-induced cascades (test/amr_driver.jl),
+    and the `Interpolated` control demonstrably does not.
   - **Built (packed phase, #15):** staged like #10 — (1) `AbstractBlockField` +
     `PackedBlockField` + `pack`/`unpack` with the Laplacian forest kernel
     end-to-end, (2) the remaining operator kernels + adjoint

@@ -194,9 +194,14 @@ length(collect(leaves(forest)))                  # resolution now follows the bu
 ```
 
 The transfer is interior-only and keyed by leaf identity: an unchanged leaf is
-copied, a refined leaf is filled by per-dimension linear interpolation from its
-old parent (one-sided at parent-block edges), and a coarsened leaf by the
-conservative `2⁻ᴺ` mean of its old children. Ghosts of the returned fields are
+copied, a refined leaf is filled by the field's transfer policy from its old
+parent, and a coarsened leaf by the conservative `2⁻ᴺ` mean of its old children.
+The policy is per field and explicit: the default `Interpolated` is linear-exact
+interpolation (right for indicators and coefficients, not mean-preserving),
+while `Conservative` and `SlopeLimited` use a cell-conservative reconstruction
+that preserves `Σ V·u` to roundoff across every regrid — mark conserved state
+with the `transfer` keyword of `scalar_field`/`vector_field` or wrap an existing
+field with `with_transfer(u, Conservative())`. Ghosts of the returned fields are
 scratch, refilled by `halo_update!`/`apply_bc!` on the next operator application.
 
 Because a real regrid invalidates every field allocated on the old leaf set (the

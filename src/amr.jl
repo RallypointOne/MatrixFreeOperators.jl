@@ -15,11 +15,20 @@ marks on level-0 or incomplete families are silently ignored, matching
 [`refine!`](@ref)/[`coarsen!`](@ref).
 
 Solution transfer is interior-only and keyed by leaf identity: an unchanged leaf
-is copied, a refined leaf is filled by per-dimension linear interpolation from its
-old parent (one-sided at the parent-block edges), and a coarsened leaf by the
-conservative `2⁻ᴺ` mean of its old children. Ghost cells of the returned fields
-are zero — they are scratch, filled by `halo_update!`/`apply_bc!` on the next
-operator application — so boundary data re-enters through the next solve.
+is copied, a refined leaf is filled by the field's regrid-transfer policy from
+its old parent, and a coarsened leaf by the conservative `2⁻ᴺ` mean of its old
+children. The policy is per field, resolved from the field's type at transfer
+time: [`Interpolated`](@ref) (the default) is the linear-exact per-dimension
+interpolation — second-order, right for indicators and coefficients, **not**
+mean-preserving; [`Conservative`](@ref) and [`SlopeLimited`](@ref) use the
+cell-conservative reconstruction, preserving `Σ V·u` to roundoff across every
+regrid — balance-induced refinements included. Conservation is deliberately not
+a default: mark conserved state explicitly (the `transfer` keyword of
+[`scalar_field`](@ref)/[`vector_field`](@ref), or [`with_transfer`](@ref)) so
+indicators, coefficients, and state do not silently share one policy. Ghost
+cells of the returned fields are zero — they are scratch, filled by
+`halo_update!`/`apply_bc!` on the next operator application — so boundary data
+re-enters through the next solve.
 
 Additional fields passed as `more` ride the same transfer (results are returned in
 input order). Because a regrid invalidates every field allocated on the old leaf
@@ -156,13 +165,15 @@ function _regrid_topology!(
     return forest
 end
 
-# A zeroed field matching `f`'s location, eltype, and device on the current leaf
-# set; the BlockField constructor stamps the post-regrid generation.
-function _fresh_field(f::BlockField{L}, bf::BlockForest) where {L}
+# A zeroed field matching `f`'s location, transfer policy, eltype, and device on
+# the current leaf set; the BlockField constructor stamps the post-regrid
+# generation. The policy must survive this round-trip — a returned field with a
+# silently-reset policy would conserve on the first regrid and not the second.
+function _fresh_field(f::BlockField{L,P}, bf::BlockForest) where {L,P}
     backend = KernelAbstractions.get_backend(bf)
     psize = bf.blocksize .+ 2 .* bf.halo
     blocks = [KernelAbstractions.zeros(backend, eltype(f), psize...) for _ in 1:nleaves(bf)]
-    return BlockField{L}(blocks, bf)
+    return BlockField{L,P}(blocks, bf)
 end
 
 # Fill every new leaf from the snapshot by key relation: same key → copy, old
@@ -178,6 +189,10 @@ function _transfer!(
     bf::BlockForest{N},
 ) where {A<:AbstractArray,N}
     n, h = bf.blocksize, bf.halo
+    # Resolved from the field's type once per field, here at transfer time — the
+    # per-field policy the map over the varargs tuple specializes on, so no
+    # operator path (and no per-leaf branch) ever consults it.
+    pol = _transfer_policy(new)
     for (i, K) in enumerate(bf.forest.leaves)
         dst = new.blocks[i]
         oi = get(old_index, K, 0)
@@ -188,7 +203,7 @@ function _transfer!(
         pi = K.level > 0 ? get(old_index, parent_key(K), 0) : 0
         if pi > 0
             q = ntuple(d -> K.coords[d] & 1, Val(N))
-            _transfer_prolong!(dst, old_blocks[pi], q, h, n)
+            _transfer_prolong!(pol, dst, old_blocks[pi], q, h, n)
             continue
         end
         kids = children(K)
@@ -244,12 +259,73 @@ end
 end
 
 function _transfer_prolong!(
-    dst::AbstractArray{T,N}, src::AbstractArray{T,N}, q::NTuple{N,Int}, h::NTuple{N,Int},
-    n::NTuple{N,Int},
+    ::Interpolated, dst::AbstractArray{T,N}, src::AbstractArray{T,N}, q::NTuple{N,Int},
+    h::NTuple{N,Int}, n::NTuple{N,Int},
 ) where {T,N}
     w = _prolong_weights(_scalar_eltype(T))
     ir = CartesianIndices(ntuple(d -> (h[d] + 1):(h[d] + n[d]), Val(N)))
     view(dst, ir) .= _transfer_prolong_at.(Ref(src), ir, Ref(q), Ref(h), Ref(n), Ref(w))
+    return nothing
+end
+
+# Scalar minmod, applied componentwise to SVector eltypes: the slope both
+# children share, clamped to zero across an extremum.
+@inline function _minmod(a::T, b::T) where {T<:Number}
+    return ifelse(a * b > zero(a * b), ifelse(abs(a) <= abs(b), a, b), zero(a))
+end
+@inline _minmod(a::SVector, b::SVector) = _minmod.(a, b)
+
+# Per-dim slope of the cell-conservative reconstruction. The Interpolated
+# stencil's conservation defect is its side-biased slopes — the two children of
+# an interior parent cell each lean on their own neighbor, leaving the child
+# mean off by ⅛·δ²u per dim. One SHARED slope per parent cell fixes that for
+# any slope value, which is also what makes the limited variant free.
+@inline _interior_slope(::Conservative, um, uc, up) = (up - um) / 2
+@inline _interior_slope(::SlopeLimited, um, uc, up) = _minmod(up - uc, uc - um)
+# Parent-block edges (the transfer is interior-only, so only the inside neighbor
+# exists): the one-sided difference is exact on linears and mean-preserving like
+# any shared slope; the limited policy drops it to zero — with a single candidate
+# there is nothing to limit against, and boundedness is its contract.
+@inline _edge_slope(::Conservative, diff) = diff
+@inline _edge_slope(::SlopeLimited, diff) = zero(diff)
+
+# Cell-conservative linear reconstruction at one fine destination cell:
+# u_child = u_parent + Σ_d ξ_d·σ_d with ξ_d = ∓1/4 by child parity. The mean of
+# the 2ᴺ children telescopes Σ_d σ_d·mean(ξ_d) = 0 exactly for ANY σ, including
+# at block and physical boundaries — conservation is structural, not a weight
+# identity. Additive (2N+1 taps), so exact on linears, not multilinears; the
+# named σ_d is the seam the limiter clamps.
+@inline function _transfer_ccl_at(
+    pol, u::AbstractArray{T,N}, I::CartesianIndex{N}, q::NTuple{N,Int}, h::NTuple{N,Int},
+    n::NTuple{N,Int},
+) where {T,N}
+    W = _scalar_eltype(T)
+    F = ntuple(d -> q[d] * n[d] + (I[d] - h[d]), Val(N))
+    c = ntuple(d -> (F[d] + 1) >> 1, Val(N))
+    Jc = CartesianIndex(ntuple(d -> h[d] + c[d], Val(N)))
+    uc = @inbounds u[Jc]
+    acc = uc
+    @inbounds for d in 1:N
+        ξ = isodd(F[d]) ? -W(1) / 4 : W(1) / 4
+        δ = _unitindex(Val(N), d)
+        σ = if c[d] == 1
+            _edge_slope(pol, u[Jc + δ] - uc)
+        elseif c[d] == n[d]
+            _edge_slope(pol, uc - u[Jc - δ])
+        else
+            _interior_slope(pol, u[Jc - δ], uc, u[Jc + δ])
+        end
+        acc += ξ * σ
+    end
+    return acc
+end
+
+function _transfer_prolong!(
+    pol::Union{Conservative,SlopeLimited}, dst::AbstractArray{T,N},
+    src::AbstractArray{T,N}, q::NTuple{N,Int}, h::NTuple{N,Int}, n::NTuple{N,Int},
+) where {T,N}
+    ir = CartesianIndices(ntuple(d -> (h[d] + 1):(h[d] + n[d]), Val(N)))
+    view(dst, ir) .= _transfer_ccl_at.(Ref(pol), Ref(src), ir, Ref(q), Ref(h), Ref(n))
     return nothing
 end
 
