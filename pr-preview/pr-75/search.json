@@ -15,7 +15,7 @@
     "href": "index.html#quickstart",
     "title": "MatrixFreeOperators.jl",
     "section": "Quickstart",
-    "text": "Quickstart\n\nusing MatrixFreeOperators, Krylov, LinearAlgebra\n\n# -Δu + σu = f on (0,1)², homogeneous Dirichlet, manufactured solution\ng = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (32, 32))\nσ = set!(scalar_field(g), x -&gt; 1 + x[1] * x[2])\nK = scaling(σ) - laplacian(g)\n\nf = set!(scalar_field(g), x -&gt; (2π^2 + 1 + x[1] * x[2]) * sinpi(x[1]) * sinpi(x[2]))\nP = prepare(K, scalar_field(g))\nu, stats = cg(P, flatten(f))\n\nmaximum(abs, u .- flatten(set!(scalar_field(g), x -&gt; sinpi(x[1]) * sinpi(x[2]))))\n\n0.0007541253359055755",
+    "text": "Quickstart\n\nusing MatrixFreeOperators, Krylov, LinearAlgebra\n\n# -Δu + σu = f on (0,1)², homogeneous Dirichlet, manufactured solution\ng = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (32, 32))\nσ = set!(scalar_field(g), x -&gt; 1 + x[1] * x[2])\nK = scaling(σ) - laplacian(g)\n\nf = set!(scalar_field(g), x -&gt; (2π^2 + 1 + x[1] * x[2]) * sinpi(x[1]) * sinpi(x[2]))\nP = prepare(K, scalar_field(g))\nu, stats = cg(P, flatten(f))\n\nmaximum(abs, u .- flatten(set!(scalar_field(g), x -&gt; sinpi(x[1]) * sinpi(x[2]))))\n\n0.0007541253359059086",
     "crumbs": [
       "Docs",
       "<span class='chapter-number'>1</span>  <span class='chapter-title'>MatrixFreeOperators.jl</span>"
