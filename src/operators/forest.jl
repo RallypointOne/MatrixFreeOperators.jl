@@ -74,6 +74,7 @@ function _forest_sweep!(
     y::AbstractBlockField, D::Diffusion{<:BlockForest,<:AbstractBlockField},
     x::AbstractBlockField, g::BlockForest, α, β,
 )
+    _require_current(D.κ)    # the rewrite reads raw κ storage ahead of block()'s guard
     _cf_flux_rewrite!(
         _storage(x), _layout(x), _storage(D.κ), _layout(D.κ), D.avg,
         _exchange_schedule(g).cfflux, g.blocksize,
@@ -85,6 +86,7 @@ function _forest_adjoint_sweep!(
     x̄::AbstractBlockField, D::Diffusion{<:BlockForest,<:AbstractBlockField},
     ȳ::AbstractBlockField, g::BlockForest, α,
 )
+    _require_current(D.κ)    # mirrors the forward: fail before touching raw storage
     _forest_adjoint_sweep_leaves!(x̄, D, ȳ, g, α)
     _cf_flux_rewrite_adjoint!(
         _storage(x̄), _layout(x̄), _storage(D.κ), _layout(D.κ), D.avg,
