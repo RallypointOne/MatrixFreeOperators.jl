@@ -18,7 +18,7 @@ book:
     keyboard-shortcut:
       - "/"
   navbar:
-    logo: https://github.com/user-attachments/assets/f7216152-0d6e-4459-8e65-b9ed59421638
+    logo: assets/logo.svg
     logo-href: https://rallypoint1.com
     right:
       - icon: star

@@ -67,3 +67,15 @@ jobs:
         env:
           MFO_DOCS_SKIP_COVERAGE: 'true'
         run: quarto render docs
+
+  # Single aggregate check required by branch protection; "CI success" must match
+  # REQUIRED_CI_CHECK in JuliaPackageTemplate's generate().
+  ci-success:
+    name: CI success
+    if: always()
+    needs: [test, docs-render]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any needed job did not succeed
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}
+        run: exit 1

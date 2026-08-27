@@ -16,9 +16,6 @@ docs/site_libs
 docs/.quarto/
 docs/*_files/
 **/*.quarto_ipynb
-*.html
-!docs/assets/_version-selector.html
-*.jpg
 examples/heat_equation.gif
 examples/monodomain_amr.gif
 examples/monodomain_amr.mp4

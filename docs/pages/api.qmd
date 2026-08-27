@@ -15,25 +15,64 @@ using MatrixFreeOperators
 #| output: asis
 export_names = filter(!=(:MatrixFreeOperators), names(MatrixFreeOperators))
 
-classify(b) = b isa Type ? :type : b isa Function ? :function : :constant
+classify(name, b) = startswith(string(name), "@") ? :macro :
+    b isa Type ? :type : b isa Function ? :function : :constant
 
-for (kind, label) in [(:type, "Types"), (:function, "Functions"), (:constant, "Constants")]
-    items = filter(n -> classify(getfield(MatrixFreeOperators, n)) == kind, export_names)
+# `@` is a legal HTML id character but breaks the querySelector calls Quarto's nav makes.
+anchor(name) = lowercase(replace(string(name), "@" => "macro-"))
+
+if isempty(export_names)
+    println("This package does not export any names yet.\n")
+else
+    println("""
+    <div class="api-controls">
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-api-toggle="open">Open all</button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-api-toggle="close">Close all</button>
+    </div>
+    """)
+end
+
+for (kind, label) in [(:type, "Types"), (:function, "Functions"), (:macro, "Macros"), (:constant, "Constants")]
+    items = filter(n -> classify(n, getfield(MatrixFreeOperators, n)) == kind, export_names)
     isempty(items) && continue
     println("## $label\n")
     for name in items
         binding = getfield(MatrixFreeOperators, name)
         doc = string(Docs.doc(binding))
         println("""
-        ::: {.card .mb-3}
-        ::: {.card-header .api-item-header}
-        #### `$name` {#$(lowercase(string(name)))}
-        :::
+        <details class="card mb-3 api-card">
+        <summary class="card-header api-item-header"><h4 id="$(anchor(name))">`$name`</h4></summary>
+
         ::: {.card-body}
         $doc
         :::
-        :::
+
+        </details>
         """)
     end
 end
 ```
+
+<script>
+(function() {
+    document.querySelectorAll("[data-api-toggle]").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            var open = btn.dataset.apiToggle === "open";
+            document.querySelectorAll("details.api-card").forEach(function(d) { d.open = open; });
+        });
+    });
+
+    // Browsers do not expand a closed <details> when navigating to an id inside it,
+    // so a deep link or search hit would otherwise land on a collapsed card.
+    function revealTarget() {
+        var id = decodeURIComponent(location.hash.slice(1));
+        var el = id && document.getElementById(id);
+        var card = el && el.closest("details.api-card");
+        // Expanding only adds content below the summary, so the browser's own
+        // scroll to the anchor stays correct.
+        if (card) card.open = true;
+    }
+    revealTarget();
+    window.addEventListener("hashchange", revealTarget);
+})();
+</script>

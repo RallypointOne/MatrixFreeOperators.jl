@@ -32,11 +32,11 @@ h1 code, h2 code, h3 code, h4 code {
 
 /* Navbar bottom line and logo */
 .navbar {
-    border-bottom: 1px solid #EFF0F6;
+    border-bottom: 1px solid #D9DADC;
 }
 
 .navbar .nav-link:hover {
-    color: #B02102 !important;
+    color: #C8202C !important;
 }
 
 .navbar .navbar-logo {
@@ -45,19 +45,37 @@ h1 code, h2 code, h3 code, h4 code {
     margin-right: 0.75rem;
 }
 
-/* API item card headers */
+/* API item cards */
+.api-controls {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.api-card {
+    border-left: 3px solid var(--bs-primary);
+}
+
 .api-item-header {
-    background-color: var(--bs-primary) !important;
+    background-color: #F7F7F8 !important;
+    border-bottom: 1px solid #D9DADC !important;
+    cursor: pointer;
+}
+
+/* Nothing below the header to divide from while the card is closed. */
+.api-card:not([open]) > .api-item-header {
+    border-bottom: none !important;
 }
 
 .api-item-header h4 {
+    display: inline;
     margin: 0 !important;
-    color: white !important;
+    color: #1A1A1B !important;
     font-size: 1rem;
 }
 
 .api-item-header h4 code {
-    color: white !important;
+    color: inherit !important;
     background: none !important;
 }
 

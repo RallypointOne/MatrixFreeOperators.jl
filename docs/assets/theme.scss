@@ -1,9 +1,25 @@
 /*-- scss:defaults --*/
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-$primary: #B02102;
-$link-color: #B02102;
-$font-family-sans-serif: "DM Sans", sans-serif;
-$font-family-monospace: "DM Mono", monospace;
+// Rallypoint One brand tokens — rallypoint1.com
+$rp1-red:          #C8202C;
+$rp1-red-hover:    #AA1B25;
+$rp1-ink:          #414042;
+$rp1-heading:      #1A1A1B;
+$rp1-muted:        #66686B;
+$rp1-border:       #D9DADC;
+$rp1-surface:      #F7F7F8;
+
+$primary: $rp1-red;
+$link-color: $rp1-red;
+$link-hover-color: $rp1-red-hover;
+$body-color: $rp1-ink;
+$headings-color: $rp1-heading;
+$border-color: $rp1-border;
+$code-color: $rp1-heading;
+$font-family-sans-serif: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-family-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+$headings-font-family: "Archivo", "Inter", system-ui, sans-serif;
+$headings-font-weight: 700;
 $navbar-bg: #FFFFFF;
-$navbar-fg: #1F1F24;
+$navbar-fg: $rp1-ink;

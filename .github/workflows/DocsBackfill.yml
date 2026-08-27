@@ -19,23 +19,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Save docs infrastructure from main (without coverage — too slow for backfill)
+      # Save docs infrastructure from main. Regenerating coverage for every tag is
+      # too slow, so the coverage page is swapped for a placeholder — that keeps the
+      # sidebar structure intact and lets LocalCoverage drop out of the environment.
       - name: Save docs infrastructure
         run: |
           cp -r docs /tmp/docs-infrastructure
-          rm -f /tmp/docs-infrastructure/coverage.qmd
+          cat > /tmp/docs-infrastructure/pages/coverage.qmd << 'COVERAGE_EOF'
+          ---
+          title: "Coverage"
+          ---
 
-          # Remove coverage chapter from _quarto.yml
-          python3 -c "
-          import re
-          with open('/tmp/docs-infrastructure/_quarto.yml') as f:
-              content = f.read()
-          content = re.sub(r'\n\s*- coverage\.qmd', '', content)
-          with open('/tmp/docs-infrastructure/_quarto.yml', 'w') as f:
-              f.write(content)
-          "
-
-          # Remove LocalCoverage from docs/Project.toml
+          Coverage is reported for the current release only.
+          COVERAGE_EOF
           sed -i '/LocalCoverage/d' /tmp/docs-infrastructure/Project.toml
 
       - uses: julia-actions/setup-julia@v3

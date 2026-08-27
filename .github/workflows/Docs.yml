@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   release:
     types: [published]
   workflow_dispatch:
@@ -21,12 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Determine deploy target from ref
+      # Determine deploy target from ref.
+      # A tag push is the reliable release signal: TagBot pushes tags over an SSH deploy
+      # key (which does trigger workflows), but creates the GitHub Release with
+      # GITHUB_TOKEN — and token-authored events never start a workflow run.
       - name: Set deploy version
         id: version
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
             VERSION="${{ github.event.release.tag_name }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+          fi
+          if [ -n "$VERSION" ]; then
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
             echo "is_release=true" >> "$GITHUB_OUTPUT"
           else
