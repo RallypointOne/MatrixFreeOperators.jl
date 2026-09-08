@@ -321,8 +321,9 @@ end
 Compact flux-form variable-coefficient diffusion `∇·(κ∇u)`. Construct with
 [`diffusion`](@ref), which is what extends `κ` into its ghost layers; the inner
 constructor takes `κ` as given and is the seam for supplying cross-block coefficient
-ghosts from outside: `_slab_op` (`src/distributed.jl`) already builds through it, with a κ
-sliced from the global one *including* its ghosts, and the forest path (issue #58) will.
+ghosts from outside: `_slab_op` (`src/distributed.jl`) builds through it with a κ sliced
+from the global one *including* its ghosts, and `_leaf_op` (`src/operators/forest.jl`)
+with a block view whose ghosts [`fill_coefficient_ghosts!`](@ref) filled at construction.
 """
 struct Diffusion{G<:AbstractGrid,K,AV} <: AbstractOperator
     grid::G
