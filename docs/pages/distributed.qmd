@@ -196,8 +196,8 @@ The error names the **first** undistributable node it finds, not the tree root,
 so a large expression points at its actual culprit rather than at itself.
 
 A `ScalingOp`'s `Field` coefficient works because it is read **pointwise at the
-cell being written**, so each partition needs nothing but the interior slice of
-it — no ghost exchange of its own, no second `GhostExchange`. The slicing happens
+cell being written**, so each partition needs nothing but its own window of it —
+no ghost exchange of its own, no second `GhostExchange`. The slicing happens
 on the host and the slab is then uploaded, deliberately: slicing a coefficient the
 user had already moved to device 0 would be a cross-device copy, which is exactly
 the operation MDLA's peer-to-peer probe exists to guard.

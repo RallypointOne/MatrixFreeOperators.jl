@@ -574,7 +574,7 @@ nothing global materialized on one device.
 
 A coefficient needs no exchange of its own: `ScalingOp` reads it *pointwise at the
 cell being written*, so `_slab_op`/`_slab_field` (core, `src/distributed.jl`) slice
-the interior onto each slab and nothing else is required. Slicing happens on the
+its window onto each slab and nothing else is required. Slicing happens on the
 host and the slab is uploaded, so a coefficient the user had already moved to a
 device never becomes a cross-device copy. Only field-carrying leaves differ per
 partition, so `DistLeaf`/`DistAdjoint` hold a per-partition operator vector that
@@ -604,15 +604,15 @@ on `P` and is named for what it computes, not for where it runs.
 
 *Built (issue #57, slice 2c):* the compact flux-form `Diffusion` leaf on slabs —
 the first whitelisted operator whose coefficient is read at a *neighbour* rather
-than pointwise, so `_slab_field`'s zero ghosts do not serve it.
+than pointwise, so an interior-only slice with zeroed ghosts would not serve it.
 
 It still costs no communication, and the reason is worth stating because it is
 what makes stage 2 of #56 the cheap stage. `_slab_op` runs on the host holding
 the **global** κ, whose ghosts `diffusion` already extended by an even mirror and
 a periodic wrap at construction. Slab padded index `p` is global padded index
-`first(local_range[d]) - 1 + p`, so one *padded* window — `_slab_coeff_field`,
-beside `_slab_field` — lands every ghost on the value it should hold with no
-per-face logic: an `Interface` ghost onto a global interior plane (the
+`first(local_range[d]) - 1 + p`, so one *padded* window — which is what
+`_slab_field` now slices for every coefficient — lands every ghost on the value
+it should hold with no per-face logic: an `Interface` ghost onto a global interior plane (the
 neighbour's κ), a wall ghost onto the global mirror, a periodic cut onto the
 global wrap. Widening the slice is a setup-time indexing change, not a transport,
 so the per-apply exchange count is unchanged from the `Laplacian` baseline — the
@@ -620,8 +620,9 @@ so the per-apply exchange count is unchanged from the `Laplacian` baseline — t
 construction. It is legitimate only because κ is *constant through a solve*; a
 coefficient that changed per iteration would owe an exchange per iteration.
 
-`_slab_field`'s invariant is **narrowed, not broken**: it still holds verbatim
-for `ScalingOp`, which reads its coefficient pointwise. The real-eltype
+There is one slice, not a pointwise one and a stencil one: `ScalingOp` takes the
+same padded window, and because it reads its coefficient pointwise the ghosts it
+now carries are inert (a CPU testset poisons them with `NaN`). The real-eltype
 restriction in `_partitionable_coeff` carries over unchanged, for the same reason
 — `_conj_op(::Diffusion)` rebuilds `conj.(κ)` per call. This is also the first
 production path to reach the leaf's mechanical transpose: a slab carries

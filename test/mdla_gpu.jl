@@ -399,9 +399,9 @@ mdla_coeff(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
 end
 
 # Slice 2c. The diffusion leaf averages κ to faces, so it reads κ one cell PAST
-# every face — the cut plane included. `_slab_coeff_field` therefore uploads the
-# PADDED window, and asserting only `interior` equality (as above) would pass on
-# a slab whose cut-plane ghost was left at zero.
+# every face — the cut plane included. `_slab_field` slices the PADDED window,
+# and asserting only `interior` equality (as above) would pass on a slab whose
+# cut-plane ghost was left at zero.
 @testset "the diffusion coefficient is uploaded with its cut-plane ghosts" begin
     if NGPUS_MDLA >= 2
         g = mdla_grid((Dirichlet(), Neumann()))

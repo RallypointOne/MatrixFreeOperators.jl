@@ -756,36 +756,10 @@ end
 
     # Every coefficient here VARIES ALONG THE CUT DIMENSION and is asymmetric
     # about it. A coefficient constant in the cut dimension cannot catch a
-    # halo-shifted or reversed slice, which is the likeliest bug in `_slab_field`.
+    # halo-shifted or reversed slice, which is the likeliest bug in `_slab_field`
+    # (unit-tested cell by cell in the diffusion section below, where the ghosts
+    # it carries are first read).
     coeff_fun(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
-
-    @testset "_slab_field restricts the global coefficient exactly" begin
-        for (ext, sz) in (
-            ((( 0.0, 1.0), (0.0, 2.0)), (4, 6)),
-            (((-0.7, 0.9), (0.1, 1.3), (2.2, 5.8)), (3, 4, 6)),
-        )
-            g = CartesianGrid(ext, sz)
-            N = length(sz)
-            κ = set!(scalar_field(g), x -> 1.5 + sum(d -> d * x[d]^2, 1:N))
-            for np in (1, 2, 3)
-                parts = partition_grid(g, np)
-                for lp in parts
-                    lκ = MatrixFreeOperators._slab_field(κ, lp)
-                    @test lκ.grid === lp
-                    @test size(lκ.data) == MatrixFreeOperators.padded_size(lp)
-                    @test collect(interior(lκ)) ==
-                        collect(view(interior(κ), lp.local_range...))
-                end
-                # ...and the slabs tile the global coefficient with no gap or overlap
-                rebuilt = similar(interior(κ))
-                for lp in parts
-                    view(rebuilt, lp.local_range...) .=
-                        interior(MatrixFreeOperators._slab_field(κ, lp))
-                end
-                @test rebuilt == interior(κ)
-            end
-        end
-    end
 
     # The claim that lets a coefficient be partitioned with NO exchange of its
     # own: it is read pointwise at the cell being written, so its ghosts are
@@ -1035,17 +1009,22 @@ end
         ext, sz; bc=ntuple(d -> d == length(sz) ? cut : (Dirichlet(), Dirichlet()), length(sz))
     )
 
-    # The positive twin of "_slab_field restricts the global coefficient exactly":
-    # `_slab_coeff_field` slices the PADDED window, so the assertion covers the
-    # ghosts too — which is the entire difference between the two functions.
-    @testset "_slab_coeff_field restricts the padded coefficient exactly" begin
+    # `_slab_field` slices the PADDED window for every coefficient, so the oracle
+    # covers the ghosts too. Two sources, because the two consumers differ: a
+    # plain `set!` field is what `ScalingOp` hands in (ghosts zero, never read),
+    # and a `diffusion`-extended κ is what the leaf hands in, whose ghosts ARE
+    # read and must all carry a value — the neighbour's κ at a cut, the even
+    # mirror at a wall, the wrap under Periodic.
+    @testset "_slab_field restricts the padded coefficient exactly" begin
         for (ext, sz) in diff_exts, cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
             g = diff_grid(ext, sz, cut)
             N = length(sz)
-            D = diffusion(g, set!(scalar_field(g), diff_coeff_fun))
-            for np in (1, 2, 3)
-                for lp in partition_grid(g, np)
-                    lκ = MatrixFreeOperators._slab_coeff_field(D.κ, lp)
+            plain = set!(scalar_field(g), diff_coeff_fun)
+            extended = diffusion(g, plain).κ
+            for (κ, ghosts_read) in ((plain, false), (extended, true)), np in (1, 2, 3)
+                parts = partition_grid(g, np)
+                for lp in parts
+                    lκ = MatrixFreeOperators._slab_field(κ, lp)
                     @test lκ.grid === lp
                     @test size(lκ.data) == MatrixFreeOperators.padded_size(lp)
                     # Slab padded index p is global padded first(local_range)-1+p,
@@ -1056,11 +1035,18 @@ end
                         J = CartesianIndex(
                             ntuple(d -> first(lp.local_range[d]) - 1 + I[d], N)
                         )
-                        @test lκ.data[I] == D.κ.data[J]
+                        @test lκ.data[I] == κ.data[J]
                     end
-                    # ...and no ghost is left at the zero `_slab_field` would leave.
-                    @test !any(iszero, lκ.data)
+                    # ...and for the extended κ no ghost is left at zero.
+                    ghosts_read && @test !any(iszero, lκ.data)
                 end
+                # ...and the slabs tile the global interior with no gap or overlap
+                rebuilt = similar(interior(κ))
+                for lp in parts
+                    view(rebuilt, lp.local_range...) .=
+                        interior(MatrixFreeOperators._slab_field(κ, lp))
+                end
+                @test rebuilt == interior(κ)
             end
         end
     end
@@ -1095,10 +1081,10 @@ end
     end
 
     # The claim this whole slice rests on: the cut-plane ghosts of a localized κ
-    # ARE read, so they must carry the neighbour's values. Zero them — exactly
-    # what `_slab_field` would have left — and demand the answer move. Verified
-    # load-bearing: swapping `_slab_coeff_field` for `_slab_field` in `_slab_op`
-    # fails this testset and the dense-parity one above.
+    # ARE read, so they must carry the neighbour's values. Zero them — what an
+    # interior-only slice would have left — and demand the answer move. Verified
+    # load-bearing: the slice-2b `_slab_field`, which copied the interior and
+    # zeroed the ghosts, fails this testset and the dense-parity one above.
     @testset "a localized diffusion coefficient's cut-plane ghosts ARE read" begin
         for (ext, sz) in diff_exts,
             cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
@@ -1228,7 +1214,7 @@ end
 
             # slice 2c: the compact diffusion leaf joins on the same coefficient
             # terms. Its face averaging reads κ across the cut, which
-            # `_slab_coeff_field` supplies at localization time — no exchange, so
+            # `_slab_field`'s padded window supplies at localization time — no exchange, so
             # nothing further to require of it here.
             κp = set!(scalar_field(g), x -> 1 + x[1] + x[2])
             for avg in (ArithmeticMean(), HarmonicMean())
@@ -1308,7 +1294,7 @@ end
             @test occursin("different grid", err.msg)
 
             # Same trap for the diffusion leaf, and it is `_check_one_grid` that
-            # has to catch it: `_slab_coeff_field` reads the coefficient's OWN
+            # has to catch it: `_slab_field` copies the coefficient's OWN
             # ghosts, so a κ carrying another grid's ghosts is the one input that
             # would slice into plausible numbers rather than an error.
             errd = try
@@ -1323,7 +1309,7 @@ end
             # The public constructor already refuses a κ on another grid, so the
             # trap is the inner one: `Diffusion(g, κ, avg)` with κ living
             # elsewhere. Its `operator_grid` is `g`, so the generic mismatch
-            # check is blind to κ's grid, and `_slab_coeff_field` would then
+            # check is blind to κ's grid, and `_slab_field` would then
             # window κ by a `local_range` that means nothing on it — a wall
             # ghost filled from κ's interior on a larger grid (a plausible
             # face coefficient, no error), or a `BoundsError` on a smaller one.
