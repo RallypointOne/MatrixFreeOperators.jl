@@ -1319,6 +1319,31 @@ end
             @test errd isa ArgumentError
             @test occursin("Diffusion", errd.msg)
             @test occursin("different grid", errd.msg)
+
+            # The public constructor already refuses a κ on another grid, so the
+            # trap is the inner one: `Diffusion(g, κ, avg)` with κ living
+            # elsewhere. Its `operator_grid` is `g`, so the generic mismatch
+            # check is blind to κ's grid, and `_slab_coeff_field` would then
+            # window κ by a `local_range` that means nothing on it — a wall
+            # ghost filled from κ's interior on a larger grid (a plausible
+            # face coefficient, no error), or a `BoundsError` on a smaller one.
+            for szκ in ((12, 10), (4, 6))
+                gκ = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), szκ)
+                κκ = set!(scalar_field(gκ), x -> 1 + x[1])
+                Dbad = MatrixFreeOperators.Diffusion(g, κκ, ArithmeticMean())
+                @test distributable(Dbad)          # the leaf alone cannot tell
+                for L in (Dbad, laplacian(g) + Dbad)
+                    errk = try
+                        check1(L, g)
+                    catch e
+                        e
+                    end
+                    @test errk isa ArgumentError
+                    @test occursin("Diffusion", errk.msg)
+                    @test occursin("different grid", errk.msg)
+                end
+                @test_throws ArgumentError dist_prepare(Dbad, g, 2)
+            end
         end
 
         @testset "rejected: transfer operators span two grids" begin

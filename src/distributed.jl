@@ -186,6 +186,15 @@ end
 
 _grid_mismatch(L::Scaled, g) = _grid_mismatch(L.op, g)
 _grid_mismatch(L::AdjointOp, g) = _grid_mismatch(L.op, g)
+# A Diffusion reports its OWN grid as `operator_grid`, so the generic method below
+# never sees the coefficient's — and the inner constructor accepts a κ from
+# anywhere. Both must match: `_slab_coeff_field` windows κ by the slab's
+# `local_range`, which on another grid lands a wall ghost on κ's interior (a
+# larger grid) or past its end (a smaller one). `ScalingOp` needs no such method
+# because its `operator_grid` *is* the coefficient's grid.
+function _grid_mismatch(D::Diffusion, g)
+    return (_same_grid(D.grid, g) && _same_grid(D.κ.grid, g)) ? nothing : D
+end
 function _grid_mismatch(L::Added, g)
     a = _grid_mismatch(L.a, g)
     return a === nothing ? _grid_mismatch(L.b, g) : a
@@ -323,8 +332,10 @@ lands every ghost on the value it should hold, with no per-face logic:
 
 The window is `first(zr):(last(zr) + 2h) ⊆ 1:(n + 2h)`, so it never needs
 clamping. The precondition is that `f`'s own ghosts are already extended for
-`f.grid`, which `_check_one_grid` is what enforces: a coefficient on any grid
-other than the one being partitioned is rejected before this runs.
+`f.grid`, which `diffusion` supplies through `_extended_coeff`. What
+`_check_one_grid` enforces is the other half: that `f.grid` *is* the grid being
+partitioned, so the window is never taken with a `local_range` that means
+nothing on `f`.
 """
 function _slab_coeff_field(f::Field{L}, lg::AbstractGrid{N}) where {L,N}
     f.grid === lg && return f
