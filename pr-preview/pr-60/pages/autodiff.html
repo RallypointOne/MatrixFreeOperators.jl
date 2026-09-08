@@ -82,7 +82,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-095245003bb80bd2beb305de39928752.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-1fea2c51d21c7813f291f492b4a412d2.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-02a8592a4cf3893cf56a8581db556df5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -293,7 +293,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="what-differentiates-and-why-nobody-wrote-a-rule-for-it">What differentiates, and why nobody wrote a rule for it</h2>
 <p>Every operator leaf is authored as array-level broadcasts over halo-padded fields. That is a deliberate constraint (<code>DESIGN.md</code> Decision A), and differentiability is what it buys: leaves are ordinary Julia array code, so Enzyme differentiates straight through them — including with respect to parameters stored <em>inside</em> operators, such as a material-coefficient field.</p>
 <p>That second half is the part most matrix-free stacks cannot do. A gradient with respect to the solution field is a pullback through a linear map; a gradient with respect to <code>κ</code> in <code>divergence(g) * scaling(κ) * gradient(g)</code> is not, and a hand-written adjoint rule per operator per backend will not produce it.</p>
-<p>The example below differentiates the composed spelling, because it is the one that shows parameter gradients flowing through a <em>tree</em>. For an actual inversion in <code>κ</code> reach for the fused <code>diffusion(g, κ)</code> leaf instead: it differentiates by the same rule-free tape, but its compact flux stencil couples <code>κ</code> at adjacent cells, which the wide composition does not — see <a href="../pages/api.html"><code>diffusion</code></a> and <code>examples/inverse_diffusion.jl</code>.</p>
+<p>The example below differentiates the composed spelling to show parameter gradients flowing through a <em>tree</em>. For an inversion in κ, prefer the fused <code>diffusion(g, κ)</code> leaf: it differentiates through the same rule-free tape and couples adjacent solution cells. Accurate gradients do not guarantee identifiable coefficients: arithmetic face averaging leaves a checkerboard perturbation of κ invisible on even-sized periodic grids or under homogeneous Neumann walls, regardless of the number of excitations. See <a href="../pages/api.html"><code>diffusion</code></a> and <code>examples/inverse_diffusion.jl</code>, whose Dirichlet walls can break that ambiguity.</p>
 <div id="2" class="cell" data-execution_count="1">
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">MatrixFreeOperators</span>, <span class="bu">Random</span></span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> <span class="bu">DifferentiationInterface</span> as DI</span>
@@ -419,7 +419,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>rhs <span class="op">=</span> <span class="fu">sum</span>(<span class="fu">dot</span>.(<span class="fu">collect</span>(<span class="fu">interior</span>(v)), <span class="fu">collect</span>(<span class="fu">interior</span>(<span class="fu">apply</span>(<span class="fu">adjoint</span>(Ja), <span class="fu">copy</span>(w))))))</span>
 <span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>(lhs, rhs, <span class="fu">abs</span>(lhs <span class="op">-</span> rhs))                   <span class="co"># ⟨Jv, w⟩ = ⟨v, Jᵀw⟩</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
-<pre><code>(9.990196831228467, 9.99019683122847, 3.552713678800501e-15)</code></pre>
+<pre><code>(9.990196831228465, 9.990196831228468, 3.552713678800501e-15)</code></pre>
 </div>
 </div>
 <table class="caption-top table">
@@ -893,7 +893,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       &nbsp;
     </div>   
     <div class="nav-footer-center">
-<p>Built on 2026-08-14 (PR #60)</p>
+<p>Built on 2026-09-08 (PR #60)</p>
 </div>
     <div class="nav-footer-right">
       &nbsp;
