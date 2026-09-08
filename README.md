@@ -121,9 +121,7 @@ maximum(abs, u .- u_exact)   # ~1e-3, second-order accurate
 
 Everything composes from here with the same pieces:
 
-- `diffusion(g, κ)` — variable-coefficient diffusion ∇·(κ∇u) as a single compact
-  flux-form leaf: exactly symmetric, with an `operator_diagonal`, free of the
-  wide stencil's odd–even decoupling, and ~3× faster than composing it;
+- `diffusion(g, κ)` — variable-coefficient diffusion ∇·(κ∇u) as a single compact flux-form leaf: exactly symmetric for real κ, with an `operator_diagonal`, coupling adjacent solution cells, and ~3× faster than composing it. This removes the wide stencil's odd–even decoupling in u; arithmetic face averaging still leaves a checkerboard ambiguity in κ on even-sized periodic grids or under homogeneous Neumann walls.
 - `divergence(g) * scaling(κ) * gradient(g)` — the same PDE term assembled from
   rank-changing leaves. Reach for `diffusion` instead: this spelling exists to
   show the algebra composes, and chaining two centered differences gives it a

@@ -182,13 +182,9 @@ Build a matrix-free variable-coefficient diffusion operator `∇·(κ∇u)` on `
 in **compact flux form**: fluxes `q_{i+½} = κ_{i+½}(u_{i+1} − u_i)/Δ` live on faces, with
 `κ` averaged to faces by `averaging`, and the cell balance is `(q_{i+½} − q_{i−½})/Δ`.
 
-Prefer this to the algebraic composition `divergence(g) * scaling(κ) * gradient(g)`. That
-composition chains two centered first differences and so carries a *wide* 2Δ stencil: the
-equation at cell `I` samples the flux only at neighbours `I±e`, never at `I`, and no
-equation ever couples `κ` at two adjacent cells. For a parameter inversion in `κ` this
-decouples the even and odd `(i+j)`-parity sublattices exactly — they are fit to disjoint
-halves of the data and tied together only by the regularizer. The compact form couples
-adjacent cells by construction, so the checkerboard mode is not in the null space.
+Prefer this to the algebraic composition `divergence(g) * scaling(κ) * gradient(g)`. That composition chains two centered first differences and carries a *wide* 2Δ stencil: interior rows sample fluxes at `I±e` and reach solution values at `I±2e`, skipping adjacent solution cells. The compact form couples adjacent solution cells and removes this odd–even decoupling in `u`.
+
+Coefficient identifiability is a separate question. With [`ArithmeticMean`](@ref), a checkerboard perturbation `δκ[i,j] = ε(-1)^(i+j)` cancels at every interior face. On periodic grids with even cell counts in every dimension, or with homogeneous Neumann walls, it leaves the entire operator unchanged for every `u`. Multiple excitations cannot resolve that ambiguity. Dirichlet wall coefficients use the adjacent cell's κ and can break it; the successful Dirichlet inversion in `examples/inverse_diffusion.jl` does not establish unique recovery for other boundary conditions or data.
 
 The compact form is also **exactly symmetric** for real `κ` under all built-in boundary
 conditions (the composed form is not), and it has an [`operator_diagonal`](@ref) (the

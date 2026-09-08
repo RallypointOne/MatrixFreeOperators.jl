@@ -8,16 +8,16 @@
 # through the leaf, boundary conditions and all. DifferentiationInterface is the
 # frontend: one backend object, no annotation vocabulary at the call site.
 #
-# The discretization is what makes this work from a single excitation.
-# `diffusion(g, κ)` is the compact flux form: fluxes κ∇u live on cell faces, with
-# κ averaged to each face, and the cell balance differences neighbouring face
-# fluxes. Every equation therefore couples κ at *adjacent* cells. The algebraic
-# spelling `divergence(g) * scaling(κ) * gradient(g)` does not: chaining two
-# centered differences samples the flux only at cells I±e, so no equation ever ties
-# κ at neighbouring pixels together, the even and odd checkerboard sublattices are
-# fit to disjoint halves of the noisy data, and the reconstruction speckles. That
-# is issue #48, and it is a property of the stencil, not of the optimizer — a
-# stronger smoothness prior barely dents it.
+# `diffusion(g, κ)` uses compact face fluxes and couples adjacent solution cells,
+# improving recovery in this Dirichlet example compared with the wide composition
+# `divergence(g) * scaling(κ) * gradient(g)` (issue #48). This is an empirical
+# result for this truth, drive, boundary condition, and optimizer, not a guarantee
+# that one excitation uniquely determines κ.
+#
+# Arithmetic face averaging still cannot see an alternating +ε/-ε perturbation
+# of κ on an even-sized periodic grid or with homogeneous Neumann walls: every
+# interior face average is unchanged. Additional drives cannot remove that
+# ambiguity. The Dirichlet walls here use κ_I directly and can break it.
 #
 # Run with: julia --project=examples examples/inverse_diffusion.jl
 
@@ -49,11 +49,10 @@ end
 roughness(κi) =
     sum(abs2, diff(κi; dims=1)) / length(κi) + sum(abs2, diff(κi; dims=2)) / length(κi)
 
-# A token smoothness penalty, kept only so the knob is visible. It no longer does
-# any work: sweeping λ from 0 to 5e-4 moves the recovery error by less than 0.01
-# percentage points, because the data now determine κ pixel by pixel. Under the
-# wide composition the same sweep was the difference between a usable answer and
-# speckle, and even a 20× stronger prior could not rescue it.
+# Keep the smoothness penalty explicit. In the reported run of this Dirichlet
+# example, sweeping λ from 0 to 5e-4 moved the recovery error by less than 0.01
+# percentage points. That observation does not establish coefficient uniqueness
+# or make regularization unnecessary for other data or boundary conditions.
 const λ = 5e-4
 
 function objective(κdata, obs, udata, gg)
@@ -61,10 +60,8 @@ function objective(κdata, obs, udata, gg)
     return J + λ * roughness(interior(Field(κdata, gg)))
 end
 
-# One drive is enough. The data are sensitive to κ only through the flux κ∇u, so a
-# single excitation still sees least where its gradient is smallest. With the
-# compact stencil that shows up as faint streaks along the directions where ∇u is
-# small — a resolution limit of this one drive — rather than as pixel-scale speckle.
+# This example uses one drive. The data are sensitive to κ through the flux κ∇u,
+# so recovery remains weak where this excitation's gradient is small.
 u = set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(x[2]))
 
 rng = MersenneTwister(20260731)

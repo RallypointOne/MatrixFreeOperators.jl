@@ -26,12 +26,7 @@ respect to the solution field is a pullback through a linear map; a gradient wit
 respect to `κ` in `divergence(g) * scaling(κ) * gradient(g)` is not, and a
 hand-written adjoint rule per operator per backend will not produce it.
 
-The example below differentiates the composed spelling, because it is the one that
-shows parameter gradients flowing through a *tree*. For an actual inversion in `κ`
-reach for the fused `diffusion(g, κ)` leaf instead: it differentiates by the same
-rule-free tape, but its compact flux stencil couples `κ` at adjacent cells, which
-the wide composition does not — see [`diffusion`](api.qmd) and
-`examples/inverse_diffusion.jl`.
+The example below differentiates the composed spelling to show parameter gradients flowing through a *tree*. For an inversion in κ, prefer the fused `diffusion(g, κ)` leaf: it differentiates through the same rule-free tape and couples adjacent solution cells. Accurate gradients do not guarantee identifiable coefficients: arithmetic face averaging leaves a checkerboard perturbation of κ invisible on even-sized periodic grids or under homogeneous Neumann walls, regardless of the number of excitations. See [`diffusion`](api.qmd) and `examples/inverse_diffusion.jl`, whose Dirichlet walls can break that ambiguity.
 
 ```{julia}
 using MatrixFreeOperators, Random

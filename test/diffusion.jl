@@ -193,12 +193,10 @@ end
         @test all(count(!iszero, A[i, :]) ≤ 5 for i in axes(A, 1))
     end
 
-    @testset "κ-sensitivity is not parity-decoupled (issue #48)" begin
-        # The regression guard for the whole issue. In the wide composition the row at
-        # cell I samples the flux only at I±e, so ∂(Lu)_I/∂κ_I ≡ 0 and the κ-Jacobian
-        # couples only opposite-parity cells — which is what makes the misfit Hessian
-        # block-diagonal in the (i+j)-parity sublattices. The compact form couples
-        # adjacent cells, so the diagonal entry is nonzero.
+    @testset "compact κ-sensitivity includes the central cell (issue #48)" begin
+        # A strictly interior row of the wide composition samples κ only at I±e,
+        # so ∂(Lu)_I/∂κ_I ≡ 0. The compact form includes κ_I. This local
+        # sensitivity does not prove that the full κ-Jacobian has no null space.
         g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (7, 7))
         u = set!(scalar_field(g), x -> sinpi(x[1]) * sinpi(2 * x[2]) + x[1] * x[2])
         I0 = CartesianIndex(4, 4)                        # a strictly interior cell
@@ -224,6 +222,48 @@ end
         )
         @test abs(wide[i0]) < 1e-8                       # structurally zero
         @test abs(compact[i0]) > 1e-3                    # genuinely coupled
+    end
+
+    @testset "arithmetic averaging retains a κ checkerboard null mode" begin
+        @testset "$name n=$n" for (name, n, bc) in (
+            ("periodic", (6, 4), ntuple(_ -> (Periodic(), Periodic()), 2)),
+            ("homogeneous Neumann", (5, 4), ntuple(_ -> (Neumann(), Neumann()), 2)),
+        )
+            g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), n; bc=bc)
+            κ = scalar_field(g)
+            # Binary-exact, varying coefficients and perturbations let us check
+            # equality exactly, without a tolerance hiding weak sensitivity.
+            interior(κ) .= [2 + I[1] / 8 + I[2] / 16 for I in CartesianIndices(n)]
+            checkerboard = [isodd(sum(Tuple(I))) ? -1 : 1 for I in CartesianIndices(n)]
+            A = materialize(prepare(diffusion(g, κ), scalar_field(g)))
+
+            @testset "checkerboard amplitude ε=$ε" for ε in (-1 / 4, 1 / 4)
+                shifted = copy(κ)
+                interior(shifted) .+= ε .* checkerboard
+                @test all(>(0), interior(shifted))
+                @test interior(shifted) != interior(κ)
+                A_shifted = materialize(prepare(diffusion(g, shifted), scalar_field(g)))
+                @test A_shifted == A  # identical response for EVERY excitation
+            end
+
+            # Controls: a local coefficient change is observable, and the same
+            # checkerboard used as a solution is not in the operator's null space.
+            local_change = copy(κ)
+            interior(local_change)[2, 2] += 1 / 4
+            A_local = materialize(prepare(diffusion(g, local_change), scalar_field(g)))
+            @test A_local != A
+            @test norm(A * vec(checkerboard)) > 1
+
+            # Dirichlet walls use κ_I directly and break the face-average
+            # cancellation, so the periodic/no-flux conclusion cannot carry over.
+            gd = CartesianGrid(g.extent, n)
+            κd = Field(copy(κ.data), gd)
+            shifted_d = copy(κd)
+            interior(shifted_d) .+= checkerboard ./ 4
+            Ad = materialize(prepare(diffusion(gd, κd), scalar_field(gd)))
+            Ad_shifted = materialize(prepare(diffusion(gd, shifted_d), scalar_field(gd)))
+            @test Ad_shifted != Ad
+        end
     end
 
     @testset "conservation" begin
