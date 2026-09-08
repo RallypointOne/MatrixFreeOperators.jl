@@ -488,7 +488,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <div class="card-body">
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="fu">Diffusion</span>(grid, κ, avg)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
-<p>Compact flux-form variable-coefficient diffusion <code>∇·(κ∇u)</code>. Construct with <a href="@ref"><code>diffusion</code></a>, which is what extends <code>κ</code> into its ghost layers; the inner constructor takes <code>κ</code> as given and is the seam the forest and distributed paths use to supply cross-block coefficient ghosts themselves — <code>_slab_op</code> (<code>src/distributed.jl</code>) already builds through it, with a κ sliced from the global one <em>including</em> its ghosts.</p>
+<p>Compact flux-form variable-coefficient diffusion <code>∇·(κ∇u)</code>. Construct with <a href="@ref"><code>diffusion</code></a>, which is what extends <code>κ</code> into its ghost layers; the inner constructor takes <code>κ</code> as given and is the seam for supplying cross-block coefficient ghosts from outside: <code>_slab_op</code> (<code>src/distributed.jl</code>) already builds through it, with a κ sliced from the global one <em>including</em> its ghosts, and the forest path (issue #58) will.</p>
 </div>
 </div>
 <div class="card mb-3">
