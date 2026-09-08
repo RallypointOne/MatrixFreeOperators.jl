@@ -15,6 +15,11 @@ function di_kappa_loss(κdata, udata, w, g)
     return sum(w .* interior(apply(K, Field(copy(udata), g))))
 end
 
+function di_diffusion_kappa_loss(κdata, udata, w, g)
+    D = diffusion(g, Field(κdata, g); check=false)
+    return sum(w .* interior(apply(D, Field(copy(udata), g))))
+end
+
 @testset "DifferentiationInterface frontend (AutoEnzyme)" begin
     # Runtime activity: the Const coefficient field inside L flows into the active
     # output buffer, which static activity analysis cannot prove safe. This is the
@@ -32,6 +37,7 @@ end
     @testset "field gradient matches the declared adjoint: $(name)" for (name, L) in (
         ("Laplacian", laplacian(g)),
         ("div∘κ∘grad", divergence(g) * scaling(κ0) * MatrixFreeOperators.gradient(g)),
+        ("Diffusion", diffusion(g, κ0)),
     )
         x = rand(rng, padded_size(g)...)
         dx = DI.gradient(
@@ -74,6 +80,20 @@ end
         fd = fd_gradient(κd -> di_kappa_loss(κd, u.data, w, g), κ)
         @test any(!iszero, fd)
         @test dκ ≈ fd atol = 1e-5
+
+        # The fused leaf through the same documented frontend — this is the call shape
+        # examples/inverse_diffusion.jl uses.
+        dκd = DI.gradient(
+            di_diffusion_kappa_loss,
+            backend,
+            κ,
+            DI.Constant(u.data),
+            DI.Constant(w),
+            DI.Constant(g),
+        )
+        fdd = fd_gradient(κd -> di_diffusion_kappa_loss(κd, u.data, w, g), κ)
+        @test any(!iszero, fdd)
+        @test dκd ≈ fdd atol = 1e-5
     end
 
     @testset "forest gradient through the DI frontend" begin

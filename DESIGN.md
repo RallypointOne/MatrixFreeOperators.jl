@@ -629,19 +629,7 @@ rejected loudly.
 1. `CartesianGrid{N}` — uniform, single device, collocated, with periodic +
    Dirichlet + Neumann BCs; `halo_update!` present as a no-op.
 2. `Field{Center}` over device arrays.
-3. Operator algebra: leaves `Laplacian`, `Derivative`, `Gradient`, `Divergence`,
-   `ScalingOp`, `IdentityOp`, `Advection`; combinators `Added`, `Composed`,
-   `Scaled`, `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` +
-   `apply_adjoint!`; `mul!`/`size`/`eltype`; `Adapt` support. `ScalingOp`
-   (pointwise ×κ(x)) is the leaf that makes Decision B concrete: it carries a
-   differentiable coefficient *field*, it is the genuine `isdiagonal` /
-   `isselfadjoint` instance (Jacobi smoother target), and variable-coefficient
-   diffusion falls out of the algebra as
-   `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test.
-   (Caveat: the composed form has a wider effective stencil and collocated
-   odd-even quirks; a fused `∇·(κ∇u)` leaf is a later performance/accuracy
-   upgrade, not a v1 need — see §4a for the custom-fused-leaf pattern such an
-   upgrade would follow.)
+3. Operator algebra: leaves `Laplacian`, `Derivative`, `Gradient`, `Divergence`, `ScalingOp`, `IdentityOp`, `Advection`; combinators `Added`, `Composed`, `Scaled`, `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` + `apply_adjoint!`; `mul!`/`size`/`eltype`; `Adapt` support. `ScalingOp` (pointwise ×κ(x)) is the leaf that makes Decision B concrete: it carries a differentiable coefficient *field*, it is the genuine `isdiagonal` / `isselfadjoint` instance (Jacobi smoother target), and variable-coefficient diffusion falls out of the algebra as `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test. (Caveat: the composed form has a wider effective stencil and collocated odd-even quirks. **Resolved (2026-08-14): the fused `∇·(κ∇u)` leaf landed as `Diffusion`/`diffusion(g, κ)`** (issue #48), following the §4a custom-fused-leaf pattern with the exported `diffusion_stencil` primitive. It is the compact flux form — face-averaged κ, arithmetic or harmonic — and it is exactly symmetric for real κ, declares `operator_diagonal` (which the composed form cannot), and couples adjacent solution cells, removing odd–even decoupling in u. Coefficient identifiability remains separate: arithmetic averaging cancels a checkerboard perturbation of κ at every interior face, leaving the entire operator unchanged on periodic grids with even cell counts in every dimension or under homogeneous Neumann walls. Additional excitations cannot distinguish those coefficients; Dirichlet wall coefficients can break the ambiguity. The composition stays valid and stays the algebra stress-test; the leaf takes 115 µs against the composition's 337 µs for one 256² prepared `mul!`, and 1.7× the `Laplacian`'s 67.5 µs for 2× the memory traffic. `CartesianGrid` only for now — `BlockForest` and distributed slabs are staged in #54.)
 4. Array-level authoring; device-agnostic via `get_backend`/`Adapt`; CI on CPU,
    and CUDA where available.
 5. AD: works automatically (Enzyme + Mooncake) on array-level leaves for field +
@@ -875,7 +863,15 @@ Presented one at a time with a recommendation; none block writing v1's spine.
 2. **Collocated vs staggered fields in v1.** Staggered (faces/centers) avoids
    odd-even decoupling for incompressible flow but adds bookkeeping.
    *Recommendation:* collocated v1; encode location as the `Field` trait `L` so
-   staggered is purely additive.
+   staggered is purely additive. (Note, 2026-08-14: for *diffusion* the odd-even
+   decoupling is now handled without staggering, by the compact flux-form
+   `Diffusion` leaf — §8. A warning for whoever does implement staggered `G`/`D`:
+   the compact operator factors as `L = −Bᵀ diag(κ_f) B`, but at a Dirichlet wall
+   the row of `B` is `√2/Δ`, not `2/Δ` — the geometric mean of the one-sided
+   gradient weight and the divergence weight. There the gradient and
+   negative-divergence operators are *not* transposes of each other; only their
+   product is symmetric. A staggered pair that assumes `D = −Gᵀ` will be
+   asymmetric at Dirichlet walls.)
 
 3. ~~**AD backend default.**~~ **Resolved (2026-07-31): Enzyme.** It is the
    documented default and preferred backend, and the only one the custom rules in

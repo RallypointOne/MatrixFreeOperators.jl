@@ -19,6 +19,11 @@ function er_kappa_loss(κdata, udata, w, g)
     return sum(w .* interior(apply(K, Field(copy(udata), g))))
 end
 
+function er_diffusion_kappa_loss(κdata, udata, w, g)
+    D = diffusion(g, Field(κdata, g); check=false)
+    return sum(w .* interior(apply(D, Field(copy(udata), g))))
+end
+
 @testset "Enzyme custom rules (declared transposes, not the tape)" begin
     @test ENZ_EXT !== nothing
 
@@ -180,6 +185,7 @@ end
         @testset "$(name)" for (name, L) in (
             ("Laplacian", laplacian(g)),
             ("div∘κ∘grad", divergence(g) * scaling(κ0) * MatrixFreeOperators.gradient(g)),
+            ("Diffusion", diffusion(g, κ0)),
         )
             x = rand(rng, padded_size(g)...)
             dx = zero(x)
@@ -227,5 +233,26 @@ end
         fd = fd_gradient(κd -> er_kappa_loss(κd, u.data, w, g), κ)
         @test any(!iszero, fd)
         @test dκ ≈ fd atol = 1e-5
+
+        # Same for the fused leaf: its coefficient accessor is pure reads and index
+        # arithmetic, so the whole κ path stays on the tape with no rule in sight.
+        dκd = zero(κ)
+        before = ENZ_EXT.rule_hits()
+        # Runtime activity: constructing the leaf inside the differentiated region
+        # stores the Const grid into the active coefficient Field. It does not affect
+        # rule dispatch, so the rule_hits assertion below still means what it says.
+        Enzyme.autodiff(
+            Enzyme.set_runtime_activity(Enzyme.Reverse),
+            er_diffusion_kappa_loss,
+            Enzyme.Active,
+            Enzyme.Duplicated(κ, dκd),
+            Enzyme.Const(u.data),
+            Enzyme.Const(w),
+            Enzyme.Const(g),
+        )
+        @test ENZ_EXT.rule_hits() == before
+        fdd = fd_gradient(κd -> er_diffusion_kappa_loss(κd, u.data, w, g), κ)
+        @test any(!iszero, fdd)
+        @test dκd ≈ fdd atol = 1e-5
     end
 end

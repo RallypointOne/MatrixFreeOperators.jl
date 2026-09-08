@@ -20,18 +20,28 @@ coefficient field ([`Field`](@ref) on a single grid, [`BlockField`](@ref)/
 [`PackedBlockField`](@ref) on a forest — the coefficient's layout should match
 the field the operator is applied to for the forest-native kernel to engage).
 Diagonal and (for real coefficients) self-adjoint —
-the natural Jacobi-smoother target. Variable-coefficient diffusion composes as
-`divergence(g) * scaling(κ) * gradient(g)`.
+the natural Jacobi-smoother target.
+
+!!! note "For ∇·(κ∇u), reach for `diffusion`"
+    [`diffusion`](@ref)`(g, κ)` is the compact flux form: exactly symmetric,
+    with an `operator_diagonal`, and ~3× faster.
+    `divergence(g) * scaling(κ) * gradient(g)` also builds a valid ∇·(κ∇u) and
+    is a good demonstration that the algebra composes, but it chains two
+    centered differences: the resulting stencil reaches `u[I±2δ]` and never
+    `u[I±δ]`, so the grid decouples into interleaved sublattices and κ at a cell
+    never enters that cell's own equation — which makes a κ-inversion fit
+    disjoint halves of the data.
 
 ### Examples
 
 ```julia
 g = CartesianGrid(((0.0, 1.0),), (64,))
 κ = set!(scalar_field(g), x -> 1 + x[1]^2)
-K = divergence(g) * scaling(κ) * gradient(g)     # ∇·(κ∇u)
+H = laplacian(g) - scaling(κ)                    # Helmholtz-type: Δu − κu
 ```
 
-See also: [`gradient`](@ref), [`divergence`](@ref), [`identity_op`](@ref).
+See also: [`diffusion`](@ref), [`gradient`](@ref), [`divergence`](@ref),
+[`identity_op`](@ref).
 """
 scaling(κ::Number) = ScalingOp(κ)
 function scaling(κ::Field)

@@ -77,8 +77,13 @@ legal CG preconditioner.
 Each level's operator is the same expression rebuilt on the coarser grid —
 `laplacian(coarsen(g))`, not a matrix product. A tree walk rediscretizes any
 supported operator expression (`Laplacian`, `Derivative`, `Gradient`,
-`Divergence`, `ScalingOp`, `IdentityOp`, and their `+`/`*`/scalar combinations);
-a `ScalingOp`'s coefficient field is child-averaged onto the coarse grid. The
+`Divergence`, `ScalingOp`, `Diffusion`, `IdentityOp`, and their `+`/`*`/scalar
+combinations); a `ScalingOp`'s or `Diffusion`'s coefficient field is
+child-averaged onto the coarse grid. Note that variable-coefficient diffusion is
+smoothable only in the `diffusion(g, κ)` spelling: `operator_diagonal` of a
+composition requires *both* factors to be diagonal, so
+`divergence(g) * scaling(κ) * gradient(g)` has no extractable diagonal and no
+Jacobi or Chebyshev smoother. The
 same boundary-condition objects apply verbatim — coarse levels solve the
 homogeneous correction equation, which is exactly what `apply_bc!` enforces.
 

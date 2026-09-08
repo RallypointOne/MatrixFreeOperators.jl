@@ -26,6 +26,8 @@ respect to the solution field is a pullback through a linear map; a gradient wit
 respect to `κ` in `divergence(g) * scaling(κ) * gradient(g)` is not, and a
 hand-written adjoint rule per operator per backend will not produce it.
 
+The example below differentiates the composed spelling to show parameter gradients flowing through a *tree*. For an inversion in κ, prefer the fused `diffusion(g, κ)` leaf: it differentiates through the same rule-free tape and couples adjacent solution cells. Accurate gradients do not guarantee identifiable coefficients: arithmetic face averaging leaves a checkerboard perturbation of κ invisible on even-sized periodic grids or under homogeneous Neumann walls, regardless of the number of excitations. See [`diffusion`](api.qmd) and `examples/inverse_diffusion.jl`, whose Dirichlet walls can break that ambiguity.
+
 ```{julia}
 using MatrixFreeOperators, Random
 import DifferentiationInterface as DI
@@ -53,9 +55,12 @@ dκ = DI.gradient(diffusion_loss, backend, κ, DI.Constant(u.data), DI.Constant(
 extrema(dκ)
 ```
 
-`set_runtime_activity` is needed whenever a `Const` coefficient field flows into an
-active output buffer — static activity analysis cannot prove that safe. Setting it
-once on the backend object is why the DI frontend is pleasant to use.
+`set_runtime_activity` is needed whenever constant and active memory meet in the same
+place, and both directions show up here: a `Const` coefficient field flowing into an
+active output buffer, and — when the operator is *built* inside the differentiated
+region, as an inversion loop does — the `Const` grid being stored into the freshly
+built active coefficient field. Static activity analysis cannot prove either safe.
+Setting it once on the backend object is why the DI frontend is pleasant to use.
 
 For a real optimization loop, prepare once and reuse:
 

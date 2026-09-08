@@ -15,6 +15,8 @@
             MatrixFreeOperators.gradient(g),
             divergence(g),
             scaling(κ),
+            diffusion(g, κ),
+            diffusion(g, κ; averaging=HarmonicMean()),
             identity_op(),
             advection(g, v),
             advection(g, SelfAdvection()),
