@@ -32,6 +32,10 @@ _distributable(::ScalingOp{<:Number}) = true
 _distributable(S::ScalingOp{<:Field}) = _partitionable_coeff(S.coeff)
 # An AbstractBlockField coefficient belongs to a forest, not to a slab.
 _distributable(::ScalingOp) = false
+# Same coefficient requirement as ScalingOp, for the same two reasons — and the
+# face averaging needs κ one cell PAST the cut as well, which the padded window
+# `_slab_field` slices supplies at construction rather than by exchanging anything.
+_distributable(D::Diffusion) = _partitionable_coeff(D.κ)
 _distributable(L::Scaled) = _distributable(L.op)
 _distributable(L::Added) = _distributable(L.a) && _distributable(L.b)
 _distributable(L::AdjointOp) = _distributable(L.op)
@@ -43,10 +47,15 @@ _distributable(::AbstractOperator) = false
 Whether a field-valued operator parameter can be sliced onto slabs (internal).
 
 Requires an undistributed `CartesianGrid` — the layout [`_slab_field`](@ref)
-slices — and a **real** element type. Real only because
-`adjoint_operator(::ScalingOp{<:Field})` builds `conj.(κ.data)` on every call
-(`src/operators/scaling.jl`), which in the distributed adjoint would allocate a
-full coefficient array per partition per Krylov iteration.
+slices — and a **real** element type. Real because the distributed vectors are:
+both backends type every slab and flat vector from `eltype(spacing(g))`
+(`prepare_distributed` in the MDLA extension, `dist_prepare` in
+`test/partitioning.jl`), so a complex coefficient's product has nowhere to land
+and would fail on the first `apply!` with an `InexactError` instead of a message
+naming the cause. It is *not* an adjoint cost: `_push_adjoints` folds
+`adjoint(ScalingOp)`/`adjoint(Diffusion)` to the conjugated leaf once at setup,
+so no `conj.(κ)` is rebuilt per Krylov iteration. Typing the vectors from the
+operator's eltype would lift the restriction.
 """
 function _partitionable_coeff(κ::Field)
     κ.grid isa CartesianGrid || return false
@@ -101,10 +110,15 @@ _undistributable_reason(::Prolongation) =
     "transfer operators compose grids that would each need their own consistent partitioning"
 _undistributable_reason(S::ScalingOp) =
     "its coefficient must be a Number or a real-eltype Field on an undistributed " *
-    "CartesianGrid, so it can be sliced onto the slabs"
+    "CartesianGrid: real because the distributed vectors are, undistributed so it " *
+    "can be sliced onto the slabs"
+# Reaching this means the coefficient failed `_partitionable_coeff`: the cut
+# itself is no longer a reason, since `_slab_field`'s padded window carries κ
+# across it.
 _undistributable_reason(::Diffusion) =
-    "its face-averaged coefficient needs κ values across the partition cut, which the " *
-    "coefficient slicing does not yet supply — see issue #54"
+    "its coefficient must be a real-eltype Field on an undistributed CartesianGrid: " *
+    "real because the distributed vectors are, undistributed so it can be sliced " *
+    "onto the slabs"
 _undistributable_reason(::Advection) =
     "the velocity field is bound to the global grid; it must be partitioned onto the slabs first"
 _undistributable_reason(::Gradient) =
@@ -145,8 +159,9 @@ function _check_distributable(L::AbstractOperator)
         ArgumentError(
             "prepare_distributed cannot distribute $(nameof(typeof(culprit)))$detail. " *
             "Supported: Laplacian, Derivative, IdentityOp, ScalingOp with a Number or " *
-            "real-eltype Field coefficient, and their Scaled/Added/Composed/adjoint " *
-            "combinations on one grid; got $(sprint(show, L)).",
+            "real-eltype Field coefficient, Diffusion with a real-eltype Field " *
+            "coefficient, and their Scaled/Added/Composed/adjoint combinations on one " *
+            "grid; got $(sprint(show, L)).",
         ),
     )
 end
@@ -178,6 +193,15 @@ end
 
 _grid_mismatch(L::Scaled, g) = _grid_mismatch(L.op, g)
 _grid_mismatch(L::AdjointOp, g) = _grid_mismatch(L.op, g)
+# A Diffusion reports its OWN grid as `operator_grid`, so the generic method below
+# never sees the coefficient's — and the inner constructor accepts a κ from
+# anywhere. Both must match: `_slab_field` windows κ by the slab's
+# `local_range`, which on another grid lands a wall ghost on κ's interior (a
+# larger grid) or past its end (a smaller one). `ScalingOp` needs no such method
+# because its `operator_grid` *is* the coefficient's grid.
+function _grid_mismatch(D::Diffusion, g)
+    return (_same_grid(D.grid, g) && _same_grid(D.κ.grid, g)) ? nothing : D
+end
 function _grid_mismatch(L::Added, g)
     a = _grid_mismatch(L.a, g)
     return a === nothing ? _grid_mismatch(L.b, g) : a
@@ -244,6 +268,10 @@ once, before rewriting.
 """
 _slab_op(L::AbstractOperator, ::AbstractGrid) = L
 _slab_op(S::ScalingOp{<:Field}, lg::AbstractGrid) = ScalingOp(_slab_field(S.coeff, lg))
+# The INNER constructor, deliberately: `diffusion(g, κ)` refuses Interface faces,
+# and this is the seam its docstring reserves for supplying cross-block
+# coefficient ghosts. The validation it skips already ran on the global operator.
+_slab_op(D::Diffusion, lg::AbstractGrid) = Diffusion(lg, _slab_field(D.κ, lg), D.avg)
 _slab_op(L::Added, lg::AbstractGrid) = Added(_slab_op(L.a, lg), _slab_op(L.b, lg))
 _slab_op(L::Scaled, lg::AbstractGrid) = Scaled(_slab_op(L.op, lg), L.α)
 _slab_op(L::Composed, lg::AbstractGrid) = Composed(_slab_op(L.a, lg), _slab_op(L.b, lg))
@@ -252,31 +280,51 @@ _slab_op(L::AdjointOp, lg::AbstractGrid) = AdjointOp(_slab_op(L.op, lg))
 """
     _slab_field(f::Field, lg::AbstractGrid) -> Field
 
-The slab window of a global field, as a field on `lg` (internal).
+The slab window of a global field, **ghosts included**, as a field on `lg`
+(internal).
 
 A *restriction*, never a re-evaluation — slicing is exact by construction and
-needs nothing from the caller. Ghosts are left zero: every field-valued parameter
-in the whitelist is read pointwise at the cell being written
-(`_coeff_values(c::Field)` is `interior(c)`), so a parameter's ghosts are never
-consulted. That is what lets a coefficient be partitioned with no exchange of
-its own.
+needs nothing from the caller. Slab padded index `p` is global padded index
+`first(local_range[d]) - 1 + p`, so one padded window is the whole job, and it
+lands every ghost on the value it should hold with no per-face logic:
 
-Its pullback, should distributed AD ever arrive, is the transpose gather — a
-scatter-add of each partition's `∂/∂κ` into the global coefficient over owned
-ranges, with no ghost section. Not implemented: what blocks distributed AD is the
-transport, not this rewrite.
+  - an `Interface` ghost maps onto a global *interior* plane — the neighbour's
+    value;
+  - a physical ghost on an end slab maps onto a global ghost plane, verbatim;
+  - a periodic cut maps onto the global ghost planes too, so a wrap-around
+    neighbour needs no special case;
+  - a transverse dimension has `local_range == 1:n`, so the window is that
+    dimension's whole padded extent.
+
+The window is `first(zr):(last(zr) + 2h) ⊆ 1:(n + 2h)`, so it never needs
+clamping. What the ghosts *mean* is the consumer's business, and the two
+consumers differ. `ScalingOp` reads its coefficient **pointwise at the cell
+being written** — `_coeff_values(c::Field)` is `interior(c)` — so its ghosts are
+never consulted and may hold anything. `Diffusion` averages κ to faces, so it
+reads κ one cell past every face of the interior, a partition cut included, where
+that cell belongs to the neighbour; it needs the `Interface` ghosts to be the
+neighbour's κ and the physical ghosts to be the extension `diffusion` already
+applied to the global κ — an even mirror at a wall, the wrap under `Periodic`.
+Both arrive in the same window, which is why neither consumer costs any
+communication of its own. The one precondition — that `f`'s ghosts are already
+extended for `f.grid` — is `diffusion`'s to supply, through `_extended_coeff`;
+what `_check_one_grid` enforces is that `f.grid` *is* the grid being partitioned,
+so the window is never taken with a `local_range` that means nothing on `f`.
+
+Its pullback, should distributed AD ever arrive, is the transpose of the window —
+a scatter-add of each partition's `∂/∂κ` into the global coefficient, `Interface`
+ghosts landing on the neighbour's interior cells and physical ghosts on the global
+ghost planes for `fill_coefficient_ghosts!`'s own transpose to fold. Not
+implemented: what blocks distributed AD is the transport, not this rewrite.
 """
 function _slab_field(f::Field{L}, lg::AbstractGrid{N}) where {L,N}
     f.grid === lg && return f
-    # The OWNED interior window, and every dimension of it. Slicing the padded
-    # window instead would shift every partition after the first by `halo` planes,
-    # which is invisible unless the parameter varies along the cut; and taking
-    # only the cut dimension would drop the transverse ranges a 3-D grid carries.
-    win = ntuple(d -> lg.local_range[d] .- (first(f.grid.local_range[d]) - 1), Val(N))
-    lf = Field{L}(similar(f.data, padded_size(lg)), lg)
-    fill!(lf.data, zero(eltype(lf.data)))
-    interior(lf) .= view(interior(f), win...)
-    return lf
+    h = halo_width(lg)
+    win = ntuple(Val(N)) do d
+        r = lg.local_range[d] .- (first(f.grid.local_range[d]) - 1)
+        first(r):(last(r) + 2 * h[d])
+    end
+    return Field{L}(copy(view(f.data, win...)), lg)
 end
 
 #--------------------------------------------------------------------------------# Backend primitives (no methods in core)

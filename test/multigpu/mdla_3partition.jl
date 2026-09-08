@@ -249,6 +249,83 @@ mp_grid(cutbc) = CartesianGrid(
             end
             @test allequal(niters)
         end
+
+        #------------------------------------------------------------# Slice 2c
+
+        # The diffusion leaf reads κ across BOTH cut faces of the middle slab, each
+        # owned by a different neighbour — the one configuration where a padded
+        # window right at one seam and wrong at the other is visible.
+        @testset "3-partition diffusion coefficient upload" begin
+            for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                g = mp_grid(cutbc)
+                κ = set!(scalar_field(g), mp_coeff)
+                Dg = diffusion(g, κ)
+                P = prepare_distributed(laplacian(g) * Dg, 3)
+                locals = partition_grid(g, 3)
+                for d in 1:3
+                    # Composed(laplacian, diffusion) ⇒ the inner factor `b` is the leaf
+                    Dd = P.tree.b.ops[d]
+                    @test Dd isa MatrixFreeOperators.Diffusion
+                    @test Dd.κ.data isa CuArray
+                    @test Array(Dd.κ.data) ==
+                        MatrixFreeOperators._slab_field(Dg.κ, locals[d]).data
+                    # every ghost carries a value: a neighbour's κ at each cut, the
+                    # even mirror or the wrap at a physical face
+                    @test !any(iszero, Array(Dd.κ.data))
+                end
+            end
+        end
+
+        @testset "3-partition diffusion forward parity" begin
+            rng = Random.MersenneTwister(79)
+            for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                g = mp_grid(cutbc)
+                n = prod(local_size(g))
+                xflat = rand(rng, n)
+                κ = set!(scalar_field(g), mp_coeff)
+                for L in (
+                    diffusion(g, κ),
+                    diffusion(g, κ; averaging=HarmonicMean()),
+                    laplacian(g) * diffusion(g, κ),
+                    2.0 * diffusion(g, κ) + identity_op(),
+                )
+                    P1 = prepare_distributed(L, 1)
+                    y1 = MultiDeviceVector(zeros(n), P1.spec)
+                    mul!(y1, P1, MultiDeviceVector(copy(xflat), P1.spec))
+
+                    P3 = prepare_distributed(L, 3)
+                    y3 = MultiDeviceVector(zeros(n), P3.spec)
+                    mul!(y3, P3, MultiDeviceVector(copy(xflat), P3.spec))
+                    @test gather(y3) == gather(y1)
+                end
+            end
+        end
+
+        @testset "3-partition diffusion adjoint identity" begin
+            rng = Random.MersenneTwister(83)
+            for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                g = mp_grid(cutbc)
+                n = prod(local_size(g))
+                κ = set!(scalar_field(g), mp_coeff)
+                for L in (diffusion(g, κ), laplacian(g) * diffusion(g, κ))
+                    P = prepare_distributed(L, 3)
+                    x = MultiDeviceVector(rand(rng, n), P.spec)
+                    y = MultiDeviceVector(rand(rng, n), P.spec)
+                    Lx = MultiDeviceVector(zeros(n), P.spec)
+                    mul!(Lx, P, x)
+                    x̄ = MultiDeviceVector(zeros(n), P.spec)
+                    MDLA_EXT_MP._mul_adjoint!(x̄, P, y)
+                    @test isapprox(dot(Lx, y), dot(x, x̄); rtol=1e-12)
+                    if L isa MatrixFreeOperators.Diffusion
+                        # A real κ makes the leaf its own transpose, so the middle
+                        # slab's two-owner gather must reproduce the forward action.
+                        Ly = MultiDeviceVector(zeros(n), P.spec)
+                        mul!(Ly, P, y)
+                        @test isapprox(gather(x̄), gather(Ly); rtol=1e-12)
+                    end
+                end
+            end
+        end
     else
         @test_skip "MDLA 3-partition — needs ≥ 3 CUDA devices"
     end

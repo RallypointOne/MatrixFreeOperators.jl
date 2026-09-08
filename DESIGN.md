@@ -574,14 +574,15 @@ nothing global materialized on one device.
 
 A coefficient needs no exchange of its own: `ScalingOp` reads it *pointwise at the
 cell being written*, so `_slab_op`/`_slab_field` (core, `src/distributed.jl`) slice
-the interior onto each slab and nothing else is required. Slicing happens on the
+its window onto each slab and nothing else is required. Slicing happens on the
 host and the slab is uploaded, so a coefficient the user had already moved to a
 device never becomes a cross-device copy. Only field-carrying leaves differ per
 partition, so `DistLeaf`/`DistAdjoint` hold a per-partition operator vector that
 `identity.` narrows — shared leaves stay concretely typed and statically
 dispatched, and the slice-1/2a hot path is untouched. Complex coefficients stay
-rejected (their adjoint rebuilds `conj(κ)` per call, an allocation per partition
-per Krylov iteration), as does `Advection`.
+rejected — the distributed vectors are real, typed from the grid spacing, so a
+complex product has nowhere to land and the guard turns an `InexactError` into a
+named error — as does `Advection`.
 
 `_dist_boundary_rhs!` is a third walk over the same `DistNode` tree, mirroring
 `boundary_rhs`'s recursion. Leaf lifts are slab-local for free — the inhomogeneous
@@ -602,12 +603,58 @@ grids, where `first(local_range[d]) == 1`. The user-facing surface is
 because only it shadows a single-device function; everything downstream dispatches
 on `P` and is named for what it computes, not for where it runs.
 
+*Built (issue #57, slice 2c):* the compact flux-form `Diffusion` leaf on slabs —
+the first allowlisted operator whose coefficient is read at a *neighbour* rather
+than pointwise, so an interior-only slice with zeroed ghosts would not serve it.
+
+It still costs no communication, and the reason is worth stating because it is
+what makes stage 2 of #56 the cheap stage. `_slab_op` runs on the host holding
+the **global** κ, whose ghosts `diffusion` already extended by an even mirror and
+a periodic wrap at construction. Slab padded index `p` is global padded index
+`first(local_range[d]) - 1 + p`, so one *padded* window — which is what
+`_slab_field` now slices for every coefficient — lands every ghost on the value
+it should hold with no per-face logic: an `Interface` ghost onto a global interior plane (the
+neighbour's κ), a wall ghost onto the global mirror, a periodic cut onto the
+global wrap. Widening the slice is a setup-time indexing change, not a transport,
+so the per-apply exchange count is unchanged from the `Laplacian` baseline — the
+"one halo exchange per application" invariant holds trivially rather than by
+construction. Two preconditions make that legitimate rather than lucky. κ is
+*constant through a solve*, so the setup-time slice is never owed again per
+iteration. And the process running `_slab_op` holds the **global** κ —
+`prepare_distributed` adapts the whole tree to the host before slicing — which is
+a property of a single-node backend, not of the design; see *Owed by the next
+backend* below.
+
+There is one slice, not a pointwise one and a stencil one: `ScalingOp` takes the
+same padded window, and because it reads its coefficient pointwise the ghosts it
+now carries are inert (a CPU testset poisons them with `NaN`). The real-eltype
+restriction in `_partitionable_coeff` carries over unchanged, for the same reason
+— the distributed vectors are real. The leaf's mechanical transpose — the
+`adjoint_gather!` branch `apply_adjoint!` takes on a slab's `Interface` faces,
+scattering cotangents into ghosts for the slab reduction to fold — is reached only
+through the test-facing `_mul_adjoint!`. A Krylov `mul!` never sees it:
+`_push_adjoints` folds `adjoint(Diffusion)` to the conjugated leaf at setup, which
+for real κ is the leaf itself, running forward.
+
 *Deferred:* rank-changing intermediates (`Divergence ∘ Gradient` needs its own
 `ncomp = N` spec and ghost layout — `_slab_ghost_layout` and `_owned_flat_range`
 already take the kwarg), transfer chains (factors on two grids, each needing a
 consistent cut), and distributed autodiff (blocked by the transport, not by the
 localization rewrite — `_slab_field`'s pullback is the transpose gather). All
 rejected loudly.
+
+*Owed by the next backend:* the setup-time κ exchange. On ImplicitGlobalGrid
+(§10.4's resolved next backend, #46) no rank holds the global κ, so `_slab_field`
+has nothing to window and the cut-plane coefficient ghosts must be *exchanged*,
+once, at prepare time. The seams already fit: build each rank's leaf through the
+inner constructor from a rank-local κ whose physical ghosts
+`fill_coefficient_ghosts!` has mirrored — it leaves `Interface` ghosts untouched —
+then run one `_dist_scatter!`-shaped exchange over those `Interface` planes at
+setup, and the per-apply exchange count stays at the `Laplacian` baseline.
+Reusing `_slab_op(::Diffusion)` per rank with a rank-local κ would not do: it
+throws on an out-of-range `view`, or with matching sizes silently leaves the
+cut-plane ghosts at zero or the mirror — `κ_I/2` face coefficients under
+`ArithmeticMean`, `0` under `HarmonicMean` — and no guard here would catch it.
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
 - *Explicit* solvers (RK4, SSPRK, …): provide a trivial RHS adapter
@@ -629,7 +676,7 @@ rejected loudly.
 1. `CartesianGrid{N}` — uniform, single device, collocated, with periodic +
    Dirichlet + Neumann BCs; `halo_update!` present as a no-op.
 2. `Field{Center}` over device arrays.
-3. Operator algebra: leaves `Laplacian`, `Derivative`, `Gradient`, `Divergence`, `ScalingOp`, `IdentityOp`, `Advection`; combinators `Added`, `Composed`, `Scaled`, `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` + `apply_adjoint!`; `mul!`/`size`/`eltype`; `Adapt` support. `ScalingOp` (pointwise ×κ(x)) is the leaf that makes Decision B concrete: it carries a differentiable coefficient *field*, it is the genuine `isdiagonal` / `isselfadjoint` instance (Jacobi smoother target), and variable-coefficient diffusion falls out of the algebra as `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test. (Caveat: the composed form has a wider effective stencil and collocated odd-even quirks. **Resolved (2026-08-14): the fused `∇·(κ∇u)` leaf landed as `Diffusion`/`diffusion(g, κ)`** (issue #48), following the §4a custom-fused-leaf pattern with the exported `diffusion_stencil` primitive. It is the compact flux form — face-averaged κ, arithmetic or harmonic — and it is exactly symmetric for real κ, declares `operator_diagonal` (which the composed form cannot), and couples adjacent solution cells, removing odd–even decoupling in u. Coefficient identifiability remains separate: arithmetic averaging cancels a checkerboard perturbation of κ at every interior face, leaving the entire operator unchanged on periodic grids with even cell counts in every dimension or under homogeneous Neumann walls. Additional excitations cannot distinguish those coefficients; Dirichlet wall coefficients can break the ambiguity. The composition stays valid and stays the algebra stress-test; the leaf takes 115 µs against the composition's 337 µs for one 256² prepared `mul!`, and 1.7× the `Laplacian`'s 67.5 µs for 2× the memory traffic. `CartesianGrid` only for now — `BlockForest` and distributed slabs are staged in #54.)
+3. Operator algebra: leaves `Laplacian`, `Derivative`, `Gradient`, `Divergence`, `ScalingOp`, `IdentityOp`, `Advection`; combinators `Added`, `Composed`, `Scaled`, `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` + `apply_adjoint!`; `mul!`/`size`/`eltype`; `Adapt` support. `ScalingOp` (pointwise ×κ(x)) is the leaf that makes Decision B concrete: it carries a differentiable coefficient *field*, it is the genuine `isdiagonal` / `isselfadjoint` instance (Jacobi smoother target), and variable-coefficient diffusion falls out of the algebra as `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test. (Caveat: the composed form has a wider effective stencil and collocated odd-even quirks. **Resolved (2026-08-14): the fused `∇·(κ∇u)` leaf landed as `Diffusion`/`diffusion(g, κ)`** (issue #48), following the §4a custom-fused-leaf pattern with the exported `diffusion_stencil` primitive. It is the compact flux form — face-averaged κ, arithmetic or harmonic — and it is exactly symmetric for real κ, declares `operator_diagonal` (which the composed form cannot), and couples adjacent solution cells, removing odd–even decoupling in u. Coefficient identifiability remains separate: arithmetic averaging cancels a checkerboard perturbation of κ at every interior face, leaving the entire operator unchanged on periodic grids with even cell counts in every dimension or under homogeneous Neumann walls. Additional excitations cannot distinguish those coefficients; Dirichlet wall coefficients can break the ambiguity. The composition stays valid and stays the algebra stress-test; the leaf takes 115 µs against the composition's 337 µs for one 256² prepared `mul!`, and 1.7× the `Laplacian`'s 67.5 µs for 2× the memory traffic. `CartesianGrid` and partition slabs today — the slab path is slice 2c of #56, recorded in §7; `BlockForest` is staged in #58.)
 4. Array-level authoring; device-agnostic via `get_backend`/`Adapt`; CI on CPU,
    and CUDA where available.
 5. AD: works automatically (Enzyme + Mooncake) on array-level leaves for field +

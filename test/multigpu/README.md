@@ -21,8 +21,10 @@ against emulated exchange semantics; these run it on real `scatter!`/`reduce!`.
 Covered: middle-slab topology, forward parity vs the 1-partition operator (bitwise
 `==`), the `α`/`β` path, the adjoint identity `⟨Lx,y⟩ = ⟨x,Lᵀy⟩`, CPU
 `apply_adjoint!` parity, and distributed `Krylov.cg` parity — for the slice-1
-whitelist, for `Composed`/`AdjointOp` (slice 2a), and for `Field` coefficients plus
-distributed `boundary_rhs` and RHS assembly (slice 2b).
+whitelist, for `Composed`/`AdjointOp` (slice 2a), for `Field` coefficients plus
+distributed `boundary_rhs` and RHS assembly (slice 2b), and for the compact
+`Diffusion` leaf, whose κ is read across *both* cut faces of the middle slab
+(slice 2c).
 
 Three partitions matter twice over for slice 2b: the middle slab is the only place a
 coefficient slice can be correct at one seam and wrong at the other, and the only

@@ -289,3 +289,41 @@ a bug.
   points attach, and the guards were exercised through the real `prepare_distributed`: field
   coefficients now pass, while `Advection`, a cross-grid coefficient, rank changers and transfer
   operators are rejected with messages naming the reason.
+
+# Slice 2c (added 2026-09-08): the compact `Diffusion` leaf on slabs
+
+`feat/distributed-diffusion-leaf` (PR #66) closes #57. Same drill, same gated files, same hardware ladder. CPU side was green on the PR's own commit `b41d731`; the GPU testsets are — for the third slice running — **written but unrun**. Three unexecuted GPU slices now stack (2a, 2b, 2c), and the PR's review (`handoffs/2026-09-08-1104-pr66-review-decisions.md`, finding 2) rated that the PR's most severe gap after the κ-grid guard. Schedule the run.
+
+## What changed
+
+One thing, in two halves. `_slab_field` (`src/distributed.jl`) now slices the **padded** window of a global coefficient for every field parameter — offset-correct, slab padded index `p` is global padded index `first(local_range[d]) - 1 + p` — so an `Interface` ghost lands on the neighbour's interior κ, a wall ghost on the even mirror `diffusion` already applied, a periodic cut on the wrap. `_slab_op(::Diffusion)` builds the slab leaf through the **inner** constructor from that window; `diffusion(g, κ)` itself still refuses `Interface` faces. No new exchange and no new backend seam: the upload is `Adapt.adapt(CuArray, Diffusion(lg, <padded window>, avg))`, the same shape as the ScalingOp upload one slice earlier.
+
+The review's fixes on top of the PR commit: `_check_one_grid` now also checks κ's grid for a `Diffusion` (the inner constructor accepted a κ from anywhere), the two slice helpers became one, and the real-eltype rationale was corrected — see Decisions.
+
+## New GPU testsets to watch, and what a failure in each would mean
+
+`test/mdla_gpu.jl`:
+
+- **`the diffusion coefficient is uploaded with its cut-plane ghosts`** — the whole padded slab against `_slab_field(Dg.κ, locals[d]).data`, plus `!any(iszero)`. The window is proven cell by cell on CPU, so a failure here is the upload: a shape, or a `view` copied on the wrong device.
+- **`newly distributable operators are accepted`** — `diffusion(g, κ)`, its `HarmonicMean` twin, `laplacian * diffusion`, and `2.0 * diffusion + identity_op()` go through `prepare_distributed`. A throw here is a guard or a compile failure in the leaf's device broadcast, not numerics.
+- **`Field coefficient: 2-partition forward parity`** — bitwise vs 1 partition for the same four. A mismatch on partition 2 only is the padded window off by `halo`; on both partitions, the device stencil.
+- **`Field coefficient: adjoint identity and transpose structure`** — `diffusion(g, κ)` and `laplacian * diffusion` through `_mul_adjoint!`, plus dense structure on the small grid. This is the first GPU execution of `apply_adjoint!(::Diffusion)`'s `adjoint_gather!` branch with a coefficient array: a failure the CPU twin does not show is the masked gather on device.
+- **`distributed boundary_rhs parity`** and **`Krylov.cg with an inhomogeneous RHS assembled distributed`** — `diffusion` and `laplacian * diffusion` entries in the lift, and `-diffusion` under both averagings as the SPD operator for CG. Bitwise RHS and `allequal(niters)`, as in 2b.
+
+`test/multigpu/mdla_3partition.jl` (≥3 GPUs) gains **`3-partition diffusion coefficient upload`**, **`3-partition diffusion forward parity`**, and **`3-partition diffusion adjoint identity`**. The middle slab reads κ across both cut faces from two different owners: a padded window right at one seam and wrong at the other is visible here and nowhere with 2 partitions.
+
+## The one genuinely new GPU code path
+
+The leaf's forward stencil is a broadcast over **two** arrays (`x.data` and κ). `test/device.jl` lists `diffusion` in its device-parity ops behind `MFO_TEST_GPU`, so it may have compiled on CUDA before; nothing in CI has run it, and the slab adjoint — `adjoint_gather!` with a κ-capturing closure — has never run on a device at all. If either fails to compile on device, the fix is a KernelAbstractions `@kernel` for the leaf (DESIGN §1.A's escape hatch), not a change to the slicing.
+
+## Decisions & conclusions (don't relitigate)
+
+- **The slice-2b rationale for rejecting complex coefficients (above) was wrong**, and the review corrected it everywhere it was written. `_push_adjoints` folds `adjoint(ScalingOp)`/`adjoint(Diffusion)` to the conjugated leaf once at setup; nothing rebuilds `conj.(κ)` per Krylov iteration. The real blocker is that both backends type every slab and flat vector from `eltype(spacing(g))`, so a complex product has nowhere to land. The guard stays; the reason changed.
+- **The slab adjoint is reached only through `_mul_adjoint!`.** A Krylov `mul!` gets the folded conjugate leaf, which for real κ runs forward. So the `adjoint_gather!` cost on slabs (~5.7× the forward stencil on CPU, the reviewer's measurement) is a test-path cost today — tracked in #77, not fixed in the PR.
+- **One padded slice, not two.** `_slab_coeff_field` was merged into `_slab_field`; `ScalingOp` takes the padded window too and its ghosts are inert (NaN-poisoned in a CPU testset).
+- **κ's grid is guarded.** `_grid_mismatch(::Diffusion, g)` checks both `D.grid` and `D.κ.grid`; the inner constructor is the only way to get them to differ, and a CPU testset does exactly that with κ on a larger and on a smaller grid.
+
+## Verified so far (no GPU)
+
+- The CPU suite was **not** re-run for the review fixes (standing instruction: no test runs unless asked). Every edited Julia file parses. The review's fixes add one CPU testset (κ on another grid), merge two into one, add one adjoint allocation entry, and reword comments.
+- The reviewer verified the κ-grid hole by probe on `b41d731`: κ on 12×10 with the operator on 8×6 passed `prepare_distributed(D, 2)` and produced (37+38)/2 wall-face coefficients instead of 37 with no error; κ on 4×6 died with `BoundsError`. Both constructions now throw `ArgumentError` naming `Diffusion` and "different grid" at the guard.

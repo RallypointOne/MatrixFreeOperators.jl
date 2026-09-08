@@ -169,8 +169,9 @@ would go untested precisely where they matter. It follows the package's "traits
 default to the weaker claim" rule: an operator is distributable only if it says
 so, and a forgotten declaration falls through to the fallback and throws.
 
-Distributable today: `Laplacian`, `Derivative`, `IdentityOp`, and `ScalingOp`
-with either a `Number` or a real-valued `Field` coefficient, combined under
+Distributable today: `Laplacian`, `Derivative`, `IdentityOp`, `ScalingOp` with
+either a `Number` or a real-valued `Field` coefficient, and `Diffusion` with a
+real-valued `Field` coefficient under either averaging policy, combined under
 `Scaled`, `Added`, `Composed`, and `adjoint`, all on one grid. Everything else:
 
 ```
@@ -178,9 +179,9 @@ with either a `Number` or a real-valued `Field` coefficient, combined under
   ─────────────────────────────── ────────────────────────────────────────────
   Advection                       the velocity field is bound to the GLOBAL
                                   grid; it must be sliced onto the slabs first
-  ScalingOp, complex coefficient  its adjoint rebuilds conj(κ) per call, which
-                                  would allocate a full array per partition
-                                  per Krylov iteration
+  a complex coefficient           the distributed vectors are real (typed from
+  (ScalingOp or Diffusion)        the grid spacing), so its product has nowhere
+                                  to land; named here instead of an InexactError
   ScalingOp on a BlockField       that is a forest's coefficient, not a slab's
   a coefficient on another grid   it would be sliced onto slabs of a grid it
                                   does not live on
@@ -194,12 +195,28 @@ with either a `Number` or a real-valued `Field` coefficient, combined under
 The error names the **first** undistributable node it finds, not the tree root,
 so a large expression points at its actual culprit rather than at itself.
 
-A `Field` coefficient works because it is read **pointwise at the cell being
-written**, so each partition needs nothing but the interior slice of it — no
-ghost exchange of its own, no second `GhostExchange`. The slicing happens on the
-host and the slab is then uploaded, deliberately: slicing a coefficient the user
-had already moved to device 0 would be a cross-device copy, which is exactly the
-operation MDLA's peer-to-peer probe exists to guard.
+A `ScalingOp`'s `Field` coefficient works because it is read **pointwise at the
+cell being written**, so each partition needs nothing but its own window of it —
+no ghost exchange of its own, no second `GhostExchange`. The slicing happens
+on the host and the slab is then uploaded, deliberately: slicing a coefficient the
+user had already moved to device 0 would be a cross-device copy, which is exactly
+the operation MDLA's peer-to-peer probe exists to guard.
+
+`Diffusion` averages its coefficient to *faces*, so it does read κ across the cut
+— and still needs no exchange, for a reason worth spelling out. Localization runs
+on the host with the **global** κ in hand, and that array already carries extended
+ghosts: `diffusion` fills them at construction, by an even mirror at a wall and a
+periodic wrap, never by `apply_bc!`. So the slab's coefficient is one *padded*
+window of it, and every ghost lands on the value it should hold at once — an
+`Interface` ghost onto a global interior plane (the neighbour's κ), a wall ghost
+onto the global mirror, a periodic cut onto the global wrap. Widening a slice is a
+setup-time indexing change, not a transport; the per-apply exchange count is
+unchanged from the `Laplacian` baseline. Two things make this legitimate rather
+than lucky: κ is *constant through a solve*, so the setup-time slice is never
+owed again, and the host running the slice holds the *global* κ. The second is a
+single-node property — a multi-node backend, where no rank holds the global
+coefficient, would exchange the cut-plane κ ghosts once at prepare time instead;
+the design document's §7 records what that backend owes.
 
 ## Inhomogeneous boundaries assemble slab-locally too
 
@@ -284,7 +301,8 @@ health check and the host-side remedy.
 
 Ships today: slab partitioning of a `CartesianGrid`, scalar fields,
 `Laplacian`/`Derivative`/`IdentityOp`/`ScalingOp` (`Number` or real `Field`
-coefficient) under `Scaled`/`Added`/`Composed`/`adjoint` on one grid, the mid-tree
+coefficient)/`Diffusion` (real `Field` coefficient, either averaging policy)
+under `Scaled`/`Added`/`Composed`/`adjoint` on one grid, the mid-tree
 scatter and its matched reduction, distributed `boundary_rhs` and right-hand-side
 assembly, distributed `Krylov.cg`, and bitwise forward parity across partition
 counts. Deliberately deferred: rank-changing intermediates and transfer chains,
