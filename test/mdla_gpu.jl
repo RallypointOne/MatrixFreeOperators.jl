@@ -415,11 +415,10 @@ end
             @test Dd isa MatrixFreeOperators.Diffusion
             @test Dd.κ.data isa CuArray
             @test size(Dd.κ.data) == MatrixFreeOperators.padded_size(locals[d])
-            win = ntuple(2) do dd
-                lr = locals[d].local_range[dd]
-                first(lr):(last(lr) + 2 * halo_width(locals[d])[dd])
-            end
-            @test Array(Dd.κ.data) == collect(view(Dg.κ.data, win...))
+            # The window itself is proven cell by cell on CPU
+            # (`test/partitioning.jl`); what the extension adds is the upload, so
+            # the oracle is the CPU slice, not the window formula typed again.
+            @test Array(Dd.κ.data) == MatrixFreeOperators._slab_field(Dg.κ, locals[d]).data
             # Every ghost carries a real value: the neighbour's κ at the cut, the
             # even mirror at a wall. A zero anywhere means a ghost was dropped.
             @test !any(iszero, Array(Dd.κ.data))
