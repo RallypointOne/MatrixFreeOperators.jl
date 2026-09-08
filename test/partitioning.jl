@@ -19,38 +19,20 @@ _field(g, xflat) = flat_to_interior!(scalar_field(g, eltype(xflat)), xflat)
 # the MDLA extension — re-deriving it here would let the two silently decouple.
 halo_plane_view(f::Field, plane::Int) = MatrixFreeOperators._halo_plane_view(f, plane)
 
-# Every field-coefficient ScalingOp in a (possibly prepared) tree, so the slice-2b
-# testsets can reach in and poke at what `_slab_op` built.
+# Every leaf of one kind in a (possibly prepared) tree, so the slice-2b/2c
+# testsets can reach in and poke at what `_slab_op` built. One walk driven by a
+# predicate: a combinator forgotten here is forgotten for every leaf kind at
+# once, rather than making one walk return `()` so its poison loop passes
+# vacuously.
 let M = MatrixFreeOperators
-    global _scaling_leaves
-    _scaling_leaves(S::M.ScalingOp{<:Field}) = (S,)
-    _scaling_leaves(L::M.Scaled) = _scaling_leaves(L.op)
-    _scaling_leaves(L::M.AdjointOp) = _scaling_leaves(L.op)
-    _scaling_leaves(L::M.PreparedAdjoint) = _scaling_leaves(L.op)
-    _scaling_leaves(L::M.Added) = (_scaling_leaves(L.a)..., _scaling_leaves(L.b)...)
-    _scaling_leaves(L::M.Composed) = (_scaling_leaves(L.a)..., _scaling_leaves(L.b)...)
-    _scaling_leaves(L::M.PreparedComposed) =
-        (_scaling_leaves(L.a)..., _scaling_leaves(L.b)...)
-    _scaling_leaves(::M.AbstractOperator) = ()
+    global _leaves
+    _leaves(L::Union{M.Scaled,M.AdjointOp,M.PreparedAdjoint}, keep) = _leaves(L.op, keep)
+    _leaves(L::Union{M.Added,M.Composed,M.PreparedComposed}, keep) =
+        (_leaves(L.a, keep)..., _leaves(L.b, keep)...)
+    _leaves(L::M.AbstractOperator, keep) = keep(L) ? (L,) : ()
 end
-
-# The same walk for Diffusion leaves (slice 2c). A separate function rather than a
-# widened `_scaling_leaves`, because the two carry their coefficient under
-# different names — `S.coeff` vs `D.κ` — and every existing caller indexes the
-# former.
-let M = MatrixFreeOperators
-    global _diffusion_leaves
-    _diffusion_leaves(D::M.Diffusion) = (D,)
-    _diffusion_leaves(L::M.Scaled) = _diffusion_leaves(L.op)
-    _diffusion_leaves(L::M.AdjointOp) = _diffusion_leaves(L.op)
-    _diffusion_leaves(L::M.PreparedAdjoint) = _diffusion_leaves(L.op)
-    _diffusion_leaves(L::M.Added) = (_diffusion_leaves(L.a)..., _diffusion_leaves(L.b)...)
-    _diffusion_leaves(L::M.Composed) =
-        (_diffusion_leaves(L.a)..., _diffusion_leaves(L.b)...)
-    _diffusion_leaves(L::M.PreparedComposed) =
-        (_diffusion_leaves(L.a)..., _diffusion_leaves(L.b)...)
-    _diffusion_leaves(::M.AbstractOperator) = ()
-end
+_scaling_leaves(L) = _leaves(L, Base.Fix2(isa, MatrixFreeOperators.ScalingOp{<:Field}))
+_diffusion_leaves(L) = _leaves(L, Base.Fix2(isa, MatrixFreeOperators.Diffusion))
 
 function dist_apply_emulated(L, g, parts, ghost_globals, plans, xflat)
     T = eltype(xflat)
