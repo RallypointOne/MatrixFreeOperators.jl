@@ -383,6 +383,59 @@
         @test abs(m1 - m0) > 1e6 * eps() * s0
     end
 
+    # The reconstruction is written over Val(N); 2D cannot tell a per-axis index
+    # slip from a correct one on the axis it never varies, and the 2ᴺ-children
+    # telescoping has to hold with N = 1 (one child pair) and N = 3 (eight
+    # children) alike. Same sequence as above — refine, cascade, coarsen back —
+    # with dimension-generic predicates and a curved function in every axis.
+    @testset "Σ V·u across regrid holds in 1D and 3D" begin
+        cases = (
+            (
+                CartesianGrid(((0.0, 1.0),), (16,); bc=((Dirichlet(), Neumann()),)),
+                (4,),
+                x -> sin(3 * x[1]) + x[1]^2,
+            ),
+            (
+                CartesianGrid(
+                    ((0.0, 1.0), (0.0, 1.0), (0.0, 1.0)), (8, 8, 8);
+                    bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann()), (Periodic(), Periodic())),
+                ),
+                (4, 4, 4),
+                x -> sin(3 * x[1]) * cos(2 * x[2]) + x[3]^2 + 0.5 * x[2],
+            ),
+        )
+        corner(b) = all(e -> e[1] < 0.25, b.grid.extent)
+        inner(b) = all(e -> e[2] < 0.26, b.grid.extent)
+        for (base, bs, fun) in cases, pol in (Conservative(), SlopeLimited())
+            bf = BlockForest(base; blocksize=bs, maxlevel=2)
+            u = set!(scalar_field(bf; transfer=pol), fun)
+            nl0 = MFO.nleaves(bf)
+            m0, s0 = field_mass(u, bf)
+            u = regrid!(u; refine=corner)
+            @test MFO.nleaves(bf) > nl0
+            m1, _ = field_mass(u, bf)
+            @test abs(m1 - m0) ≤ 1e3 * eps() * s0
+            u = regrid!(u; refine=inner)
+            @test length(unique(map(k -> k.level, bf.forest.leaves))) == 3   # cascade fired
+            m2, _ = field_mass(u, bf)
+            @test abs(m2 - m0) ≤ 1e3 * eps() * s0
+            @test MFO._transfer_policy(u) === pol
+            u = regrid!(u; refine=Returns(false), coarsen=Returns(true))
+            u = regrid!(u; refine=Returns(false), coarsen=Returns(true))
+            @test MFO.nleaves(bf) == nl0
+            m3, _ = field_mass(u, bf)
+            @test abs(m3 - m0) ≤ 1e3 * eps() * s0
+
+            # negative control in the same dimension
+            bfi = BlockForest(base; blocksize=bs, maxlevel=2)
+            ui = set!(scalar_field(bfi), fun)
+            mi0, si0 = field_mass(ui, bfi)
+            ui = regrid!(ui; refine=corner)
+            mi1, _ = field_mass(ui, bfi)
+            @test abs(mi1 - mi0) > 1e6 * eps() * si0
+        end
+    end
+
     @testset "conservative policies: exactness, bounds, vectors, round-trips" begin
         base = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=dirbc)
 
