@@ -179,9 +179,9 @@ real-valued `Field` coefficient under either averaging policy, combined under
   ─────────────────────────────── ────────────────────────────────────────────
   Advection                       the velocity field is bound to the GLOBAL
                                   grid; it must be sliced onto the slabs first
-  a complex coefficient           the adjoint rebuilds conj(κ) per call, which
-  (ScalingOp or Diffusion)        would allocate a full array per partition
-                                  per Krylov iteration
+  a complex coefficient           the distributed vectors are real (typed from
+  (ScalingOp or Diffusion)        the grid spacing), so its product has nowhere
+                                  to land; named here instead of an InexactError
   ScalingOp on a BlockField       that is a forest's coefficient, not a slab's
   a coefficient on another grid   it would be sliced onto slabs of a grid it
                                   does not live on

@@ -580,8 +580,9 @@ device never becomes a cross-device copy. Only field-carrying leaves differ per
 partition, so `DistLeaf`/`DistAdjoint` hold a per-partition operator vector that
 `identity.` narrows — shared leaves stay concretely typed and statically
 dispatched, and the slice-1/2a hot path is untouched. Complex coefficients stay
-rejected (their adjoint rebuilds `conj(κ)` per call, an allocation per partition
-per Krylov iteration), as does `Advection`.
+rejected — the distributed vectors are real, typed from the grid spacing, so a
+complex product has nowhere to land and the guard turns an `InexactError` into a
+named error — as does `Advection`.
 
 `_dist_boundary_rhs!` is a third walk over the same `DistNode` tree, mirroring
 `boundary_rhs`'s recursion. Leaf lifts are slab-local for free — the inhomogeneous
@@ -624,11 +625,12 @@ There is one slice, not a pointwise one and a stencil one: `ScalingOp` takes the
 same padded window, and because it reads its coefficient pointwise the ghosts it
 now carries are inert (a CPU testset poisons them with `NaN`). The real-eltype
 restriction in `_partitionable_coeff` carries over unchanged, for the same reason
-— `_conj_op(::Diffusion)` rebuilds `conj.(κ)` per call. This is also the first
-production path to reach the leaf's mechanical transpose: a slab carries
-`Interface` faces, so `apply_adjoint!` takes the `adjoint_gather!` branch that
-scatters cotangents into ghosts for the slab reduction to fold, rather than the
-self-adjoint shortcut an all-physical grid takes.
+— the distributed vectors are real. The leaf's mechanical transpose — the
+`adjoint_gather!` branch `apply_adjoint!` takes on a slab's `Interface` faces,
+scattering cotangents into ghosts for the slab reduction to fold — is reached only
+through the test-facing `_mul_adjoint!`. A Krylov `mul!` never sees it:
+`_push_adjoints` folds `adjoint(Diffusion)` to the conjugated leaf at setup, which
+for real κ is the leaf itself, running forward.
 
 *Deferred:* rank-changing intermediates (`Divergence ∘ Gradient` needs its own
 `ncomp = N` spec and ghost layout — `_slab_ghost_layout` and `_owned_flat_range`

@@ -1237,9 +1237,9 @@ end
             @test err isa ArgumentError
             @test occursin("global grid", err.msg)
 
-            # A complex coefficient stays rejected: its adjoint rebuilds conj.(κ)
-            # per call, which would allocate a full array per partition per
-            # Krylov iteration.
+            # A complex coefficient stays rejected: the distributed vectors are
+            # real (typed from the grid spacing), so its product has nowhere to
+            # land — the guard names the cause instead of an InexactError.
             κc = Field(ComplexF64.(ones(size(scalar_field(g).data))), g)
             @test !distributable(scaling(κc))
             errc = try
@@ -1250,8 +1250,7 @@ end
             @test errc isa ArgumentError
             @test occursin("real-eltype", errc.msg)
 
-            # ...and rejected for Diffusion for exactly the same reason: its
-            # adjoint is the conjugated leaf, rebuilt per call.
+            # ...and rejected for Diffusion for exactly the same reason.
             @test !distributable(diffusion(g, κc))
             errd = try
                 check(diffusion(g, κc))

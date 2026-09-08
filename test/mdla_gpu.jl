@@ -476,8 +476,9 @@ end
             scaling(κ) * laplacian(g),
             laplacian(g) * scaling(κ),
             # slice 2c: on a slab the leaf's Interface faces send `apply_adjoint!`
-            # down the mechanical gather instead of the self-adjoint shortcut, so
-            # this is the first place that transpose runs in production.
+            # down the mechanical gather instead of the self-adjoint shortcut.
+            # Only this test-facing entry point reaches it — a Krylov `mul!` gets
+            # the folded conjugate leaf, which for real κ runs forward.
             diffusion(g, κ),
             laplacian(g) * diffusion(g, κ),
         )

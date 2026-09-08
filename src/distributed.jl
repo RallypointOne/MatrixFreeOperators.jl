@@ -47,11 +47,15 @@ _distributable(::AbstractOperator) = false
 Whether a field-valued operator parameter can be sliced onto slabs (internal).
 
 Requires an undistributed `CartesianGrid` — the layout [`_slab_field`](@ref)
-slices — and a **real** element type. Real only
-because `adjoint_operator(::ScalingOp{<:Field})` and `_conj_op(::Diffusion)`
-build `conj.(κ.data)` on every call (`src/operators/scaling.jl`,
-`src/operators/diffusion.jl`), which in the distributed adjoint would allocate a
-full coefficient array per partition per Krylov iteration.
+slices — and a **real** element type. Real because the distributed vectors are:
+both backends type every slab and flat vector from `eltype(spacing(g))`
+(`prepare_distributed` in the MDLA extension, `dist_prepare` in
+`test/partitioning.jl`), so a complex coefficient's product has nowhere to land
+and would fail on the first `apply!` with an `InexactError` instead of a message
+naming the cause. It is *not* an adjoint cost: `_push_adjoints` folds
+`adjoint(ScalingOp)`/`adjoint(Diffusion)` to the conjugated leaf once at setup,
+so no `conj.(κ)` is rebuilt per Krylov iteration. Typing the vectors from the
+operator's eltype would lift the restriction.
 """
 function _partitionable_coeff(κ::Field)
     κ.grid isa CartesianGrid || return false
@@ -106,13 +110,15 @@ _undistributable_reason(::Prolongation) =
     "transfer operators compose grids that would each need their own consistent partitioning"
 _undistributable_reason(S::ScalingOp) =
     "its coefficient must be a Number or a real-eltype Field on an undistributed " *
-    "CartesianGrid, so it can be sliced onto the slabs"
+    "CartesianGrid: real because the distributed vectors are, undistributed so it " *
+    "can be sliced onto the slabs"
 # Reaching this means the coefficient failed `_partitionable_coeff`: the cut
 # itself is no longer a reason, since `_slab_field`'s padded window carries κ
 # across it.
 _undistributable_reason(::Diffusion) =
-    "its coefficient must be a real-eltype Field on an undistributed CartesianGrid, " *
-    "so it can be sliced onto the slabs"
+    "its coefficient must be a real-eltype Field on an undistributed CartesianGrid: " *
+    "real because the distributed vectors are, undistributed so it can be sliced " *
+    "onto the slabs"
 _undistributable_reason(::Advection) =
     "the velocity field is bound to the global grid; it must be partitioned onto the slabs first"
 _undistributable_reason(::Gradient) =
