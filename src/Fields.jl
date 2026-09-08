@@ -52,8 +52,11 @@ cell-conservative reconstruction as [`Conservative`](@ref) with the per-dim
 slope minmod-limited, and dropped to zero at parent-block edges (the transfer
 is interior-only, so no second slope exists there to limit against). Children
 never leave the hull of the parent's neighborhood — no new extrema across a
-regrid — at the price of first-order transfer at extrema and block edges. The
-policy for conserved state with steep fronts or discontinuities.
+regrid — at the price of first-order transfer at extrema and block edges. Note
+the edge cost scales with the block: every parent cell on a block face is
+injected, so a `4×4` block reconstructs only its inner `2×2` and larger blocks
+shrink that fraction. The policy for conserved state with steep fronts or
+discontinuities.
 
 See also: [`Conservative`](@ref), [`with_transfer`](@ref).
 """

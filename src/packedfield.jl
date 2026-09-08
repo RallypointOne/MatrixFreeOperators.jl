@@ -1,13 +1,16 @@
 #--------------------------------------------------------------------------------# PackedBlockField (packed contiguous storage)
 
 """
-    PackedBlockField{L}(data, levels, grid)
+    PackedBlockField{L,P}(data, levels, grid)
 
 Packed twin of [`BlockField`](@ref): every leaf's halo-padded block stored in one
 contiguous `(blocksize .+ 2halo ..., nleaves)` array (`data`, leaves in Morton
 order along the trailing dimension), with the per-leaf refinement levels in a
 device-resident vector (`levels`) — the geometry SoA forest-native kernels read;
-spacing derives from the forest's root spacing and the level. Behind the shared
+spacing derives from the forest's root spacing and the level. `L` is the
+location trait and `P` the regrid-transfer policy (default
+[`Interpolated`](@ref)); both survive [`pack`](@ref)/[`unpack`](@ref), and
+`P` is consulted only by [`regrid!`](@ref), never on an operator path. Behind the shared
 `AbstractBlockField` interface every operator runs on packed storage via the
 per-leaf fallback sweep (each leaf is a trailing-dim view), and operators with a
 forest-native kernel sweep all leaves in a single launch. Convert with
