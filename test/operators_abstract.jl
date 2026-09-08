@@ -115,10 +115,10 @@ end
         )
         gpc = coarsen(gp)
 
-        # Diffusion refuses Interface faces through its public constructor (nothing
-        # supplies κ's cross-block ghosts yet), so the inner constructor is used here to
-        # exercise the declared transpose the forest path will need. κ ghosts are filled
-        # explicitly, which is what the coefficient exchange will do.
+        # Diffusion refuses Interface faces through its public constructor (it has
+        # nothing to fill κ's cross-block ghosts from), so the inner constructor is used
+        # here to exercise the declared transpose the forest path relies on. κ ghosts are
+        # filled explicitly, standing in for `fill_coefficient_ghosts!`.
         κi = scalar_field(gi)
         κi.data .= 1 .+ rand(rng, padded_size(gi)...)
         Di = MatrixFreeOperators.Diffusion(gi, κi, ArithmeticMean())

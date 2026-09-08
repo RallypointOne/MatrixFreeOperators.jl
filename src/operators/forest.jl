@@ -55,6 +55,12 @@ end
 @inline function _leaf_op(A::Advection{<:BlockForest,<:AbstractBlockField}, i, lg)
     return Advection(lg, block(A.velocity, i, lg))
 end
+# The INNER constructor, like `_slab_op`: the block view already carries the cross-block
+# coefficient ghosts `fill_coefficient_ghosts!` filled at construction, which is exactly
+# what the public entry point has nothing to fill and therefore refuses to guess.
+@inline function _leaf_op(D::Diffusion{<:BlockForest,<:AbstractBlockField}, i, lg)
+    return Diffusion(lg, block(D.κ, i, lg), D.avg)
+end
 
 # Combinators recurse at the forest level (mirroring their Field methods in
 # algebra.jl): running a whole Added/Scaled tree per leaf would route any nested
