@@ -618,8 +618,12 @@ neighbour's κ), a wall ghost onto the global mirror, a periodic cut onto the
 global wrap. Widening the slice is a setup-time indexing change, not a transport,
 so the per-apply exchange count is unchanged from the `Laplacian` baseline — the
 "one halo exchange per application" invariant holds trivially rather than by
-construction. It is legitimate only because κ is *constant through a solve*; a
-coefficient that changed per iteration would owe an exchange per iteration.
+construction. Two preconditions make that legitimate rather than lucky. κ is
+*constant through a solve*, so the setup-time slice is never owed again per
+iteration. And the process running `_slab_op` holds the **global** κ —
+`prepare_distributed` adapts the whole tree to the host before slicing — which is
+a property of a single-node backend, not of the design; see *Owed by the next
+backend* below.
 
 There is one slice, not a pointwise one and a stencil one: `ScalingOp` takes the
 same padded window, and because it reads its coefficient pointwise the ghosts it
@@ -638,6 +642,19 @@ already take the kwarg), transfer chains (factors on two grids, each needing a
 consistent cut), and distributed autodiff (blocked by the transport, not by the
 localization rewrite — `_slab_field`'s pullback is the transpose gather). All
 rejected loudly.
+
+*Owed by the next backend:* the setup-time κ exchange. On ImplicitGlobalGrid
+(§10.4's resolved next backend, #46) no rank holds the global κ, so `_slab_field`
+has nothing to window and the cut-plane coefficient ghosts must be *exchanged*,
+once, at prepare time. The seams already fit: build each rank's leaf through the
+inner constructor from a rank-local κ whose physical ghosts
+`fill_coefficient_ghosts!` has mirrored — it leaves `Interface` ghosts untouched —
+then run one `_dist_scatter!`-shaped exchange over those `Interface` planes at
+setup, and the per-apply exchange count stays at the `Laplacian` baseline.
+Reusing `_slab_op(::Diffusion)` per rank with a rank-local κ would not do: it
+throws on an out-of-range `view`, or with matching sizes silently leaves the
+cut-plane ghosts at zero or the mirror — `κ_I/2` face coefficients under
+`ArithmeticMean`, `0` under `HarmonicMean` — and no guard here would catch it.
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
 - *Explicit* solvers (RK4, SSPRK, …): provide a trivial RHS adapter

@@ -211,9 +211,12 @@ window of it, and every ghost lands on the value it should hold at once — an
 `Interface` ghost onto a global interior plane (the neighbour's κ), a wall ghost
 onto the global mirror, a periodic cut onto the global wrap. Widening a slice is a
 setup-time indexing change, not a transport; the per-apply exchange count is
-unchanged from the `Laplacian` baseline. What makes this legitimate rather than
-lucky is that κ is *constant through a solve*: a coefficient that changed per
-iteration would owe an exchange per iteration.
+unchanged from the `Laplacian` baseline. Two things make this legitimate rather
+than lucky: κ is *constant through a solve*, so the setup-time slice is never
+owed again, and the host running the slice holds the *global* κ. The second is a
+single-node property — a multi-node backend, where no rank holds the global
+coefficient, would exchange the cut-plane κ ghosts once at prepare time instead;
+the design document's §7 records what that backend owes.
 
 ## Inhomogeneous boundaries assemble slab-locally too
 
