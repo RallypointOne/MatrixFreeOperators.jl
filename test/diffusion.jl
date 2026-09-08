@@ -320,6 +320,40 @@ end
         @test diffusion(g, neg) isa Diffusion                              # arithmetic: no sign restriction
     end
 
+    @testset "coefficient grid compatibility" begin
+        g = CartesianGrid(((0.0, 1.0),), (6,))
+        equivalent = CartesianGrid(((0.0, 1.0),), (6,))
+        κ = set!(scalar_field(equivalent), _ -> 2)
+        u = set!(scalar_field(g), x -> sinpi(x[1]))
+        @testset "$(nameof(typeof(avg))) check=$check" for avg in DIFF_AVGS,
+            check in (true, false)
+
+            D = diffusion(g, κ; averaging=avg, check=check)
+            @test collect(interior(D * copy(u))) ≈
+                2 .* collect(interior(laplacian(g) * copy(u)))
+
+            @testset "$name" for (name, other) in (
+                ("equal padding, different interior and halo",
+                    CartesianGrid(((0.0, 1.0),), (4,); halo=(2,))),
+                ("shifted domain, same spacing",
+                    CartesianGrid(((1.0, 2.0),), (6,))),
+                ("different spacing",
+                    CartesianGrid(((0.0, 2.0),), (6,))),
+                ("different boundary conditions",
+                    CartesianGrid(((0.0, 1.0),), (6,); bc=((Periodic(), Periodic()),))),
+            )
+                @test padded_size(other) == padded_size(g)
+                # Positive interiors pass the harmonic check on `other`, while
+                # its zero ghosts must never become interior coefficients on g.
+                foreign = set!(scalar_field(other), _ -> 2)
+                @test all(>(0), interior(foreign))
+                @test_throws ArgumentError diffusion(
+                    g, foreign; averaging=avg, check=check
+                )
+            end
+        end
+    end
+
     @testset "composition and trait propagation" begin
         g = CartesianGrid(
             ((0.0, 1.0), (0.0, 1.0)), (6, 5);

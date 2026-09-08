@@ -247,10 +247,13 @@ function diffusion(g::AbstractGrid, κ::Field; averaging=ArithmeticMean(), check
             "diffusion coefficient must be a scalar-eltype Field, got eltype $(eltype(κ.data))",
         ),
     )
-    padded_size(κ.grid) == padded_size(g) || throw(
+    # Equal padded sizes can hide different interior/halo layouts. Reuse the
+    # discretization comparison so copying κ cannot reinterpret ghosts as cells.
+    _same_grid(κ.grid, g) || throw(
         ArgumentError(
-            "diffusion coefficient is sized for $(padded_size(κ.grid)) but the grid is " *
-            "$(padded_size(g)); κ must live on the same grid as the operator",
+            "diffusion coefficient must live on the same grid as the operator " *
+            "(matching extent, spacing, size, halo, boundary conditions, local range, " *
+            "and topology)",
         ),
     )
     if check && averaging isa HarmonicMean
