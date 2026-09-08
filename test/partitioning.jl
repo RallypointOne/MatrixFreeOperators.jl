@@ -718,9 +718,9 @@ end
         end
     end
 
-    # prepare does not recurse into an AdjointOp, so AdjointOp(A*B) would run
-    # aᵀ then bᵀ with no reduction between them. Normalization rewrites it to
-    # Composed(bᵀ, aᵀ), which the walk handles node by node.
+    # A PreparedAdjoint over a composition would run aᵀ then bᵀ with no reduction
+    # between them. Normalization (the same _push_adjoints prepare applies) rewrites
+    # it to Composed(bᵀ, aᵀ), which the walk handles node by node.
     @testset "AdjointOp over a composite is normalized" begin
         g = gridof((Dirichlet(), Neumann()), (3, 6))
         n = prod(local_size(g))

@@ -146,6 +146,40 @@
         @test alloc ≤ 512
     end
 
+    # A user-written AdjointOp over a composition has no prepared twin of its own —
+    # PreparedComposed carries one intermediate shaped for the forward pass — so
+    # prepare must normalize it down to the leaves (Composed(bᵀ, aᵀ)) before the
+    # walk. The rank-changing case is the sharp one: a buffer allocated from the
+    # adjoint's input prototype (a scalar) has the wrong element type for divᵀ's
+    # vector output.
+    @testset "prepare normalizes AdjointOp over a composite" begin
+        g = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (5, 4);
+            bc=((Dirichlet(), Neumann()), (Periodic(), Periodic())),
+        )
+        inner = derivative(g, 1) * derivative(g, 2)
+        P = prepare(MatrixFreeOperators.AdjointOp(inner))
+        @test !(P.op isa MatrixFreeOperators.PreparedAdjoint)   # rewritten, not wrapped
+        @test P.op isa MatrixFreeOperators.PreparedComposed
+        @test materialize(P) ≈ materialize(prepare(inner))'
+
+        κ = set!(scalar_field(g), x -> 1 + x[1] * x[2])
+        K = divergence(g) * scaling(κ)                           # vector → scalar
+        Kt = prepare(MatrixFreeOperators.AdjointOp(K), scalar_field(g))
+        B = materialize(prepare(K, vector_field(g)))
+        @test size(Kt) == (40, 20)
+        @test materialize(Kt) ≈ B'
+
+        rng = Random.MersenneTwister(5)
+        x = rand(rng, 20)
+        y0 = rand(rng, 40)
+        y = copy(y0)
+        mul!(y, Kt, x, 1.5, 2.0)                                 # β ≠ 0 through the rewritten tree
+        @test y ≈ 1.5 .* (B' * x) .+ 2.0 .* y0
+        mul!(y, Kt, x)
+        @test (@allocated mul!(y, Kt, x)) ≤ 512
+    end
+
     # The composed wide-stencil div∘κ∘grad is deliberately NOT used as a cg system:
     # on collocated grids it is neither symmetric nor definite (odd-even
     # decoupling — see the design doc §8.3 caveat). The SPD variable-coefficient

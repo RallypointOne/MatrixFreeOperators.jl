@@ -215,37 +215,6 @@ function _grid_mismatch(L::AbstractOperator, g)
     return (lg === nothing || _same_grid(lg, g)) ? nothing : L
 end
 
-#--------------------------------------------------------------------------------# Adjoint normalization
-
-"""
-    _push_adjoints(L::AbstractOperator) -> AbstractOperator
-
-Push `AdjointOp` nodes down toward the leaves, exactly as `Base.adjoint` does
-(`adjoint_operator`, `src/operators/algebra.jl`), and return the rewritten tree
-(internal).
-
-`prepare` does not recurse into an `AdjointOp` — `_prepare_tree` turns the whole
-subtree into a single `PreparedAdjoint` — so `AdjointOp(Composed(a, b))` would
-run a per-partition `aᵀ` then `bᵀ` with **no reduction in between**, dropping the
-intermediate's `Interface` cotangents on the floor. Silently wrong, and exactly
-the failure mode the distributability guards exist to prevent.
-
-Rewriting first turns it into `Composed(bᵀ, aᵀ)`, which the distributed walk
-handles node by node. `Base.adjoint` never builds the nested form, but a user can
-write `AdjointOp(A * B)` directly.
-"""
-function _push_adjoints(L::AdjointOp)
-    inner = _push_adjoints(L.op)
-    a = adjoint_operator(inner)
-    # A leaf with no cheaper adjoint reports AdjointOp(inner) — the fixed point.
-    # Recursing on it unguarded would not terminate.
-    return (a isa AdjointOp && a.op === inner) ? a : _push_adjoints(a)
-end
-_push_adjoints(L::Added) = Added(_push_adjoints(L.a), _push_adjoints(L.b))
-_push_adjoints(L::Scaled) = Scaled(_push_adjoints(L.op), L.α)
-_push_adjoints(L::Composed) = Composed(_push_adjoints(L.a), _push_adjoints(L.b))
-_push_adjoints(L::AbstractOperator) = L
-
 #--------------------------------------------------------------------------------# Slab localization
 
 """

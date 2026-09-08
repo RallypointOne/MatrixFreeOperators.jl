@@ -564,9 +564,10 @@ plain-`Vector` global indexing, so the CPU proof exercises the real walk rather
 than re-emulating it. The distributability guards moved to core with the walk, so
 CI runs them. `Derivative` joins the whitelist (same shape as `Laplacian`, and the
 only whitelisted leaf that is not self-adjoint, hence the only way to reach an
-`AdjointOp` node). Adjoints are normalized down to the leaves before `prepare`,
-which does not recurse into an `AdjointOp` and would otherwise skip the mid-tree
-reduction for `AdjointOp(A∘B)`.
+`AdjointOp` node). Adjoints are normalized down to the leaves before the walk
+(`_push_adjoints`, which `prepare` itself now applies at every `AdjointOp` node);
+a `PreparedAdjoint` never wraps a combinator, so `AdjointOp(A∘B)` cannot skip the
+mid-tree reduction.
 
 *Built (issue #31, slice 2b):* `Field` coefficients and distributed `boundary_rhs`
 — i.e. the whole solve, including its right-hand side, assembled slab-locally with
