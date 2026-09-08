@@ -55,6 +55,29 @@
         end
     end
 
+    @testset "cfflux: coarse–fine face-flux descriptors" begin
+        # Weight-free topology records for the Diffusion coarse-ghost rewrite: one
+        # per (coarse face × abutting fine child), riding the same _emit_restrict!
+        # child walk — so exactly one per restriction descriptor, dst-identical to
+        # its restriction twin, and none on a uniform forest.
+        for bc in (dirichlet, periodic, mixed)
+            @test isempty(MFO._exchange_schedule(make_bf(bc)).cfflux)
+            bfr = make_bf(bc)
+            refine!(bfr, x -> x[1] < 0.5 && x[2] < 0.5)
+            sched = MFO._exchange_schedule(bfr)
+            @test !isempty(sched.cfflux)
+            @test length(sched.cfflux) == length(sched.restrict)
+            @test all(
+                r.coarse == f.dst_block && r.gC == f.dst_ranges for
+                (r, f) in zip(sched.cfflux, sched.restrict)
+            )
+            @test allunique([(r.coarse, r.gC) for r in sched.cfflux])
+            # fully isbits — the shape that keeps a per-apply descriptor loop out of
+            # Enzyme's issue-#26 territory, unlike GhostFill
+            @test isbitstype(eltype(sched.cfflux))
+        end
+    end
+
     @testset "bcfaces: physical-face lists per (dim, side)" begin
         # 2×2 tiling: 2 leaves per non-periodic domain side; periodic dims stay empty.
         for (bc, counts) in

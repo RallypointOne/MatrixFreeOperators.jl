@@ -24,6 +24,15 @@ function er_diffusion_kappa_loss(κdata, udata, w, g)
     return sum(w .* interior(apply(D, Field(copy(udata), g))))
 end
 
+function er_forest_diffusion_kappa_loss(κv, v, w, bf)
+    κ = scalar_field(bf)
+    flat_to_interior!(κ, κv)
+    D = diffusion(bf, κ; check=false)
+    u = scalar_field(bf)
+    flat_to_interior!(u, v)
+    return sum(w .* flatten(apply(D, u)))
+end
+
 @testset "Enzyme custom rules (declared transposes, not the tape)" begin
     @test ENZ_EXT !== nothing
 
@@ -116,6 +125,68 @@ end
             fd = fd_gradient(vd -> er_forest_loss(vd, wf, L, bf), v)
             @test dv ≈ fd rtol = 1e-6
         end
+    end
+
+    @testset "forest Diffusion: exchange count at the Laplacian baseline, κ taped" begin
+        gf = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (8, 8);
+            bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+        )
+        bf = BlockForest(gf; blocksize=(4, 4), maxlevel=2)
+        refine!(bf, x -> x[1] < 0.5)
+        MatrixFreeOperators._exchange_schedule(bf)
+        n = length(flatten(scalar_field(bf)))
+        v = rand(rng, n)
+        wf = rand(rng, n)
+        D = diffusion(bf, set!(scalar_field(bf), x -> 1.2 + 0.8 * x[1]^2 + 0.5 * x[2]))
+
+        # The measurable form of "no additional halo exchange per application": one
+        # exchange-rule invocation per apply, exactly the Laplacian's count — the
+        # coarse–fine flux rewrite reuses the exchanged ghosts, it never adds a pass.
+        lastdv = zero(v)
+        for L in (laplacian(bf), D)
+            dv = zero(v)
+            before = ENZ_EXT.rule_hits()
+            Enzyme.autodiff(
+                Enzyme.set_runtime_activity(Enzyme.Reverse),
+                er_forest_loss,
+                Enzyme.Active,
+                Enzyme.Duplicated(v, dv),
+                Enzyme.Const(wf),
+                Enzyme.Const(L),
+                Enzyme.Const(bf),
+            )
+            after = ENZ_EXT.rule_hits()
+            @test after.exchange - before.exchange == 1
+            @test after.bc - before.bc == 1
+            lastdv = dv
+        end
+        # and the gradient the rules helped produce is the declared adjoint's,
+        # seam transpose included
+        w̃ = scalar_field(bf)
+        flat_to_interior!(w̃, wf)
+        @test lastdv ≈ flatten(apply_adjoint!(scalar_field(bf), D, w̃, bf)) rtol = 1e-8
+
+        # κ active: the halo rules still fire only for the solution exchange — the
+        # κ path (coefficient exchange + rewrite weights) stays on the tape, so its
+        # gradient is nonzero and matches finite differences instead of being
+        # silently zeroed by a rule's empty derivative slots.
+        κv = 1.0 .+ rand(rng, n)
+        dκ = zero(κv)
+        before = ENZ_EXT.rule_hits()
+        Enzyme.autodiff(
+            Enzyme.set_runtime_activity(Enzyme.Reverse),
+            er_forest_diffusion_kappa_loss,
+            Enzyme.Active,
+            Enzyme.Duplicated(κv, dκ),
+            Enzyme.Const(v),
+            Enzyme.Const(wf),
+            Enzyme.Const(bf),
+        )
+        @test ENZ_EXT.rule_hits().exchange - before.exchange == 1
+        fdκ = fd_gradient(κd -> er_forest_diffusion_kappa_loss(κd, v, wf, bf), κv)
+        @test any(!iszero, fdκ)
+        @test dκ ≈ fdκ atol = 1e-5
     end
 
     @testset "shadow extraction covers the annotation lattice" begin

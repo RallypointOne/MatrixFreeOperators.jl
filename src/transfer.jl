@@ -158,8 +158,8 @@ end
 # ghost slab disjointly. A plain 2^N volume average would leave O(1) truncation
 # at the interface (1st-order solutions) — rejected.
 function _emit_restrict!(
-    restrict::Vector{GhostFill{N,T}}, bf::BlockForest{N,T}, i::Int, K::LeafKey{N},
-    d::Int, side::Int, nbr::LeafKey{N},
+    restrict::Vector{GhostFill{N,T}}, cfflux::Vector{CFFluxDescriptor{N}},
+    bf::BlockForest{N,T}, i::Int, K::LeafKey{N}, d::Int, side::Int, nbr::LeafKey{N},
 ) where {N,T}
     forest, n = bf.forest, bf.blocksize
     nd = n[d]
@@ -168,7 +168,7 @@ function _emit_restrict!(
     uf_n = side == -1 ? nd + 1 : 2           # fine child's interior layer facing K
     gf_n = side == -1 ? nd + 2 : 1           # fine child's interp-filled ghost facing K
     tdims = Tuple(filter(!=(d), ntuple(identity, Val(N))))
-    wf = T(2) / (1 << (N - 1))
+    wf = _cf_flux_weight(Val(N), T)
     facing = side == 1 ? 0 : 1               # child d-bit on the face shared with K
     for child in children(nbr)
         (child.coords[d] & 1) == facing || continue
@@ -191,6 +191,17 @@ function _emit_restrict!(
             restrict,
             GhostFill{N,T}(i, _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t), terms),
         )
+        # The same child walk also records the weight-free coarse–fine-face topology
+        # the Diffusion coarse-ghost rewrite consumes (see CFFluxDescriptor) — one
+        # emission site, so the two dst/u1 boxes can never disagree.
+        push!(
+            cfflux,
+            CFFluxDescriptor{N}(
+                Int32(i), Int32(cj), Int32(d), Int32(uf_n), Int32(gf_n),
+                _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t),
+                _cf_box(Val(N), d, u1_n:1:u1_n, tdims, dst_t),
+            ),
+        )
     end
     return nothing
 end
@@ -211,6 +222,7 @@ function _build_exchange_schedule(bf::BlockForest{N,T}) where {N,T}
     copies = CopyDescriptor{N}[]
     interp = GhostFill{N,T}[]
     restrict = GhostFill{N,T}[]
+    cfflux = CFFluxDescriptor{N}[]
     bcfaces = ntuple(_ -> (Int[], Int[]), Val(N))
     for (i, K) in enumerate(forest.leaves), d in 1:N, side in (-1, 1)
         nbr = face_neighbor(forest, K, d, side)
@@ -233,11 +245,13 @@ function _build_exchange_schedule(bf::BlockForest{N,T}) where {N,T}
                 cover.level == K.level - 1 || _throw_unbalanced(K)
                 _emit_interp!(interp, bf, i, K, d, side, cover)
             else                                    # K is the coarser side
-                _emit_restrict!(restrict, bf, i, K, d, side, nbr)
+                _emit_restrict!(restrict, cfflux, bf, i, K, d, side, nbr)
             end
         end
     end
-    return ExchangeSchedule{N,T}(copies, interp, restrict, bcfaces, forest.generation[])
+    return ExchangeSchedule{N,T}(
+        copies, interp, restrict, cfflux, bcfaces, forest.generation[]
+    )
 end
 
 # Per-generation cache accessor: keyed by the live forest generation, so a schedule
