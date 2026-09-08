@@ -122,7 +122,7 @@ end
         # are an external input it has nothing to fill them from; the inner constructor
         # is the seam that supplies them, and it is what `_slab_op` builds through on a
         # partition slab (`test/partitioning.jl`). Here they are filled by hand, to
-        # exercise the declared transpose the forest path (issue #54) will also rely on.
+        # exercise the declared transpose the forest path (issue #58) will also rely on.
         # x's Interface ghosts are zero, so the identity holds over interiors.
         gi = CartesianGrid(
             ((0.0, 1.0), (0.0, 1.0)), (8, 6);
