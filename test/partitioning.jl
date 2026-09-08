@@ -743,10 +743,11 @@ end
     # it carries are first read).
     coeff_fun(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
 
-    # The claim that lets a coefficient be partitioned with NO exchange of its
-    # own: it is read pointwise at the cell being written, so its ghosts are
-    # never consulted. Poison them and demand the answer not move.
-    @testset "a localized coefficient's ghosts are never read" begin
+    # The claim that lets a ScalingOp coefficient be partitioned with NO exchange
+    # of its own: it is read pointwise at the cell being written, so its ghosts
+    # are never consulted. (Diffusion's ARE — see the slice-2c negative control
+    # below.) Poison them and demand the answer not move.
+    @testset "a localized ScalingOp coefficient's ghosts are never read" begin
         g = gridof((Dirichlet(), Neumann()))
         n = prod(local_size(g))
         x = rand(MersenneTwister(11), n)
@@ -1072,22 +1073,21 @@ end
             cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
 
             g = diff_grid(ext, sz, cut)
-            N = length(sz)
             n = prod(local_size(g))
             x = rand(MersenneTwister(23), n)
             κ = set!(scalar_field(g), diff_coeff_fun)
             for L in (diffusion(g, κ), laplacian(g) * diffusion(g, κ))
                 D = dist_prepare(L, g, 2)
                 clean = dist_mul(D, x)
-                for (p, lp) in enumerate(D.parts)
-                    h, nn = halo_width(lp)[N], local_size(lp)[N]
-                    bc = boundary_conditions(lp)[N]
-                    planes = Int[]
-                    bc[1] isa MatrixFreeOperators.Interface && append!(planes, 1:h)
-                    bc[2] isa MatrixFreeOperators.Interface &&
-                        append!(planes, (h + nn + 1):(h + nn + h))
-                    @test !isempty(planes)          # a 2-way cut always has one
-                    for Dl in _diffusion_leaves(D.prepared[p].op), pl in planes
+                # The slab's Interface planes are exactly what the prepared
+                # exchange carries as `plans[p]` (the "ghost layout invariants"
+                # testset proves that set), so take them from there rather than
+                # spelling the padded-plane index map out a third time.
+                for p in eachindex(D.parts)
+                    @test !isempty(D.root.plans[p])   # a 2-way cut always has one
+                    for Dl in _diffusion_leaves(D.prepared[p].op),
+                        (_, pl) in D.root.plans[p]
+
                         fill!(halo_plane_view(Dl.κ, pl), 0)
                     end
                 end
@@ -1156,6 +1156,9 @@ end
             g -> laplacian(g) + laplacian(g),
             g -> laplacian(g) + derivative(g, 1),
             g -> (laplacian(g) * laplacian(g)) + laplacian(g),
+            # ...and the slab diffusion leaf, whose adjoint is the masked gather
+            # over a padded κ rather than the self-adjoint shortcut.
+            g -> diffusion(g, set!(scalar_field(g), diff_coeff_fun)) + laplacian(g),
         )
             small = steady((16, 16), mk, dist_adjoint!)
             large = steady((32, 32), mk, dist_adjoint!)
