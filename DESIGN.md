@@ -659,7 +659,12 @@ cut-plane ghosts at zero or the mirror — `κ_I/2` face coefficients under
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
 - *Explicit* solvers (RK4, SSPRK, …): provide a trivial RHS adapter
-  `f!(du,u,p,t) = apply!(du, L, u, grid)` and hand it to `ODEProblem`.
+  `f!(du,u,p,t) = apply!(du, L, u, grid)` and hand it to `ODEProblem`. The RHS
+  is the **field-level** `apply!` — never the flat `mul!`, whose
+  `flat_to_interior!`/`interior_to_flat!` staging is a Krylov cost an explicit
+  integrator has no reason to pay (#87). A `PreparedOperator` accepts fields
+  through the same `apply!(du, P, u)` so `*`-composed trees step allocation-free
+  too. (Neither adapter is shipped yet; #81 tracks the SciML extension.)
 - *Implicit/stiff* solvers (needed for diffusion): the idiomatic way to give
   OrdinaryDiffEq a **matrix-free Jacobian** is `ODEFunction(f; jac_prototype = J)`
   where `J` is a SciML-style lazy operator. Here `J` is the linear
