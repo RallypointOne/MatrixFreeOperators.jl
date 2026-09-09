@@ -21,6 +21,11 @@ same discipline throughout: it drives the operator tree itself so it can fill
 [`Interface`](@ref) ghost slabs from a neighbor exchange between applies, and
 anything that zeroed ghosts on the way in would silently discard exchanged data.
 
+The flat copies are the price of the Krylov boundary, not of the operator: a
+prepared operator also accepts [`Field`](@ref)s directly through
+`apply!(du, P, u)`, which runs the same buffer-carrying tree with no flat
+staging at all. That is the explicit time-stepping path — see [`apply!`](@ref).
+
 The traits [`islinear`](@ref), [`isconstant`](@ref), [`isselfadjoint`](@ref) and
 [`isdiagonal`](@ref) are those of the operator handed to `prepare` — binding
 buffers changes nothing about the map. A `PreparedOperator` is the solver
@@ -92,6 +97,15 @@ The prepared operator is stateful and single-threaded — prepare once per
 concurrent solve. Requires `islinear(L)`; linearize nonlinear operators first
 with [`linearize`](@ref).
 
+`mul!` is the *solver* boundary: every call stages the flat vector into a
+halo-padded field and copies the result back out, and those two copies are a
+measurable fraction of a stencil sweep. Explicit time integrators do not need
+them — step at field level with [`apply!`](@ref) instead, either on the operator
+itself (`apply!(du, L, u)`; allocation-free for leaves and `+`/scalar
+combinations of them) or on the prepared operator (`apply!(du, P, u)`; also
+allocation-free for `*`-composed and adjoint trees, whose intermediates `prepare`
+allocated once). Keep `mul!` for Krylov.
+
 ### Examples
 
 ```julia
@@ -100,8 +114,12 @@ A = prepare(laplacian(g))
 b = flatten(set!(scalar_field(g), x -> sin(π * x[1])))
 u, stats = Krylov.minres(A, b)
 
-# explicit time stepping (OrdinaryDiffEq-style RHS closure):
-f!(du, u, p, t) = mul!(du, A, u)
+# explicit time stepping stays at field level — no flat copies:
+uf = set!(scalar_field(g), x -> sin(π * x[1]))
+du = similar(uf)
+dt = 0.4 * spacing(g)[1]^2              # inside the forward-Euler stability bound
+apply!(du, A, uf)                       # or apply!(du, laplacian(g), uf)
+interior(uf) .+= dt .* interior(du)     # one forward-Euler step
 ```
 """
 function prepare(L::AbstractOperator, x::AbstractField)
@@ -586,6 +604,18 @@ function boundary_rhs(L::Composed, x_proto::AbstractBlockField)
     return lift
 end
 
+# A PreparedForest is tied to the forest generation it was built on; both the flat
+# and the field-level entry points refuse to run on a regridded forest.
+function _require_prepared_current(P::PreparedForest)
+    P.generation == P.grid.forest.generation[] || throw(
+        ArgumentError(
+            "this PreparedForest was built before the forest was regridded " *
+            "(refine!/coarsen!/balance!); re-run prepare on the current forest",
+        ),
+    )
+    return nothing
+end
+
 function Base.size(P::_AnyPrepared)
     return (flat_length(P.ypad), flat_length(P.xpad))
 end
@@ -609,12 +639,7 @@ end
 function LinearAlgebra.mul!(
     y::AbstractVector, P::PreparedForest, x::AbstractVector, α::Number, β::Number
 )
-    P.generation == P.grid.forest.generation[] || throw(
-        ArgumentError(
-            "this PreparedForest was built before the forest was regridded " *
-            "(refine!/coarsen!/balance!); re-run prepare on the current forest",
-        ),
-    )
+    _require_prepared_current(P)
     flat_to_interior!(P.xpad, x)
     _forest_capply!(P.ypad, P.op, P.xpad, P, true, false)
     interior_to_flat!(y, P.ypad, α, β)
@@ -622,6 +647,33 @@ function LinearAlgebra.mul!(
 end
 function LinearAlgebra.mul!(y::AbstractVector, P::PreparedForest, x::AbstractVector)
     return mul!(y, P, x, true, false)
+end
+
+#--------------------------------------------------------------------------------# Field-level action of a prepared operator (the explicit-stepping path)
+
+"""
+    apply!(y::AbstractField, P::PreparedOperator, x::AbstractField, α=true, β=false) -> y
+    apply!(y::AbstractField, P::PreparedForest, x::AbstractField, α=true, β=false) -> y
+
+Apply a [`prepare`](@ref)d operator at field level: `y = α·P(x) + β·y` on the
+interior of `y`, running the buffer-carrying tree `prepare` built — so `*`-composed
+and adjoint nodes reuse their scratch — without the flat staging copies `mul!`
+performs. Ghosts of `x` are scratch (overwritten by halo/BC fills), ghosts of `y`
+are left alone, exactly as for [`apply!`](@ref) on an unprepared operator.
+
+This is the explicit time-stepping idiom: `prepare` once, then `apply!(du, P, u)`
+per stage, and keep `mul!` for the Krylov boundary. `x` and `y` must match the
+prototype `prepare` was given in shape and element type. The forest form throws
+if the forest was regridded since `prepare`, as `mul!` does.
+"""
+function apply!(y::Field, P::PreparedOperator, x::Field, α::Number=true, β::Number=false)
+    return apply!(y, P.op, x, P.grid, α, β)
+end
+function apply!(
+    y::AbstractBlockField, P::PreparedForest, x::AbstractBlockField, α::Number=true, β::Number=false
+)
+    _require_prepared_current(P)
+    return _forest_capply!(y, P.op, x, P, α, β)
 end
 
 function LinearAlgebra.mul!(::AbstractVector, L::AbstractOperator, ::AbstractVector)
