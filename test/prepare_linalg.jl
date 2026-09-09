@@ -290,7 +290,7 @@
             @testset "$label" begin
                 P = prepare(L, proto)
                 @test P.op isa twin
-                @test P isa (proto isa BlockField ? PreparedForest : PreparedOperator)
+                @test P isa (proto isa MFO.AbstractBlockField ? PreparedForest : PreparedOperator)
                 for trait in traits
                     expected = trait(L)
                     got = @inferred trait(P)
@@ -316,6 +316,46 @@
         @test prepare(MFO.AdjointOp(D1 * S)).op.a isa MFO.ScalingOp
         @test prepare(MFO.AdjointOp(D1 * S)).op.b isa MFO.PreparedAdjoint
         @test !isselfadjoint(prepare(laplacian(bf) + adjoint(Df)))
+
+        # Packed-prototype leaf rewrites: _prepare_tree rebuilds ScalingOp / Diffusion /
+        # Advection with a packed coefficient (a different leaf object, not a twin), so
+        # the rebuilt leaf is the one remaining place a trait could drift. Each case
+        # pins the coefficient's type so the rewrite is actually exercised, then holds
+        # the rebuilt tree to the traits of the tree handed in — including the ones
+        # that are false (isdiagonal of Diffusion, isselfadjoint of Advection).
+        κf = set!(scalar_field(bf), x -> 1 + x[1] * x[2])
+        vf = set!(vector_field(bf), x -> SVector(1 + x[1], x[2]))
+        Sf = scaling(κf)
+        Dif = diffusion(bf, κf)
+        Af = advection(bf, vf)
+        @test isdiagonal(Sf) && !isdiagonal(Dif) && !isselfadjoint(Af)
+        packed = pack(scalar_field(bf))
+        # (label, operator, expected type of P.op, packed coefficient inside P.op)
+        packed_cases = (
+            ("packed ScalingOp leaf", Sf, MFO.ScalingOp, L -> L.coeff),
+            ("packed Diffusion leaf", Dif, Diffusion, L -> L.κ),
+            ("packed Advection leaf", Af, Advection, L -> L.velocity),
+            ("packed Composed lap∘κ → PreparedComposed", laplacian(bf) * Sf,
+                MFO.PreparedComposed, L -> L.b.coeff),
+            ("packed Added(Diffusion, PreparedAdjoint)", Dif + adjoint(Df), Added, L -> L.a.κ),
+            ("packed Scaled Advection", 0.5 * Af, Scaled, L -> L.op.velocity),
+        )
+        for (label, L, twin, coeff) in packed_cases
+            @testset "$label" begin
+                P = prepare(L, packed)
+                @test P isa PreparedForest
+                @test P.op isa twin
+                @test coeff(P.op) isa PackedBlockField
+                @test !(coeff(L) isa PackedBlockField)     # the rewrite really happened
+                for trait in traits
+                    expected = trait(L)
+                    got = @inferred trait(P)
+                    @test got === expected
+                    @test trait(P.op) === expected
+                    got === expected || @info "packed trait mismatch" label trait expected got typeof(P.op)
+                end
+            end
+        end
     end
 
     @testset "boundary_rhs through combinators" begin
