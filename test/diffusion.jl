@@ -168,8 +168,10 @@ end
         # partitioned grid (cut faces on one or both sides, a physical wall on the
         # other) — plus a hand-built grid with Interface on two different axes and a
         # halo of 2 in one of them, so a deeper ghost plane (all-zero) is covered too.
+        # Grids live on `real(T)`: the fields may be complex, the extent never is.
         function interface_grids(T, N)
-            ext = ntuple(d -> (zero(T), T(2)), N)
+            R = real(T)
+            ext = ntuple(d -> (zero(R), R(2)), N)
             walls = (Dirichlet(), Neumann())
             grids = Any[]
             for cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
@@ -184,7 +186,10 @@ end
                                        halo=ntuple(d -> d == 2 ? 2 : 1, N)))
             return grids
         end
-        for T in (Float64, Float32), N in (2, 3), gi in interface_grids(T, N),
+        # ComplexF64 is the non-Real κ the packed forest kernel refuses
+        # (`_forest_adjoint_sweep!`), falling back to this same branch with the
+        # conjugated coefficient — the only place that fallback's sweep is checked.
+        for T in (Float64, Float32, ComplexF64), N in (2, 3), gi in interface_grids(T, N),
             # κ is an external input on a slab, ghosts included; a sign-changing κ
             # under ArithmeticMean exercises the signed zeros the corner gathers make.
             (name, avg, κfill) in (
@@ -198,6 +203,7 @@ end
             κ.data .= κfill.(rand(rng, T, padded_size(gi)...))
             D = M.Diffusion(gi, κ, avg)
             @test M._has_interface(gi)
+            @test (eltype(M._conj_op(D).κ) <: Real) == (T <: Real)
             for α in (one(T), T(0.7)), β in (zero(T), T(0.3))
                 @testset "$T $(N)D $(join(local_size(gi), "×")) $name α=$α β=$β" begin
                     # Nonzero garbage in every ghost of ȳ (both paths must zero it) and
