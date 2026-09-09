@@ -84,7 +84,7 @@ struct UnsupportedBC <: MatrixFreeOperators.AbstractBC end
         @test MFO.nleaves(bf2) == MFO.nleaves(bf)
         # the schedule Ref is shared and stays concretely typed across adaptation
         @test bf2.schedule === bf.schedule
-        @test eltype(bf2.schedule) === eltype(bf.schedule) === MFO._schedule_type(Val(2), Float64)
+        @test eltype(bf2.schedule) === eltype(bf.schedule) === MFO.ExchangeSchedule{2,Float64}
         @test isconcretetype(eltype(bf2.schedule))
     end
 

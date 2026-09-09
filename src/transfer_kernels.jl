@@ -38,36 +38,27 @@ function _copy_normal_dim(c::CopyDescriptor{N}, psize::NTuple{N,Int}) where {N}
     return N   # unreachable for h ≥ 1 slabs; keeps the compiler total
 end
 
-_dev_fill(f::GhostFill{N}, tfirst::Int, tlast::Int) where {N} = _DevFill{N}(
+_dev_fill(f::GhostFill{N}) where {N} = _DevFill{N}(
     Int32(f.dst_block),
     Int32.(first.(f.dst_ranges)),
     Int32.(step.(f.dst_ranges)),
     Int32.(length.(f.dst_ranges)),
-    Int32(tfirst), Int32(tlast),
+    Int32(f.tfirst), Int32(f.tlast),
 )
 
 _dev_term(t::SlabTerm{N,T}) where {N,T} = _DevTerm{N,T}(
     Int32(t.block), Int32.(first.(t.ranges)), Int32.(step.(t.ranges)), t.weight
 )
 
-# CSR-flatten one fill phase: fills in host order, all terms concatenated in
-# host fill/term order (the accumulation order the kernel must reproduce). Every
-# row is K wide, so the term buffer is sized up front and row i is
-# (i-1)K+1 : iK — the explicit [tfirst, tlast] on each fill is kept so the kernel
-# stays K-agnostic.
-function _flatten_fills(fills::Vector{GhostFill{N,T,K}}) where {N,T,K}
-    devfills = Vector{_DevFill{N}}(undef, length(fills))
-    terms = Vector{_DevTerm{N,T}}(undef, K * length(fills))
-    maxcells = 0
-    for (i, f) in enumerate(fills)
-        tfirst = (i - 1) * K + 1
-        for (k, t) in enumerate(f.terms)
-            terms[tfirst + k - 1] = _dev_term(t)
-        end
-        devfills[i] = _dev_fill(f, tfirst, i * K)
-        maxcells = max(maxcells, prod(length.(f.dst_ranges)))
-    end
-    return devfills, terms, maxcells
+# One fill phase to its device records. The host schedule is already CSR (fills
+# in host order, each carrying its [tfirst, tlast] row into the phase's flat term
+# buffer, terms in host fill/term order — the accumulation order the kernel must
+# reproduce), so this is a per-record narrowing to Int32, not a re-layout.
+function _flatten_fills(fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}}) where {N,T}
+    devfills = _DevFill{N}[_dev_fill(f) for f in fills]
+    devterms = _DevTerm{N,T}[_dev_term(t) for t in terms]
+    maxcells = maximum(f -> prod(length.(f.dst_ranges)), fills; init=0)
+    return devfills, devterms, maxcells
 end
 
 function _flatten_schedule(
@@ -90,8 +81,9 @@ function _flatten_schedule(
         end
         copy_offsets[d + 1] = length(devcopies)
     end
-    interp, interp_terms, interp_maxcells = _flatten_fills(sched.interp)
-    restrict, restrict_terms, restrict_maxcells = _flatten_fills(sched.restrict)
+    interp, interp_terms, interp_maxcells = _flatten_fills(sched.interp, sched.interp_terms)
+    restrict, restrict_terms, restrict_maxcells =
+        _flatten_fills(sched.restrict, sched.restrict_terms)
     bcfaces = ntuple(
         d -> (
             _to_device(backend, Int32.(sched.bcfaces[d][1])),

@@ -107,9 +107,9 @@ _step1(r::UnitRange{Int}) = first(r):1:last(r)
 # every term reads block interiors only, so the fill is order-independent and
 # never touches BC ghosts.
 function _emit_interp!(
-    interp::Vector{GhostFill{N,T,KI}}, bf::BlockForest{N,T}, i::Int, K::LeafKey{N},
-    d::Int, side::Int, cover::LeafKey{N},
-) where {N,T,KI}
+    interp::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}}, bf::BlockForest{N,T},
+    i::Int, K::LeafKey{N}, d::Int, side::Int, cover::LeafKey{N},
+) where {N,T}
     forest, n = bf.forest, bf.blocksize
     ci = leaf_index(forest, cover)
     nd = n[d]
@@ -122,7 +122,7 @@ function _emit_interp!(
     classlists = map(t -> _tangential_classes(n[t], K.coords[t] & 1, T), tdims)
     for combo in Iterators.product(classlists...)
         fine_t = map(c -> c.fine, combo)
-        terms = SlabTerm{N,T}[]
+        tfirst = length(terms) + 1
         push!(terms, SlabTerm{N,T}(i, _cf_box(Val(N), d, f_n:1:f_n, tdims, fine_t), w_own))
         for (layer_n, w_layer) in ((U1_n, w_U1), (U2_n, w_U2))
             for taps in Iterators.product(ntuple(_ -> (1, 2, 3), length(tdims))...)
@@ -143,24 +143,29 @@ function _emit_interp!(
         end
         push!(
             interp,
-            GhostFill(
-                i, _cf_box(Val(N), d, g_n:1:g_n, tdims, fine_t), _term_tuple(Val(KI), terms)
+            _close_fill(
+                i, _cf_box(Val(N), d, g_n:1:g_n, tdims, fine_t),
+                tfirst, length(terms), _ninterp_terms(Val(N)),
             ),
         )
     end
     return nothing
 end
 
-# Freeze an emitted term list into the fill's fixed-width NTuple. The count is a
-# compile-time function of N (schedule.jl); a mismatch is an emitter bug, not a
-# topology case, so it throws rather than padding.
-function _term_tuple(::Val{K}, terms::Vector{SlabTerm{N,T}}) where {K,N,T}
-    length(terms) == K || throw(
+# Close one fill over the terms pushed onto the phase buffer since `tfirst`. The
+# row width is a function of N alone (schedule.jl); a mismatch is an emitter bug,
+# not a topology case, so it throws rather than recording a ragged row.
+function _close_fill(
+    dst_block::Int, dst_ranges::NTuple{N,StepRange{Int,Int}},
+    tfirst::Int, tlast::Int, nexpected::Int,
+) where {N}
+    nterms = tlast - tfirst + 1
+    nterms == nexpected || throw(
         AssertionError(
-            "coarse–fine fill emitted $(length(terms)) terms, expected $K for N = $N",
+            "coarse–fine fill emitted $nterms terms, expected $nexpected for N = $N",
         ),
     )
-    return ntuple(k -> terms[k], Val(K))
+    return GhostFill{N}(dst_block, dst_ranges, tfirst, tlast)
 end
 
 # Fine→coarse (flux-matching restriction): fill the coarse leaf K's ghost layer
@@ -172,9 +177,10 @@ end
 # ghost slab disjointly. A plain 2^N volume average would leave O(1) truncation
 # at the interface (1st-order solutions) — rejected.
 function _emit_restrict!(
-    restrict::Vector{GhostFill{N,T,KR}}, cfflux::Vector{CFFluxDescriptor{N}},
-    bf::BlockForest{N,T}, i::Int, K::LeafKey{N}, d::Int, side::Int, nbr::LeafKey{N},
-) where {N,T,KR}
+    restrict::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}},
+    cfflux::Vector{CFFluxDescriptor{N}}, bf::BlockForest{N,T},
+    i::Int, K::LeafKey{N}, d::Int, side::Int, nbr::LeafKey{N},
+) where {N,T}
     forest, n = bf.forest, bf.blocksize
     nd = n[d]
     gC_n = side == -1 ? 1 : nd + 2           # K's ghost layer
@@ -192,7 +198,7 @@ function _emit_restrict!(
             lo = 2 + (child.coords[t] & 1) * (n[t] >> 1)
             lo:1:(lo + (n[t] >> 1) - 1)
         end
-        terms = SlabTerm{N,T}[]
+        tfirst = length(terms) + 1
         push!(terms, SlabTerm{N,T}(i, _cf_box(Val(N), d, u1_n:1:u1_n, tdims, dst_t), one(T)))
         for parities in Iterators.product(ntuple(_ -> (0, 1), length(tdims))...)
             fine_t = map(tdims, parities) do t, p
@@ -203,8 +209,9 @@ function _emit_restrict!(
         end
         push!(
             restrict,
-            GhostFill(
-                i, _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t), _term_tuple(Val(KR), terms)
+            _close_fill(
+                i, _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t),
+                tfirst, length(terms), _nrestrict_terms(Val(N)),
             ),
         )
         # The same child walk also records the weight-free coarse–fine-face topology
@@ -236,8 +243,8 @@ function _build_exchange_schedule(bf::BlockForest{N,T}) where {N,T}
     forest, h, n = bf.forest, bf.halo, bf.blocksize
     forest.uniform[] || _validate_coarse_fine(bf)
     copies = CopyDescriptor{N}[]
-    interp = GhostFill{N,T,_ninterp_terms(Val(N))}[]
-    restrict = GhostFill{N,T,_nrestrict_terms(Val(N))}[]
+    interp, interp_terms = GhostFill{N}[], SlabTerm{N,T}[]
+    restrict, restrict_terms = GhostFill{N}[], SlabTerm{N,T}[]
     cfflux = CFFluxDescriptor{N}[]
     bcfaces = ntuple(_ -> (Int[], Int[]), Val(N))
     for (i, K) in enumerate(forest.leaves), d in 1:N, side in (-1, 1)
@@ -259,13 +266,16 @@ function _build_exchange_schedule(bf::BlockForest{N,T}) where {N,T}
             cover = leaf_covering(forest, nbr)
             if cover !== nothing                    # K is the finer side
                 cover.level == K.level - 1 || _throw_unbalanced(K)
-                _emit_interp!(interp, bf, i, K, d, side, cover)
+                _emit_interp!(interp, interp_terms, bf, i, K, d, side, cover)
             else                                    # K is the coarser side
-                _emit_restrict!(restrict, cfflux, bf, i, K, d, side, nbr)
+                _emit_restrict!(restrict, restrict_terms, cfflux, bf, i, K, d, side, nbr)
             end
         end
     end
-    return ExchangeSchedule(copies, interp, restrict, cfflux, bcfaces, forest.generation[])
+    return ExchangeSchedule{N,T}(
+        copies, interp, interp_terms, restrict, restrict_terms, cfflux, bcfaces,
+        forest.generation[],
+    )
 end
 
 # Per-generation cache accessor: keyed by the live forest generation, so a schedule
@@ -329,8 +339,8 @@ other cross-phase dependency exists.
 """
 function _exchange_storage!(store, lay::BlockLayout, sched::ExchangeSchedule)
     _run_copies!(store, lay, sched.copies)
-    _run_fills!(store, lay, sched.interp)
-    _run_fills!(store, lay, sched.restrict)
+    _run_fills!(store, lay, sched.interp, sched.interp_terms)
+    _run_fills!(store, lay, sched.restrict, sched.restrict_terms)
     return nothing
 end
 
@@ -344,17 +354,22 @@ function _run_copies!(store, lay::BlockLayout, copies::Vector{CopyDescriptor{N}}
     return nothing
 end
 
-# `fills` is a flat inline buffer of isbits records (GhostFill.terms is an NTuple),
-# so each term is one inline load; the K-bounded inner loop has static trip count.
-# Seed with term 1, accumulate in term order — the arithmetic the device CSR
-# kernel reproduces term-for-term.
-function _run_fills!(store, lay::BlockLayout, fills::Vector{GhostFill{N,T,K}}) where {N,T,K}
+# `fills` and `terms` are the phase's flat isbits buffers: each fill names its CSR
+# row `tfirst:tlast` into `terms`, so a term is one small inline load and no
+# per-fill record wider than a dst box is ever copied (a 3D interpolation row is
+# 19 terms — carrying them inside the fill costs a ~1.7 KB copy per iteration,
+# and unrolling the row bloats the broadcast body; both measured slower). Seed
+# with term 1, accumulate in term order — the arithmetic the device CSR kernel
+# reproduces term-for-term.
+function _run_fills!(
+    store, lay::BlockLayout, fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}}
+) where {N,T}
     for f in fills
         dst = _leaf_view(store, lay, f.dst_block, f.dst_ranges)
-        t1 = f.terms[1]
+        t1 = terms[f.tfirst]
         dst .= t1.weight .* _leaf_view(store, lay, t1.block, t1.ranges)
-        for k in 2:K
-            tk = f.terms[k]
+        for k in (f.tfirst + 1):f.tlast
+            tk = terms[k]
             dst .+= tk.weight .* _leaf_view(store, lay, tk.block, tk.ranges)
         end
     end
@@ -393,8 +408,8 @@ exact reverse order — the transpose of a composition is the reversed compositi
 transposes.
 """
 function _exchange_storage_adjoint!(store, lay::BlockLayout, sched::ExchangeSchedule)
-    _run_fills_adjoint!(store, lay, sched.restrict)
-    _run_fills_adjoint!(store, lay, sched.interp)
+    _run_fills_adjoint!(store, lay, sched.restrict, sched.restrict_terms)
+    _run_fills_adjoint!(store, lay, sched.interp, sched.interp_terms)
     _run_copies_adjoint!(store, lay, sched.copies)
     return nothing
 end
@@ -411,12 +426,16 @@ function _run_copies_adjoint!(
     return nothing
 end
 
+# Fills in reverse, terms within a fill in forward order — the scatter-adds of
+# one fill collide on shared source cells, so the term order is part of the
+# bit-exact contract.
 function _run_fills_adjoint!(
-    store, lay::BlockLayout, fills::Vector{GhostFill{N,T,K}}
-) where {N,T,K}
+    store, lay::BlockLayout, fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}}
+) where {N,T}
     for f in Iterators.reverse(fills)
         dst = _leaf_view(store, lay, f.dst_block, f.dst_ranges)
-        for tk in f.terms
+        for k in f.tfirst:f.tlast
+            tk = terms[k]
             _leaf_view(store, lay, tk.block, tk.ranges) .+= tk.weight .* dst
         end
         fill!(dst, zero(eltype(dst)))

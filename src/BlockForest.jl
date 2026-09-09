@@ -30,7 +30,7 @@ refine!(forest, x -> sum(abs2, x .- 0.5) < 0.05)   # refine a disc near the cent
 
 See also: [`refine!`](@ref), [`coarsen!`](@ref), [`leaves`](@ref).
 """
-struct BlockForest{N,T,BC<:Tuple,Dev,S<:ExchangeSchedule{N,T}} <: AbstractGrid{N}
+struct BlockForest{N,T,BC<:Tuple,Dev} <: AbstractGrid{N}
     forest::Forest{N}
     extent::NTuple{N,Tuple{T,T}}
     spacing0::NTuple{N,T}          # root-level (coarsest) spacing
@@ -38,7 +38,7 @@ struct BlockForest{N,T,BC<:Tuple,Dev,S<:ExchangeSchedule{N,T}} <: AbstractGrid{N
     halo::NTuple{N,Int}
     bc::BC                         # physical domain boundary conditions
     device::Dev
-    schedule::Base.RefValue{S}     # per-generation halo-exchange cache; S = _schedule_type(Val(N), T)
+    schedule::Base.RefValue{ExchangeSchedule{N,T}}   # per-generation halo-exchange cache
     schedule_device::Base.RefValue{_AbstractDeviceSchedule}  # flattened twin, keyed on generation + backend
 end
 
@@ -62,10 +62,9 @@ function BlockForest(
     nroot = ntuple(d -> base.size[d] ÷ blocksize[d], Val(N))
     periodic = ntuple(d -> base.bc[d][1] isa Periodic, Val(N))
     forest = Forest(nroot, periodic, maxlevel)
-    S = _schedule_type(Val(N), T)
-    return BlockForest{N,T,typeof(base.bc),typeof(base.device),S}(
+    return BlockForest{N,T,typeof(base.bc),typeof(base.device)}(
         forest, base.extent, base.spacing, blocksize, base.halo, base.bc, base.device,
-        Ref{S}(_empty_schedule(Val(N), T)),
+        Ref(_empty_schedule(Val(N), T)),
         Ref{_AbstractDeviceSchedule}(_NoDeviceSchedule()),
     )
 end
@@ -169,13 +168,13 @@ Re-establish the 2:1 balance invariant across leaf faces.
 """
 balance!(bf::BlockForest) = (balance!(bf.forest); bf)
 
-function Adapt.adapt_structure(to, bf::BlockForest{N,T,BC,Dev,S}) where {N,T,BC,Dev,S}
+function Adapt.adapt_structure(to, bf::BlockForest{N,T}) where {N,T}
     device = KernelAbstractions.get_backend(Adapt.adapt(to, similar(Vector{Bool}, 0)))
     # The schedule Refs are shared deliberately, like `forest`: descriptors are
     # device-independent index data, and sharing keeps the caches warm across
     # adaptation (the device twin additionally keys on its own backend, so a
     # shared Ref can never serve the wrong device).
-    return BlockForest{N,T,BC,typeof(device),S}(
+    return BlockForest{N,T,typeof(bf.bc),typeof(device)}(
         bf.forest, bf.extent, bf.spacing0, bf.blocksize, bf.halo, bf.bc, device,
         bf.schedule, bf.schedule_device,
     )
