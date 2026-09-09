@@ -323,6 +323,94 @@
         @test alloc_mul(P, out, v) ≤ 1000 * MFO.nleaves(bf)   # forest_prepare.jl bound
     end
 
+    @testset "invalid transfer policies fail before regridding" begin
+        base = CartesianGrid(((0.0, 1.0),), (8,))
+        bf = BlockForest(base; blocksize=(4,), maxlevel=1)
+        u = set!(scalar_field(bf), x -> x[1])
+        p = pack(u)
+        generation = bf.forest.generation[]
+        keys = copy(bf.forest.leaves)
+        values = flatten(u)
+
+        @testset "policy $(repr(invalid))" for invalid in (Conservative, :conservative, nothing)
+            @test_throws TypeError scalar_field(bf; transfer=invalid)
+            @test_throws TypeError vector_field(bf; transfer=invalid)
+            @test_throws MethodError with_transfer(u, invalid)
+            @test_throws MethodError with_transfer(p, invalid)
+            @test_throws TypeError BlockField{Center,typeof(invalid)}(u.blocks, bf)
+            @test_throws TypeError PackedBlockField{Center,typeof(invalid)}(p.data, p.levels, bf)
+            @test bf.forest.generation[] == generation
+            @test bf.forest.leaves == keys
+            @test flatten(u) == values
+        end
+
+        transferred = regrid!(with_transfer(u, Conservative()); refine=Returns(true))
+        @test MFO.nleaves(bf) > length(keys)
+        @test MFO._transfer_policy(transferred) === Conservative()
+    end
+
+    @testset "derived fields preserve policy and generation: $pol" for pol in (
+        Interpolated(), Conservative(), SlopeLimited()
+    )
+        base = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 8))
+        bf = BlockForest(base; blocksize=(4, 4), maxlevel=1)
+        u = set!(vector_field(bf; transfer=pol), x -> SVector(x[1], 2x[2]))
+        p = pack(u)
+        generation = u.generation
+
+        @testset "stale=$stale" for stale in (false, true)
+            stale && refine!(bf, Returns(true))
+            b = @inferred BlockField{Center,typeof(pol)}(u.blocks, bf, generation)
+            packed = @inferred PackedBlockField{Center,typeof(pol)}(p.data, p.levels, bf, generation)
+            @test b.blocks === u.blocks
+            @test packed.data === p.data
+            @test packed.levels === p.levels
+            @test b.generation == packed.generation == generation
+
+            @testset "layout=$(nameof(typeof(f)))" for f in (b, packed)
+                @testset "$name" for (name, derived, expected_type) in (
+                    ("copy", copy(f), eltype(f)),
+                    ("similar", similar(f), eltype(f)),
+                    ("similar Float32", similar(f, SVector{2,Float32}), SVector{2,Float32}),
+                    ("component", component(f, 1), Float64),
+                    ("with_transfer", with_transfer(f, pol), eltype(f)),
+                    ("adapt", Adapt.adapt(Array, f), eltype(f)),
+                )
+                    @test MFO._transfer_policy(derived) === pol
+                    @test derived.generation == generation
+                    @test eltype(derived) == expected_type
+                    if stale
+                        @test_throws ArgumentError MFO.block(derived, 1)
+                    else
+                        @test MFO._require_current(derived) === nothing
+                        if name in ("copy", "with_transfer", "adapt")
+                            @test flatten(derived) == flatten(f)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    @testset "minmod preserves small slopes: $T" for T in (Float32, Float64)
+        tiny = T === Float32 ? T(1e-25) : T(1e-200)
+        @test MFO._minmod(tiny, 2tiny) === tiny
+        @test MFO._minmod(2tiny, tiny) === tiny
+        @test MFO._minmod(-tiny, -2tiny) === -tiny
+        @test iszero(MFO._minmod(tiny, -tiny))
+        @test iszero(MFO._minmod(zero(T), tiny))
+        @test iszero(MFO._minmod(-tiny, zero(T)))
+        @test MFO._minmod(SVector(tiny, -tiny), SVector(2tiny, tiny)) == SVector(tiny, zero(T))
+
+        # Changing field units must not turn a sloped reconstruction into injection.
+        base = CartesianGrid(((zero(T), one(T)),), (8,))
+        bf = BlockForest(base; blocksize=(4,), maxlevel=1)
+        u = set!(scalar_field(bf, T; transfer=SlopeLimited()), x -> x[1])
+        v = set!(scalar_field(bf, T; transfer=SlopeLimited()), x -> tiny * x[1])
+        u, v = regrid!(u, v; refine=Returns(true))
+        @test isapprox(flatten(v) ./ tiny, flatten(u); rtol=8eps(T))
+    end
+
     # Volume-weighted mass Σ V·u and its scale Σ V·|u| — the conserved quantity
     # the transfer policies are about (the forest_diffusion.jl defect idiom).
     function field_mass(u, bf)

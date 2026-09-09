@@ -270,8 +270,10 @@ end
 
 # Scalar minmod, applied componentwise to SVector eltypes: the slope both
 # children share, clamped to zero across an extremum.
-@inline function _minmod(a::T, b::T) where {T<:Number}
-    return ifelse(a * b > zero(a * b), ifelse(abs(a) <= abs(b), a, b), zero(a))
+@inline function _minmod(a::T, b::T) where {T<:Real}
+    same_sign = signbit(a) == signbit(b)
+    smaller = ifelse(abs(a) <= abs(b), a, b)
+    return ifelse(same_sign, smaller, zero(a))
 end
 @inline _minmod(a::SVector, b::SVector) = _minmod.(a, b)
 

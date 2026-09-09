@@ -68,7 +68,7 @@ function _layout end
 @inline _leaf_view(store, ::BlocksLayout, i::Integer, ranges) = view(store[i], ranges...)
 
 """
-    BlockField{L,P}(blocks, grid)
+    BlockField{L,P}(blocks, grid[, generation])
     BlockField{L}(blocks, grid)
     BlockField(blocks, grid)
 
@@ -85,13 +85,16 @@ after a regrid.
 
 See also: [`scalar_field`](@ref), [`vector_field`](@ref), [`block`](@ref).
 """
-struct BlockField{L,P,A<:AbstractArray,G<:BlockForest} <: AbstractBlockField
+struct BlockField{L,P<:RegridTransferPolicy,A<:AbstractArray,G<:BlockForest} <: AbstractBlockField
     blocks::Vector{A}
     grid::G
     generation::Int
 end
-BlockField{L,P}(blocks::Vector{<:AbstractArray}, grid::BlockForest) where {L,P} =
-    BlockField{L,P,eltype(blocks),typeof(grid)}(blocks, grid, grid.forest.generation[])
+function BlockField{L,P}(
+    blocks::Vector{<:AbstractArray}, grid::BlockForest, generation::Int=grid.forest.generation[]
+) where {L,P}
+    return BlockField{L,P,eltype(blocks),typeof(grid)}(blocks, grid, generation)
+end
 BlockField{L}(blocks::Vector{<:AbstractArray}, grid::BlockForest) where {L} =
     BlockField{L,Interpolated}(blocks, grid)
 BlockField(blocks::Vector{<:AbstractArray}, grid::BlockForest) = BlockField{Center}(blocks, grid)
@@ -109,8 +112,8 @@ The same field — shared storage, same location trait and generation — carryi
 existing field (e.g. conserved state built with the plain constructors) before
 handing it to [`regrid!`](@ref); no data is copied.
 """
-with_transfer(f::BlockField{L}, ::P) where {L,P} =
-    BlockField{L,P,eltype(f.blocks),typeof(f.grid)}(f.blocks, f.grid, f.generation)
+with_transfer(f::BlockField{L}, ::P) where {L,P<:RegridTransferPolicy} =
+    BlockField{L,P}(f.blocks, f.grid, f.generation)
 
 # Per-layout storage accessors behind which everything else is layout-agnostic.
 _storage(f::BlockField) = f.blocks
@@ -131,7 +134,7 @@ function _require_current(f::AbstractBlockField)
 end
 
 function scalar_field(
-    bf::BlockForest, ::Type{T}=eltype(bf.spacing0); transfer=Interpolated()
+    bf::BlockForest, ::Type{T}=eltype(bf.spacing0); transfer::RegridTransferPolicy=Interpolated()
 ) where {T<:Number}
     backend = KernelAbstractions.get_backend(bf)
     psize = bf.blocksize .+ 2 .* bf.halo
@@ -140,7 +143,7 @@ function scalar_field(
 end
 
 function vector_field(
-    bf::BlockForest{N}, ::Type{T}=eltype(bf.spacing0); transfer=Interpolated()
+    bf::BlockForest{N}, ::Type{T}=eltype(bf.spacing0); transfer::RegridTransferPolicy=Interpolated()
 ) where {N,T<:Number}
     backend = KernelAbstractions.get_backend(bf)
     psize = bf.blocksize .+ 2 .* bf.halo
@@ -170,19 +173,19 @@ function component(f::BlockField{L,P}, d::Integer) where {L,P}
     1 <= d <= ncomponents(f) ||
         throw(ArgumentError("component $d out of range for $(ncomponents(f)) components"))
     blocks = [getindex.(b, d) for b in f.blocks]
-    return BlockField{L,P,eltype(blocks),typeof(f.grid)}(blocks, f.grid, f.generation)
+    return BlockField{L,P}(blocks, f.grid, f.generation)
 end
 
 # Derived fields inherit the source's generation: a copy of a stale field is
 # equally stale — stamping the current generation would bless wrong-size storage.
-Base.similar(f::BlockField{L,P,A,G}) where {L,P,A,G} =
-    BlockField{L,P,A,G}([similar(b) for b in f.blocks], f.grid, f.generation)
+Base.similar(f::BlockField{L,P}) where {L,P} =
+    BlockField{L,P}([similar(b) for b in f.blocks], f.grid, f.generation)
 function Base.similar(f::BlockField{L,P}, ::Type{E}) where {L,P,E}
     blocks = [similar(b, E) for b in f.blocks]
-    return BlockField{L,P,eltype(blocks),typeof(f.grid)}(blocks, f.grid, f.generation)
+    return BlockField{L,P}(blocks, f.grid, f.generation)
 end
-Base.copy(f::BlockField{L,P,A,G}) where {L,P,A,G} =
-    BlockField{L,P,A,G}([copy(b) for b in f.blocks], f.grid, f.generation)
+Base.copy(f::BlockField{L,P}) where {L,P} =
+    BlockField{L,P}([copy(b) for b in f.blocks], f.grid, f.generation)
 
 function set!(f::AbstractBlockField, fun::F) where {F}
     for i in 1:nleaves(f.grid)
@@ -209,7 +212,7 @@ end
 function Adapt.adapt_structure(to, f::BlockField{L,P}) where {L,P}
     blocks = [Adapt.adapt(to, b) for b in f.blocks]
     grid = Adapt.adapt(to, f.grid)
-    return BlockField{L,P,eltype(blocks),typeof(grid)}(blocks, grid, f.generation)
+    return BlockField{L,P}(blocks, grid, f.generation)
 end
 
 #--------------------------------------------------------------------------------# Flat-vector boundary (per-block, Morton order)

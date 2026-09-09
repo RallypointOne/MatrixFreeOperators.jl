@@ -62,6 +62,8 @@ See also: [`Conservative`](@ref), [`with_transfer`](@ref).
 """
 struct SlopeLimited end
 
+const RegridTransferPolicy = Union{Interpolated,Conservative,SlopeLimited}
+
 """
     AbstractField
 

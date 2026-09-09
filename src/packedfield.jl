@@ -1,7 +1,7 @@
 #--------------------------------------------------------------------------------# PackedBlockField (packed contiguous storage)
 
 """
-    PackedBlockField{L,P}(data, levels, grid)
+    PackedBlockField{L,P}(data, levels, grid[, generation])
 
 Packed twin of [`BlockField`](@ref): every leaf's halo-padded block stored in one
 contiguous `(blocksize .+ 2halo ..., nleaves)` array (`data`, leaves in Morton
@@ -20,7 +20,7 @@ AD, Reactant, and [`regrid!`](@ref) (re-`pack` after a regrid).
 See also: [`block`](@ref), [`flatten`](@ref).
 """
 struct PackedBlockField{
-    L,P,A<:AbstractArray,V<:AbstractVector{Int},G<:BlockForest
+    L,P<:RegridTransferPolicy,A<:AbstractArray,V<:AbstractVector{Int},G<:BlockForest
 } <: AbstractBlockField
     data::A
     levels::V
@@ -28,20 +28,19 @@ struct PackedBlockField{
     generation::Int
 end
 function PackedBlockField{L,P}(
-    data::AbstractArray, levels::AbstractVector{Int}, grid::BlockForest
+    data::AbstractArray, levels::AbstractVector{Int}, grid::BlockForest,
+    generation::Int=grid.forest.generation[],
 ) where {L,P}
     return PackedBlockField{L,P,typeof(data),typeof(levels),typeof(grid)}(
-        data, levels, grid, grid.forest.generation[]
+        data, levels, grid, generation
     )
 end
 PackedBlockField{L}(data::AbstractArray, levels::AbstractVector{Int}, grid::BlockForest) where {L} =
     PackedBlockField{L,Interpolated}(data, levels, grid)
 
 _transfer_policy(::PackedBlockField{L,P}) where {L,P} = P()
-with_transfer(f::PackedBlockField{L}, ::P) where {L,P} =
-    PackedBlockField{L,P,typeof(f.data),typeof(f.levels),typeof(f.grid)}(
-        f.data, f.levels, f.grid, f.generation
-    )
+with_transfer(f::PackedBlockField{L}, ::P) where {L,P<:RegridTransferPolicy} =
+    PackedBlockField{L,P}(f.data, f.levels, f.grid, f.generation)
 
 # The i-th leaf of a packed parent array as an N-dim view — shared by the field
 # accessors and the forest-native kernel bodies.
@@ -69,20 +68,18 @@ function component(f::PackedBlockField{L,P}, d::Integer) where {L,P}
     1 <= d <= ncomponents(f) ||
         throw(ArgumentError("component $d out of range for $(ncomponents(f)) components"))
     data = getindex.(f.data, d)
-    return PackedBlockField{L,P,typeof(data),typeof(f.levels),typeof(f.grid)}(
-        data, f.levels, f.grid, f.generation
-    )
+    return PackedBlockField{L,P}(data, f.levels, f.grid, f.generation)
 end
 
 # Derived fields inherit the source's generation (same rule as BlockField).
-Base.similar(f::PackedBlockField{L,P,A,V,G}) where {L,P,A,V,G} =
-    PackedBlockField{L,P,A,V,G}(similar(f.data), f.levels, f.grid, f.generation)
-function Base.similar(f::PackedBlockField{L,P,A,V,G}, ::Type{E}) where {L,P,A,V,G,E}
+Base.similar(f::PackedBlockField{L,P}) where {L,P} =
+    PackedBlockField{L,P}(similar(f.data), f.levels, f.grid, f.generation)
+function Base.similar(f::PackedBlockField{L,P}, ::Type{E}) where {L,P,E}
     data = similar(f.data, E)
-    return PackedBlockField{L,P,typeof(data),V,G}(data, f.levels, f.grid, f.generation)
+    return PackedBlockField{L,P}(data, f.levels, f.grid, f.generation)
 end
-Base.copy(f::PackedBlockField{L,P,A,V,G}) where {L,P,A,V,G} =
-    PackedBlockField{L,P,A,V,G}(copy(f.data), f.levels, f.grid, f.generation)
+Base.copy(f::PackedBlockField{L,P}) where {L,P} =
+    PackedBlockField{L,P}(copy(f.data), f.levels, f.grid, f.generation)
 
 _zero_all!(f::PackedBlockField) = (fill!(f.data, zero(eltype(f))); f)
 
@@ -132,9 +129,7 @@ function Adapt.adapt_structure(to, f::PackedBlockField{L,P}) where {L,P}
     data = Adapt.adapt(to, f.data)
     levels = Adapt.adapt(to, f.levels)
     grid = Adapt.adapt(to, f.grid)
-    return PackedBlockField{L,P,typeof(data),typeof(levels),typeof(grid)}(
-        data, levels, grid, f.generation
-    )
+    return PackedBlockField{L,P}(data, levels, grid, f.generation)
 end
 
 # Per-leaf refinement levels on the forest's backend, in Morton (storage) order.
