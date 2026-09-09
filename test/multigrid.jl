@@ -12,6 +12,47 @@
             @test all(diag(materialize(prepare(laplacian(gp)))) .≈ d)
         end
 
+        # A periodic dimension of a single cell wraps onto the cell itself, so the ghost
+        # read lands on the diagonal and cancels that dimension's term (issue #55). The
+        # diagonal stays uniform, so it is still a Number — just not -2Σ h⁻².
+        @testset "all-periodic degenerate n=$n" for n in ((1, 4), (4, 1), (1, 1), (2, 2))
+            gp = CartesianGrid(
+                ((0.0, 1.0), (0.0, 1.0)), n; bc=ntuple(_ -> (Periodic(), Periodic()), 2)
+            )
+            d = operator_diagonal(laplacian(gp))
+            @test d isa Number
+            @test all(diag(materialize(prepare(laplacian(gp)))) .≈ d)
+        end
+        let gp = CartesianGrid(((0.0, 1.0),), (1,); bc=((Periodic(), Periodic()),))
+            d = operator_diagonal(laplacian(gp))
+            @test d isa Number
+            @test d == 0
+            @test all(diag(materialize(prepare(laplacian(gp)))) .≈ d)
+        end
+        let gp = CartesianGrid(
+                ((0.0, 1.0), (0.0, 2.0), (0.0, 3.0)),
+                (1, 3, 2);
+                bc=ntuple(_ -> (Periodic(), Periodic()), 3),
+            )
+            d = operator_diagonal(laplacian(gp))
+            @test d isa Number
+            @test all(diag(materialize(prepare(laplacian(gp)))) .≈ d)
+        end
+
+        # Same degeneracy on the Field path, where a periodic axis of one cell sits next
+        # to physical faces that already need per-cell corrections.
+        @testset "mixed-BC degenerate $name n=$n" for (name, bc, n) in (
+            ("DN/PP", ((Dirichlet(), Neumann()), (Periodic(), Periodic())), (4, 1)),
+            ("PP/DD", ((Periodic(), Periodic()), (Dirichlet(), Dirichlet())), (1, 4)),
+            ("PP/NN", ((Periodic(), Periodic()), (Neumann(), Neumann())), (1, 1)),
+        )
+            gm = CartesianGrid(((0.0, 1.0), (0.0, 2.0)), n; bc=bc)
+            Lm = laplacian(gm)
+            dm = operator_diagonal(Lm)
+            @test dm isa Field
+            @test flatten(dm) ≈ diag(materialize(prepare(Lm)))
+        end
+
         # Dirichlet/Neumann faces adjust the boundary cells: exact vs dense diagonal
         g = CartesianGrid(
             ((0.0, 1.0), (0.0, 2.0)),
