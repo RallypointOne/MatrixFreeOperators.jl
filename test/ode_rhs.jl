@@ -77,6 +77,48 @@ end
         @test alloc_apply(du, L, u) ≤ 512
     end
 
+    @testset "inhomogeneous BCs: the explicit RHS is L(u) + boundary_rhs" begin
+        # apply! is the homogeneous linear part, so on Dirichlet(1), Dirichlet(2)
+        # the heat equation stepped as du = Δu relaxes to zero; the documented
+        # idiom adds the lift once per stage and relaxes to the steady state 1 + x.
+        g = CartesianGrid(((0.0, 1.0),), (16,); bc=((Dirichlet(1.0), Dirichlet(2.0)),))
+        L = laplacian(g)
+        b = boundary_rhs(L, g)
+        @test any(!iszero, interior(b))
+        dt = 0.4 * spacing(g)[1]^2
+        nsteps = 4000                                 # t = 6.25 ≫ 1/π², fully relaxed
+        exact = interior(set!(scalar_field(g), x -> 1 + x[1]))
+
+        u = scalar_field(g)
+        du = similar(u)
+        for _ in 1:nsteps
+            apply!(du, L, u)
+            interior(du) .+= interior(b)
+            interior(u) .+= dt .* interior(du)
+        end
+        err_lift = maximum(abs, interior(u) .- exact)
+        @info "explicit steady state with the boundary lift" err_lift
+        @test err_lift < 1e-10
+
+        # the prepared entry point is the same homogeneous part: same idiom, same answer
+        P = prepare(L)
+        up = scalar_field(g)
+        for _ in 1:nsteps
+            apply!(du, P, up)
+            interior(du) .+= interior(b)
+            interior(up) .+= dt .* interior(du)
+        end
+        @test interior(up) == interior(u)
+
+        # without the lift, the same loop integrates the homogeneous problem
+        u0 = scalar_field(g)
+        for _ in 1:nsteps
+            apply!(du, L, u0)
+            interior(u0) .+= dt .* interior(du)
+        end
+        @test maximum(abs, interior(u0)) < 1e-10
+    end
+
     @testset "apply!(du, P, u) on a prepared composed tree" begin
         g = CartesianGrid(
             ((0.0, 1.0), (0.0, 1.0)), (8, 6);

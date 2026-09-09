@@ -135,7 +135,9 @@ Everything composes from here with the same pieces:
   fields directly, with no flat copies. `prepare` + `mul!` is the Krylov
   boundary and pays for a copy into and out of a halo-padded scratch field on
   every call, which a Krylov solve needs and an explicit integrator does not —
-  see `examples/heat_equation.jl`;
+  see `examples/heat_equation.jl`. `apply!` is the homogeneous linear part, so
+  with inhomogeneous BCs the RHS is `L(u) + b`: assemble `b = boundary_rhs(L, g)`
+  once and add `interior(b)` to `du` each stage;
 - `linearize(F, u₀)` — the matrix-free Jacobian of a nonlinear operator such as
   `advection`, for implicit stepping and JFNK;
 - gradients through `apply` with respect to the input field *or* the coefficient

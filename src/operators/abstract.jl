@@ -98,6 +98,13 @@ path, so `prepare` it once and call `apply!(du, P, u)` on the
 [`PreparedOperator`](@ref) instead, which reuses the held buffers and still skips
 the flat copies.
 
+`apply!` is the *homogeneous* linear part only — it enforces `Dirichlet(0)` /
+zero-flux ghosts whatever values the grid's BCs carry, so `islinear(L)` ⇒
+`L(0) = 0`. With inhomogeneous boundary data the explicit RHS is `L(u) + b`, not
+`L(u)`: assemble `b = boundary_rhs(L, g)` once (see [`boundary_rhs`](@ref)) and
+add its interior per stage. Stepping `du = L(u)` alone on such a grid silently integrates the
+homogeneous problem.
+
 ### Examples
 
 ```julia
@@ -108,6 +115,18 @@ du = similar(u)
 dt = 0.2 * minimum(spacing(g))^2                          # forward-Euler bound
 for _ in 1:100
     apply!(du, L, u)                                      # du = Δu, no flat copies
+    interior(u) .+= dt .* interior(du)
+end
+
+# inhomogeneous BCs: add the boundary lift, or the step integrates Δu with u|∂Ω = 0
+g = CartesianGrid(((0.0, 1.0),), (64,); bc=((Dirichlet(1.0), Dirichlet(2.0)),))
+L = laplacian(g)
+b = boundary_rhs(L, g)                                    # once per grid
+u = scalar_field(g)
+du = similar(u)
+for _ in 1:100
+    apply!(du, L, u)
+    interior(du) .+= interior(b)                          # du = Δu + b
     interior(u) .+= dt .* interior(du)
 end
 ```

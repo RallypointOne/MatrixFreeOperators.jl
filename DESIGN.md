@@ -664,7 +664,11 @@ cut-plane ghosts at zero or the mirror — `κ_I/2` face coefficients under
   `flat_to_interior!`/`interior_to_flat!` staging is a Krylov cost an explicit
   integrator has no reason to pay (#87). A `PreparedOperator` accepts fields
   through the same `apply!(du, P, u)` so `*`-composed trees step allocation-free
-  too. (Neither adapter is shipped yet; #81 tracks the SciML extension.)
+  too. Both are the homogeneous linear part (§10.6's linear/affine split): with
+  inhomogeneous boundary data the explicit RHS is `L(u) + b`, with
+  `b = boundary_rhs(L, g)` assembled once and added per stage — dropping it
+  silently integrates the homogeneous problem. (Neither adapter is shipped yet;
+  #81 tracks the SciML extension.)
 - *Implicit/stiff* solvers (needed for diffusion): the idiomatic way to give
   OrdinaryDiffEq a **matrix-free Jacobian** is `ODEFunction(f; jac_prototype = J)`
   where `J` is a SciML-style lazy operator. Here `J` is the linear

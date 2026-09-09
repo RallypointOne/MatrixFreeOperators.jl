@@ -104,7 +104,9 @@ them — step at field level with [`apply!`](@ref) instead, either on the operat
 itself (`apply!(du, L, u)`; allocation-free for leaves and `+`/scalar
 combinations of them) or on the prepared operator (`apply!(du, P, u)`; also
 allocation-free for `*`-composed and adjoint trees, whose intermediates `prepare`
-allocated once). Keep `mul!` for Krylov.
+allocated once). Keep `mul!` for Krylov. Either `apply!` is the homogeneous linear
+part: with inhomogeneous boundary data add the lift `b = boundary_rhs(L, g)` to
+`du` each stage, exactly as the solve folds it into its right-hand side.
 
 ### Examples
 
@@ -120,6 +122,7 @@ du = similar(uf)
 dt = 0.4 * spacing(g)[1]^2              # inside the forward-Euler stability bound
 apply!(du, A, uf)                       # or apply!(du, laplacian(g), uf)
 interior(uf) .+= dt .* interior(du)     # one forward-Euler step
+# with inhomogeneous BCs: b = boundary_rhs(laplacian(g), g); interior(du) .+= interior(b)
 ```
 """
 function prepare(L::AbstractOperator, x::AbstractField)
@@ -694,7 +697,9 @@ performs. Ghosts of `x` are scratch (overwritten by halo/BC fills), ghosts of `y
 are left alone, exactly as for [`apply!`](@ref) on an unprepared operator.
 
 This is the explicit time-stepping idiom: `prepare` once, then `apply!(du, P, u)`
-per stage, and keep `mul!` for the Krylov boundary. `x` and `y` must live on the
+per stage, and keep `mul!` for the Krylov boundary. Like every `apply!`, this is
+the homogeneous linear part; with inhomogeneous boundary data add
+`interior(boundary_rhs(L, g))` to `du` each stage (see [`boundary_rhs`](@ref)). `x` and `y` must live on the
 grid `prepare` was given (`===` to `P.grid`: structural equality for an isbits
 `CartesianGrid`, identity for a `BlockForest`) and carry the prototype's element
 type; anything else throws an `ArgumentError` rather than running a hybrid of two
