@@ -197,7 +197,8 @@ function local_grids end
 
 # Tree-walking buffer allocation: leaves pass through unchanged; Composed and
 # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never
-# allocates.
+# allocates. AdjointOp nodes are first pushed down to the leaves (_push_adjoints
+# below), so a PreparedAdjoint never wraps a combinator.
 _prepare_tree(L::AbstractOperator, ::AbstractField) = L
 # Coefficient layout normalization: a BlockField coefficient under a packed
 # prototype is packed once here, so the prepared hot path dispatches to the
@@ -225,8 +226,44 @@ end
 # tmp is a whole BlockField, and _forest_capply! recurses at the forest level so
 # the intermediate gets its inter-block exchange.
 
+"""
+    _push_adjoints(L::AbstractOperator) -> AbstractOperator
+
+Push `AdjointOp` nodes down toward the leaves, exactly as `Base.adjoint` does
+(`adjoint_operator`, `src/operators/algebra.jl`), and return the rewritten tree
+(internal).
+
+`Base.adjoint` never builds the nested form, but a user can write `AdjointOp(A * B)`
+directly, and no prepared twin knows how to run the adjoint of a *composition*:
+`PreparedComposed` carries one intermediate buffer shaped for the forward pass, and
+the distributed walk would run a per-partition `aᵀ` then `bᵀ` with **no reduction
+in between**, dropping the intermediate's `Interface` cotangents on the floor.
+Rewriting first turns it into `Composed(bᵀ, aᵀ)`, which every walk handles node by
+node; only leaves without a cheaper declared adjoint remain wrapped.
+"""
+function _push_adjoints(L::AdjointOp)
+    inner = _push_adjoints(L.op)
+    a = adjoint_operator(inner)
+    # A leaf with no cheaper adjoint reports AdjointOp(inner) — the fixed point.
+    # Recursing on it unguarded would not terminate.
+    return (a isa AdjointOp && a.op === inner) ? a : _push_adjoints(a)
+end
+_push_adjoints(L::Added) = Added(_push_adjoints(L.a), _push_adjoints(L.b))
+_push_adjoints(L::Scaled) = Scaled(_push_adjoints(L.op), L.α)
+_push_adjoints(L::Composed) = Composed(_push_adjoints(L.a), _push_adjoints(L.b))
+_push_adjoints(L::AbstractOperator) = L
+
+# Normalize first so the PreparedAdjoint only ever wraps a leaf (see
+# _push_adjoints); a rewritten combinator tree re-enters the ordinary walk. Then
+# recurse into the leaf so its coefficient layout is normalized too: without
+# this, prepare(adjoint(D), packed) would keep a BlockField κ and the adjoint hot
+# path would silently stay on the per-leaf fallback. That recursion is
+# type-driven only (the coefficient methods above never read x's shape), so the
+# prototype's adjoint-vs-forward shape is irrelevant for a leaf.
 function _prepare_tree(L::AdjointOp, x::AbstractField)
-    return PreparedAdjoint(L.op, allocate_output(L, x))
+    pushed = _push_adjoints(L)
+    pushed isa AdjointOp || return _prepare_tree(pushed, x)
+    return PreparedAdjoint(_prepare_tree(pushed.op, x), allocate_output(pushed, x))
 end
 
 # Composed twin holding its concretely-typed intermediate field.

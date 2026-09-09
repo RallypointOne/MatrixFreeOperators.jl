@@ -198,6 +198,26 @@ CUDA.allowscalar(false)
                 )
                 @test Array(x̄g.data) ≈ x̄.data
             end
+
+            # compact flux-form diffusion: packed-κ forward and adjoint kernels,
+            # both averaging policies; on the refined forest the coarse–fine flux
+            # rewrite runs as device-view broadcasts ahead of the launch
+            for avg in (ArithmeticMean(), HarmonicMean())
+                D = diffusion(bf, set!(scalar_field(bf), x -> 1 + x[2]^2); averaging=avg)
+                Dp = MFO.Diffusion(bf, pack(D.κ), D.avg)
+                Dg = Adapt.adapt(CuArray, Dp)
+                y = apply(Dp, copy(p))
+                yg = apply(Dg, copy(pg))
+                @test Array(yg.data) ≈ y.data
+                x̄ = apply_adjoint!(MFO.allocate_input(Dp, ys), Dp, copy(ys), bf)
+                x̄g = apply_adjoint!(
+                    MFO.allocate_input(Dg, Adapt.adapt(CuArray, ys)),
+                    Dg,
+                    Adapt.adapt(CuArray, copy(ys)),
+                    pg.grid,
+                )
+                @test Array(x̄g.data) ≈ x̄.data
+            end
         end
     end
 

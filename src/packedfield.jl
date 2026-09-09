@@ -1,13 +1,16 @@
 #--------------------------------------------------------------------------------# PackedBlockField (packed contiguous storage)
 
 """
-    PackedBlockField{L}(data, levels, grid)
+    PackedBlockField{L,P}(data, levels, grid[, generation])
 
 Packed twin of [`BlockField`](@ref): every leaf's halo-padded block stored in one
 contiguous `(blocksize .+ 2halo ..., nleaves)` array (`data`, leaves in Morton
 order along the trailing dimension), with the per-leaf refinement levels in a
 device-resident vector (`levels`) — the geometry SoA forest-native kernels read;
-spacing derives from the forest's root spacing and the level. Behind the shared
+spacing derives from the forest's root spacing and the level. `L` is the
+location trait and `P` the regrid-transfer policy (default
+[`Interpolated`](@ref)); both survive [`pack`](@ref)/[`unpack`](@ref), and
+`P` is consulted only by [`regrid!`](@ref), never on an operator path. Behind the shared
 `AbstractBlockField` interface every operator runs on packed storage via the
 per-leaf fallback sweep (each leaf is a trailing-dim view), and operators with a
 forest-native kernel sweep all leaves in a single launch. Convert with
@@ -17,17 +20,27 @@ AD, Reactant, and [`regrid!`](@ref) (re-`pack` after a regrid).
 See also: [`block`](@ref), [`flatten`](@ref).
 """
 struct PackedBlockField{
-    L,A<:AbstractArray,V<:AbstractVector{Int},G<:BlockForest
+    L,P<:RegridTransferPolicy,A<:AbstractArray,V<:AbstractVector{Int},G<:BlockForest
 } <: AbstractBlockField
     data::A
     levels::V
     grid::G
     generation::Int
 end
-PackedBlockField{L}(data::AbstractArray, levels::AbstractVector{Int}, grid::BlockForest) where {L} =
-    PackedBlockField{L,typeof(data),typeof(levels),typeof(grid)}(
-        data, levels, grid, grid.forest.generation[]
+function PackedBlockField{L,P}(
+    data::AbstractArray, levels::AbstractVector{Int}, grid::BlockForest,
+    generation::Int=grid.forest.generation[],
+) where {L,P}
+    return PackedBlockField{L,P,typeof(data),typeof(levels),typeof(grid)}(
+        data, levels, grid, generation
     )
+end
+PackedBlockField{L}(data::AbstractArray, levels::AbstractVector{Int}, grid::BlockForest) where {L} =
+    PackedBlockField{L,Interpolated}(data, levels, grid)
+
+_transfer_policy(::PackedBlockField{L,P}) where {L,P} = P()
+with_transfer(f::PackedBlockField{L}, ::P) where {L,P<:RegridTransferPolicy} =
+    PackedBlockField{L,P}(f.data, f.levels, f.grid, f.generation)
 
 # The i-th leaf of a packed parent array as an N-dim view — shared by the field
 # accessors and the forest-native kernel bodies.
@@ -49,26 +62,24 @@ function block(f::PackedBlockField{L}, i::Integer, leaf_grid) where {L}
     return Field{L}(_block_array(f, i), leaf_grid)
 end
 
-Base.eltype(::PackedBlockField{L,A}) where {L,A} = eltype(A)
+Base.eltype(::PackedBlockField{L,P,A}) where {L,P,A} = eltype(A)
 
-function component(f::PackedBlockField{L}, d::Integer) where {L}
+function component(f::PackedBlockField{L,P}, d::Integer) where {L,P}
     1 <= d <= ncomponents(f) ||
         throw(ArgumentError("component $d out of range for $(ncomponents(f)) components"))
     data = getindex.(f.data, d)
-    return PackedBlockField{L,typeof(data),typeof(f.levels),typeof(f.grid)}(
-        data, f.levels, f.grid, f.generation
-    )
+    return PackedBlockField{L,P}(data, f.levels, f.grid, f.generation)
 end
 
 # Derived fields inherit the source's generation (same rule as BlockField).
-Base.similar(f::PackedBlockField{L,A,V,G}) where {L,A,V,G} =
-    PackedBlockField{L,A,V,G}(similar(f.data), f.levels, f.grid, f.generation)
-function Base.similar(f::PackedBlockField{L,A,V,G}, ::Type{E}) where {L,A,V,G,E}
+Base.similar(f::PackedBlockField{L,P}) where {L,P} =
+    PackedBlockField{L,P}(similar(f.data), f.levels, f.grid, f.generation)
+function Base.similar(f::PackedBlockField{L,P}, ::Type{E}) where {L,P,E}
     data = similar(f.data, E)
-    return PackedBlockField{L,typeof(data),V,G}(data, f.levels, f.grid, f.generation)
+    return PackedBlockField{L,P}(data, f.levels, f.grid, f.generation)
 end
-Base.copy(f::PackedBlockField{L,A,V,G}) where {L,A,V,G} =
-    PackedBlockField{L,A,V,G}(copy(f.data), f.levels, f.grid, f.generation)
+Base.copy(f::PackedBlockField{L,P}) where {L,P} =
+    PackedBlockField{L,P}(copy(f.data), f.levels, f.grid, f.generation)
 
 _zero_all!(f::PackedBlockField) = (fill!(f.data, zero(eltype(f))); f)
 
@@ -114,13 +125,11 @@ function interior_to_flat!(
     return v
 end
 
-function Adapt.adapt_structure(to, f::PackedBlockField{L}) where {L}
+function Adapt.adapt_structure(to, f::PackedBlockField{L,P}) where {L,P}
     data = Adapt.adapt(to, f.data)
     levels = Adapt.adapt(to, f.levels)
     grid = Adapt.adapt(to, f.grid)
-    return PackedBlockField{L,typeof(data),typeof(levels),typeof(grid)}(
-        data, levels, grid, f.generation
-    )
+    return PackedBlockField{L,P}(data, levels, grid, f.generation)
 end
 
 # Per-leaf refinement levels on the forest's backend, in Morton (storage) order.
@@ -153,12 +162,12 @@ P  = prepare(laplacian(bf), pack(u))
 
 See also: [`unpack`](@ref), [`PackedBlockField`](@ref).
 """
-function pack(f::BlockField{L}) where {L}
+function pack(f::BlockField{L,P}) where {L,P}
     _require_current(f)
     bf = f.grid
     psize = bf.blocksize .+ 2 .* bf.halo
     data = similar(first(f.blocks), eltype(f), (psize..., nleaves(bf)))
-    p = PackedBlockField{L}(data, _leaf_levels(bf), bf)
+    p = PackedBlockField{L,P}(data, _leaf_levels(bf), bf)
     for i in 1:nleaves(bf)
         _block_array(p, i) .= f.blocks[i]
     end
@@ -173,7 +182,7 @@ Copy packed storage back into the vector-of-blocks reference layout — the
 
 See also: [`pack`](@ref).
 """
-function unpack(f::PackedBlockField{L}) where {L}
+function unpack(f::PackedBlockField{L,P}) where {L,P}
     _require_current(f)
     bf = f.grid
     psize = bf.blocksize .+ 2 .* bf.halo
@@ -181,5 +190,5 @@ function unpack(f::PackedBlockField{L}) where {L}
     for i in 1:nleaves(bf)
         blocks[i] .= _block_array(f, i)
     end
-    return BlockField{L}(blocks, bf)
+    return BlockField{L,P}(blocks, bf)
 end

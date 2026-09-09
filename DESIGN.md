@@ -564,9 +564,10 @@ plain-`Vector` global indexing, so the CPU proof exercises the real walk rather
 than re-emulating it. The distributability guards moved to core with the walk, so
 CI runs them. `Derivative` joins the whitelist (same shape as `Laplacian`, and the
 only whitelisted leaf that is not self-adjoint, hence the only way to reach an
-`AdjointOp` node). Adjoints are normalized down to the leaves before `prepare`,
-which does not recurse into an `AdjointOp` and would otherwise skip the mid-tree
-reduction for `AdjointOp(A∘B)`.
+`AdjointOp` node). Adjoints are normalized down to the leaves before the walk
+(`_push_adjoints`, which `prepare` itself now applies at every `AdjointOp` node);
+a `PreparedAdjoint` never wraps a combinator, so `AdjointOp(A∘B)` cannot skip the
+mid-tree reduction.
 
 *Built (issue #31, slice 2b):* `Field` coefficients and distributed `boundary_rhs`
 — i.e. the whole solve, including its right-hand side, assembled slab-locally with
@@ -676,7 +677,7 @@ cut-plane ghosts at zero or the mirror — `κ_I/2` face coefficients under
 1. `CartesianGrid{N}` — uniform, single device, collocated, with periodic +
    Dirichlet + Neumann BCs; `halo_update!` present as a no-op.
 2. `Field{Center}` over device arrays.
-3. Operator algebra: leaves `Laplacian`, `Derivative`, `Gradient`, `Divergence`, `ScalingOp`, `IdentityOp`, `Advection`; combinators `Added`, `Composed`, `Scaled`, `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` + `apply_adjoint!`; `mul!`/`size`/`eltype`; `Adapt` support. `ScalingOp` (pointwise ×κ(x)) is the leaf that makes Decision B concrete: it carries a differentiable coefficient *field*, it is the genuine `isdiagonal` / `isselfadjoint` instance (Jacobi smoother target), and variable-coefficient diffusion falls out of the algebra as `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test. (Caveat: the composed form has a wider effective stencil and collocated odd-even quirks. **Resolved (2026-08-14): the fused `∇·(κ∇u)` leaf landed as `Diffusion`/`diffusion(g, κ)`** (issue #48), following the §4a custom-fused-leaf pattern with the exported `diffusion_stencil` primitive. It is the compact flux form — face-averaged κ, arithmetic or harmonic — and it is exactly symmetric for real κ, declares `operator_diagonal` (which the composed form cannot), and couples adjacent solution cells, removing odd–even decoupling in u. Coefficient identifiability remains separate: arithmetic averaging cancels a checkerboard perturbation of κ at every interior face, leaving the entire operator unchanged on periodic grids with even cell counts in every dimension or under homogeneous Neumann walls. Additional excitations cannot distinguish those coefficients; Dirichlet wall coefficients can break the ambiguity. The composition stays valid and stays the algebra stress-test; the leaf takes 115 µs against the composition's 337 µs for one 256² prepared `mul!`, and 1.7× the `Laplacian`'s 67.5 µs for 2× the memory traffic. Distributed slabs landed in #57 and the `BlockForest` reference path with its conservative coarse–fine flux in #58; packed GPU kernels remain staged (#59).)
+3. Operator algebra: leaves `Laplacian`, `Derivative`, `Gradient`, `Divergence`, `ScalingOp`, `IdentityOp`, `Advection`; combinators `Added`, `Composed`, `Scaled`, `AdjointOp`; traits; **declared adjoints per leaf**; `apply!` + `apply_adjoint!`; `mul!`/`size`/`eltype`; `Adapt` support. `ScalingOp` (pointwise ×κ(x)) is the leaf that makes Decision B concrete: it carries a differentiable coefficient *field*, it is the genuine `isdiagonal` / `isselfadjoint` instance (Jacobi smoother target), and variable-coefficient diffusion falls out of the algebra as `Divergence ∘ ScalingOp(κ) ∘ Gradient` — a built-in composition stress-test. (Caveat: the composed form has a wider effective stencil and collocated odd-even quirks. **Resolved (2026-08-14): the fused `∇·(κ∇u)` leaf landed as `Diffusion`/`diffusion(g, κ)`** (issue #48), following the §4a custom-fused-leaf pattern with the exported `diffusion_stencil` primitive. It is the compact flux form — face-averaged κ, arithmetic or harmonic — and it is exactly symmetric for real κ, declares `operator_diagonal` (which the composed form cannot), and couples adjacent solution cells, removing odd–even decoupling in u. Coefficient identifiability remains separate: arithmetic averaging cancels a checkerboard perturbation of κ at every interior face, leaving the entire operator unchanged on periodic grids with even cell counts in every dimension or under homogeneous Neumann walls. Additional excitations cannot distinguish those coefficients; Dirichlet wall coefficients can break the ambiguity. The composition stays valid and stays the algebra stress-test; the leaf takes 115 µs against the composition's 337 µs for one 256² prepared `mul!`, and 1.7× the `Laplacian`'s 67.5 µs for 2× the memory traffic. Distributed slabs landed in #57 and the `BlockForest` reference path with its conservative coarse–fine flux in #58. The packed GPU kernels landed in #76 (#59): one launch over `(blocksize..., nleaves)` for the forward sweep and one over the full padded extent for the adjoint gather, both reusing the broadcast path's per-cell bodies; the kernel adjoint is real-κ only (complex κ stays on the conjugated reference fallback). The coarse–fine seam still runs as a host loop of small device broadcasts per coarse–fine face around the stencil launch, so the launch count is flat in the leaf count but not in the face count — the batched device rewrite is #78.)
 4. Array-level authoring; device-agnostic via `get_backend`/`Adapt`; CI on CPU,
    and CUDA where available.
 5. AD: works automatically (Enzyme + Mooncake) on array-level leaves for field +
@@ -839,6 +840,21 @@ pre-built.
     code** (`examples/adaptive_poisson.jl` is the canonical form; solver must be
     a nonsymmetric Krylov method on an adapted forest) — an `adaptive_solve`
     export would guess the interface from one use case (rule of three).
+    **Transfer policy is per field, explicit, and resolved at transfer time**
+    (issue #59, #54 §4): a `BlockField` carries a regrid-transfer trait as a type
+    parameter — `Interpolated` (default: the linear interpolation above, exact on
+    linears, *not* mean-preserving — its side-biased child slopes leave the child
+    mean off by ⅛·δ²u per dim), `Conservative` (cell-conservative reconstruction
+    `u_p + Σ_d ξ_d·σ_d`, one shared slope per parent cell: mean-preserving for
+    any slope, exactly, including at block and physical edges), and
+    `SlopeLimited` (minmod slopes, zero at parent-block edges: additionally
+    bounds-preserving, for fronts). Conservation is an opt-in, never a default,
+    so indicators, coefficients, and conserved state cannot silently share one
+    policy; the trait is a phantom type parameter, so no operator hot path ever
+    consults it, and it survives `pack`/`unpack`, `similar`/`copy`, `Adapt`, and
+    the regrid round-trip. Measured, not assumed: `Σ V·u` holds to roundoff
+    across refine, coarsen, and balance-induced cascades (test/amr_driver.jl),
+    and the `Interpolated` control demonstrably does not.
   - **Built (packed phase, #15):** staged like #10 — (1) `AbstractBlockField` +
     `PackedBlockField` + `pack`/`unpack` with the Laplacian forest kernel
     end-to-end, (2) the remaining operator kernels + adjoint

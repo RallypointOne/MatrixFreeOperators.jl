@@ -56,6 +56,26 @@
         @test alloc_mul(As, out, v) ≤ alloc_bound(MFO.nleaves(bf))
     end
 
+    # The forest walk has the same gap as the grid one: no cached adjoint action for
+    # a PreparedComposed, and its tmp is shaped for the forward pass. prepare
+    # normalizes AdjointOp(A*B) to Composed(Bᵀ, Aᵀ) first, so the nested form runs
+    # through the ordinary per-node recursion (and its inter-block exchange).
+    @testset "prepare normalizes AdjointOp over a composite" begin
+        inner = derivative(bf, 1; order=1) * laplacian(bf)
+        At = prepare(MFO.AdjointOp(inner))
+        @test At.op isa MFO.PreparedComposed
+        mul!(out, At, v)
+        @test out ≈ materialize(prepare(inner))' * v
+        @test alloc_mul(At, out, v) ≤ alloc_bound(MFO.nleaves(bf))
+
+        κ = set!(scalar_field(bf), x -> 1 + x[1] * x[2])
+        K = divergence(bf) * scaling(κ)                          # vector → scalar
+        Kt = prepare(MFO.AdjointOp(K), scalar_field(bf))
+        B = materialize(prepare(K, vector_field(bf)))
+        @test size(Kt) == (2 * 256, 256)
+        @test materialize(Kt) ≈ B'
+    end
+
     @testset "cached apply is type-stable (the allocation guard)" begin
         A = prepare(laplacian(bf))
         infer(P) = @inferred MFO._forest_capply!(P.ypad, P.op, P.xpad, P, true, false)

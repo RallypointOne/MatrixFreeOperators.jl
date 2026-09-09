@@ -91,8 +91,9 @@ exchange that would move no information, and it must gate the forward scatter
 and the adjoint reduction **together**: reading a neighbor's value forward is
 exactly what writes a contribution to that neighbor's cotangent in the
 transpose, so gating one and not the other breaks `⟨Lx,y⟩ = ⟨x,Lᵀy⟩`. And
-`AdjointOp` nodes are normalized down to the leaves before `prepare`, because
-`prepare` does not recurse into an `AdjointOp` — `AdjointOp(A*B)` would
+`AdjointOp` nodes are normalized down to the leaves before the walk — the same
+`_push_adjoints` rewrite `prepare` applies at every `AdjointOp` node — because
+a prepared adjoint of a *composition* has no meaning: `AdjointOp(A*B)` would
 otherwise run `Aᵀ` then `Bᵀ` with no reduction in between and drop the
 intermediate's `Interface` cotangents on the floor. Silently.
 

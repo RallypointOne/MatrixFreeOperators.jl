@@ -8,6 +8,62 @@ Staggered layouts add face locations as new trait types.
 """
 struct Center end
 
+#--------------------------------------------------------------------------------# Regrid-transfer policies
+
+"""
+    Interpolated()
+
+Regrid-transfer policy trait (the default): refined leaves are filled by the
+linear-exact per-dimension interpolation of the old parent. Second-order and
+exact on linears, but **not** mean-preserving — the two children of an interior
+parent cell use side-biased slopes, leaving the child mean off by `⅛·δ²u` per
+dimension. The right transfer for smooth, non-conserved fields (geometric
+indicators, coefficients). Attach a policy at construction
+([`scalar_field`](@ref)/[`vector_field`](@ref)'s `transfer` keyword) or with
+[`with_transfer`](@ref); [`regrid!`](@ref) resolves it per field at transfer
+time, so nothing on an operator hot path ever consults it.
+
+See also: [`Conservative`](@ref), [`SlopeLimited`](@ref).
+"""
+struct Interpolated end
+
+"""
+    Conservative()
+
+Mean-preserving regrid-transfer policy: refined leaves are filled by the
+cell-conservative linear reconstruction `u_child = u_parent + Σ_d ξ_d·σ_d`
+(`ξ_d = ∓¼`), one shared slope per parent cell per dimension — centered in the
+block interior, one-sided difference at parent-block edges. The volume-weighted
+mean of the `2ᴺ` children equals the parent exactly for *any* slope, including
+at block and physical boundaries, so `Σ V·u` is preserved to roundoff across
+[`regrid!`](@ref) (coarsening already is: the `2⁻ᴺ` child mean). Exact on
+linears and second-order like [`Interpolated`](@ref). The policy for conserved
+state on smooth solutions.
+
+See also: [`SlopeLimited`](@ref), [`with_transfer`](@ref).
+"""
+struct Conservative end
+
+"""
+    SlopeLimited()
+
+Mean-preserving *and* bounds-preserving regrid-transfer policy: the same
+cell-conservative reconstruction as [`Conservative`](@ref) with the per-dim
+slope minmod-limited, and dropped to zero at parent-block edges (the transfer
+is interior-only, so no second slope exists there to limit against). Children
+never leave the hull of the parent's neighborhood — no new extrema across a
+regrid — at the price of first-order transfer at extrema and block edges. Note
+the edge cost scales with the block: every parent cell on a block face is
+injected, so a `4×4` block reconstructs only its inner `2×2` and larger blocks
+shrink that fraction. The policy for conserved state with steep fronts or
+discontinuities.
+
+See also: [`Conservative`](@ref), [`with_transfer`](@ref).
+"""
+struct SlopeLimited end
+
+const RegridTransferPolicy = Union{Interpolated,Conservative,SlopeLimited}
+
 """
     AbstractField
 
