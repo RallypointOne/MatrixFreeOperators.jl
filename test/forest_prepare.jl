@@ -128,7 +128,11 @@
         @test prepared_exchanges(A3, v) == (1, 1)
         mul!(out, A3, v)
         @test out == flatten(three * copy(uf))
-        # packed scratch: the same gate drives the packed sweep seam
+        # packed scratch: the counter wraps A.xpad, so this count sees the packed
+        # layout only through storage/`block` forwarding — dispatch lands on the
+        # AbstractBlockField sweep (also where the PackedBlockField overrides fall
+        # back to on CPU). The unwrapped mul! below is what reaches those
+        # overrides, and must agree bit-for-bit with the per-operand reference.
         Ap = prepare(aniso, pack(uf))
         @test Ap.xpad isa PackedBlockField
         @test prepared_exchanges(Ap, v) == (1, 1)

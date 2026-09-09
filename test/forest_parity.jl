@@ -303,20 +303,44 @@ struct NoTraitOp85 <: AbstractOperator end
 
         bc = ((Dirichlet(), Dirichlet()), (Neumann(), Neumann()))
         g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bc)
-        for refined in (false, true)
-            bf = BlockForest(g; blocksize=(4, 4), maxlevel=3)
+        # A 3D Float32 root with a periodic axis: the packed kernels and the periodic
+        # wrap are the layouts most likely to diverge from the per-operand reference,
+        # and Float32 checks the shared sweep keeps the field's eltype.
+        g3 = CartesianGrid(
+            ((0.0f0, 1.0f0), (0.0f0, 1.0f0), (0.0f0, 1.0f0)), (8, 8, 8);
+            bc=((Periodic(), Periodic()), (Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+        )
+        fun3 = x -> sinpi(2x[1]) * cospi(2x[2]) + 0.3f0 * x[3]^2
+        # (label, root grid, blocksize, test function); refining the origin corner
+        # twice gives levels 0–2, 2:1 balanced, in either dimension — and in 3D the
+        # corner's coarse–fine faces sit on the periodic wrap
+        cases = (
+            ("2D Float64", g, (4, 4), fun),
+            ("3D Float32 periodic", g3, (4, 4, 4), fun3),
+        )
+        for (label, groot, bs, f) in cases, refined in (false, true)
+            bf = BlockForest(groot; blocksize=bs, maxlevel=3)
             if refined
-                refine!(bf, x -> x[1] < 0.5 && x[2] < 0.5)
-                refine!(bf, x -> x[1] < 0.2 && x[2] < 0.2)   # levels 0–2, 2:1 balanced
+                refine!(bf, x -> all(<(0.5), x))
+                refine!(bf, x -> all(<(0.2), x))   # levels 0–2, 2:1 balanced
                 balance!(bf)
                 @test !bf.forest.uniform[]
             end
-            u = set!(scalar_field(bf), fun)
+            u = set!(scalar_field(bf), f)
+            T = eltype(u)
+            @test T === eltype(groot.spacing)
+            N = length(bs)
             # the Niederer-style anisotropic operator: an Added of two Scaled leaves
-            aniso = 0.13 * laplacian(bf) + 0.7 * derivative(bf, 1; order=2)
-            three = (aniso + 0.3 * derivative(bf, 2; order=1)) + identity_op()
+            aniso = T(0.13) * laplacian(bf) + T(0.7) * derivative(bf, 1; order=2)
+            three = (aniso + T(0.3) * derivative(bf, N; order=1)) + identity_op()
+            @test eltype(aniso * u) === T
 
-            @testset "exchange count and bit-parity, refined=$refined, $(nameof(typeof(x)))" for x in (u, pack(u))
+            # The packed row counts through storage/`block` forwarding only (the
+            # counter is not a PackedBlockField, so dispatch lands on the
+            # AbstractBlockField sweep, which is also the CPU fallback of the packed
+            # overrides); the packed overrides themselves are covered by the
+            # unwrapped parity checks in forest_packed.jl / forest_prepare.jl.
+            @testset "exchange count and bit-parity, $label, refined=$refined, $(nameof(typeof(x)))" for x in (u, pack(u))
                 # baseline: one leaf costs one exchange and one BC pass
                 @test count_exchanges!(similar(x), laplacian(bf), x, bf) == (1, 1)
                 # a two-leaf sum: one, not two
@@ -330,12 +354,12 @@ struct NoTraitOp85 <: AbstractOperator end
                 @test interiors_equal(y3, per_operand!(similar(x), three, x, bf, true, false))
                 # the accumulating form and scaling stay exact
                 yacc = copy(ref)
-                @test count_exchanges!(yacc, aniso, x, bf, 2.0, -1.0) == (1, 1)
-                @test interiors_equal(yacc, per_operand!(copy(ref), aniso, x, bf, 2.0, -1.0))
+                @test count_exchanges!(yacc, aniso, x, bf, T(2), T(-1)) == (1, 1)
+                @test interiors_equal(yacc, per_operand!(copy(ref), aniso, x, bf, T(2), T(-1)))
                 # Scaled over the sum shares too
                 ys = similar(x)
-                @test count_exchanges!(ys, 3.0 * aniso, x, bf) == (1, 1)
-                @test interiors_equal(ys, per_operand!(similar(x), 3.0 * aniso, x, bf, true, false))
+                @test count_exchanges!(ys, T(3) * aniso, x, bf) == (1, 1)
+                @test interiors_equal(ys, per_operand!(similar(x), T(3) * aniso, x, bf, true, false))
                 # a diagonal operand rides along on the shared exchange
                 κ = set!(scalar_field(bf), z -> 1 + z[1] * z[2])
                 κx = x isa PackedBlockField ? pack(κ) : κ
@@ -345,11 +369,11 @@ struct NoTraitOp85 <: AbstractOperator end
                 @test interiors_equal(ym, per_operand!(similar(x), mixed, x, bf, true, false))
             end
 
-            @testset "non-shareable operands still exchange per operand, refined=$refined" begin
+            @testset "non-shareable operands still exchange per operand, $label, refined=$refined" begin
                 x = u
                 # Composed operand: its intermediate needs an exchange of its own; the
                 # inner factor exchanges x, the outer one exchanges the intermediate
-                LC = laplacian(bf) + 0.5 * (derivative(bf, 1; order=1) * laplacian(bf))
+                LC = laplacian(bf) + T(0.5) * (derivative(bf, 1; order=1) * laplacian(bf))
                 @test !shares_exchange(LC)
                 yc = similar(x)
                 @test count_exchanges!(yc, LC, x, bf) == (2, 2)
@@ -405,21 +429,29 @@ struct NoTraitOp85 <: AbstractOperator end
         @testset "adjoint of a sum: self-adjoint shortcut shares, general path unchanged" begin
             g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bc)
             rng = Random.MersenneTwister(85)
-            randomize!(f) = (foreach(i -> (interior(MFO.block(f, i)) .= rand(rng, f.grid.blocksize...)), 1:MFO.nleaves(f.grid)); f)
+            randomize!(f) = (foreach(i -> (interior(MFO.block(f, i)) .= rand(rng, eltype(f), f.grid.blocksize...)), 1:MFO.nleaves(f.grid)); f)
             ipdot(a, b) = sum(
                 i -> dot(collect(interior(MFO.block(a, i))), collect(interior(MFO.block(b, i)))),
                 1:MFO.nleaves(a.grid),
             )
-            for refined in (false, true)
-                bf = BlockForest(g; blocksize=(4, 4), maxlevel=3)
+            # (label, root grid, blocksize, identity tolerance): the Float32 row
+            # accumulates its inner products in single precision, so its tolerance
+            # is loosened to match (measured ~2.5e-7 relative on this forest)
+            adj_cases = (
+                ("2D Float64", g, (4, 4), 1e-10),
+                ("3D Float32 periodic", g3, (4, 4, 4), 1e-5),
+            )
+            for (label, groot, bs, tol) in adj_cases, refined in (false, true)
+                bf = BlockForest(groot; blocksize=bs, maxlevel=3)
                 if refined
-                    refine!(bf, x -> x[1] < 0.5 && x[2] < 0.5)
+                    refine!(bf, x -> all(<(0.5), x))
                     balance!(bf)
                 end
-                sym = 0.13 * laplacian(bf) + 0.7 * derivative(bf, 1; order=2)
-                skew = 0.13 * laplacian(bf) + 0.7 * derivative(bf, 1; order=1)
+                T = eltype(groot.spacing)
+                sym = T(0.13) * laplacian(bf) + T(0.7) * derivative(bf, 1; order=2)
+                skew = T(0.13) * laplacian(bf) + T(0.7) * derivative(bf, 1; order=1)
                 @test isselfadjoint(sym) == !refined
-                for L in (sym, skew)
+                @testset "$label, refined=$refined, $(isselfadjoint(L) ? "self-adjoint" : "skew")" for L in (sym, skew)
                     x = randomize!(scalar_field(bf))
                     y = randomize!(scalar_field(bf))
                     Lx = apply!(scalar_field(bf), L, copy(x), bf)
@@ -431,9 +463,10 @@ struct NoTraitOp85 <: AbstractOperator end
                     # is itself self-adjoint, its single forward exchange
                     @test c.exchanges[] ≤ 1
                     isselfadjoint(L) && @test c.exchanges[] == 1
+                    @test eltype(Lty) === T
                     ip1 = ipdot(Lx, y)
                     ip2 = ipdot(x, Lty)
-                    @test abs(ip1 - ip2) ≤ 1e-10 * max(1.0, abs(ip1), abs(ip2))
+                    @test abs(ip1 - ip2) ≤ tol * max(one(T), abs(ip1), abs(ip2))
                 end
             end
         end
