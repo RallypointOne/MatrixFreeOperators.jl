@@ -58,6 +58,7 @@ divergence(g::AbstractGrid) = Divergence(g)
 
 islinear(::Divergence) = true
 isconstant(::Divergence) = true
+shares_exchange(::Divergence) = true
 operator_grid(L::Divergence) = L.grid
 
 function Base.size(L::Divergence)

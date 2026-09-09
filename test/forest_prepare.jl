@@ -93,4 +93,80 @@
         refine!(bf3, _ -> true)                     # bumps the forest generation
         @test_throws ArgumentError mul!(y3, A3, x3) # stale prepared operator now errors
     end
+    @testset "Added shares one exchange in the prepared hot path (issue #85)" begin
+        aniso = 0.13 * laplacian(bf) + 0.7 * derivative(bf, 1; order=2)
+        @test shares_exchange(aniso)
+        # the exchange count on the cached path, with the prepared scratch wrapped
+        function prepared_exchanges(A, v)
+            c = CountingBlockField(A.xpad)
+            flat_to_interior!(A.xpad, v)
+            MFO._forest_capply!(A.ypad, A.op, c, A, true, false)
+            return c.exchanges[], c.bcfills[]
+        end
+        # the un-shared reference, one full forest action per operand
+        function per_operand_flat(L::Added, x)
+            y = apply!(similar(x), L.a, x, x.grid)
+            apply!(y, L.b, x, x.grid, true, true)
+            return flatten(y)
+        end
+
+        A = prepare(aniso)
+        @test prepared_exchanges(A, v) == (1, 1)
+        @test prepared_exchanges(prepare(laplacian(bf)), v) == (1, 1)   # the baseline
+        mul!(out, A, v)
+        @test out == per_operand_flat(aniso, uf)             # bit-identical
+        @test out == flatten(aniso * copy(uf))               # and to the pure path
+        @test alloc_mul(A, out, v) ≤ alloc_bound(MFO.nleaves(bf))
+        # accumulating mul! blends on top of the shared sweep
+        out2 = copy(v)
+        mul!(out2, A, v, 2.0, 3.0)
+        @test out2 ≈ 2.0 .* per_operand_flat(aniso, uf) .+ 3.0 .* v
+        # nested sums and a diagonal operand share too
+        κ = set!(scalar_field(bf), x -> 1 + x[1] * x[2])
+        three = (aniso + scaling(κ)) + identity_op()
+        A3 = prepare(three)
+        @test prepared_exchanges(A3, v) == (1, 1)
+        mul!(out, A3, v)
+        @test out == flatten(three * copy(uf))
+        # packed scratch: the same gate drives the packed sweep seam
+        Ap = prepare(aniso, pack(uf))
+        @test Ap.xpad isa PackedBlockField
+        @test prepared_exchanges(Ap, v) == (1, 1)
+        mul!(out, Ap, v)
+        @test out == per_operand_flat(aniso, uf)
+        # prepared nodes never share: a PreparedAdjoint or PreparedComposed operand
+        # keeps the per-operand actions (one exchange on x per non-adjoint operand)
+        Aadj = prepare(laplacian(bf) + derivative(bf, 1; order=1)')
+        @test Aadj.op isa Added && Aadj.op.b isa MFO.PreparedAdjoint
+        @test !shares_exchange(Aadj.op)
+        @test prepared_exchanges(Aadj, v) == (1, 1)
+        Acomp = prepare(laplacian(bf) + derivative(bf, 1; order=1) * laplacian(bf))
+        @test Acomp.op.b isa MFO.PreparedComposed
+        @test !shares_exchange(Acomp.op)
+        @test prepared_exchanges(Acomp, v) == (2, 2)
+        # self-adjoint sum: the prepared adjoint takes the shared forward path and
+        # the dense matrix is symmetric; a non-self-adjoint sum keeps its transpose
+        At = prepare(adjoint(aniso))
+        @test prepared_exchanges(At, v) == (1, 1)
+        M = materialize(A)
+        @test M ≈ M'
+        @test materialize(At) ≈ M'
+        skew = 0.13 * laplacian(bf) + 0.7 * derivative(bf, 1; order=1)
+        @test materialize(prepare(adjoint(skew))) ≈ materialize(prepare(skew))'
+        # an adapted forest: the sum is no longer self-adjoint, the forward still
+        # shares, and the prepared transpose is exact
+        bfr = BlockForest(g; blocksize=(4, 4), maxlevel=3)
+        refine!(bfr, x -> x[1] < 0.5 && x[2] < 0.5)
+        balance!(bfr)
+        ur = set!(scalar_field(bfr), fun)
+        vr = flatten(ur)
+        anisor = 0.13 * laplacian(bfr) + 0.7 * derivative(bfr, 1; order=2)
+        @test !isselfadjoint(anisor)
+        Ar = prepare(anisor)
+        @test prepared_exchanges(Ar, vr) == (1, 1)
+        outr = similar(vr)
+        mul!(outr, Ar, vr)
+        @test outr == per_operand_flat(anisor, ur)
+        @test materialize(prepare(adjoint(anisor))) ≈ materialize(Ar)'
+    end
 end

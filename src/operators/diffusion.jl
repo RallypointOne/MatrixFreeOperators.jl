@@ -650,6 +650,11 @@ islinear(::Diffusion) = true
 isconstant(::Diffusion) = true
 isdiagonal(::Diffusion) = false
 isselfadjoint(D::Diffusion) = _selfadjoint_grid(D.grid) && eltype(D.κ) <: Real
+# Grid-aware: the conservative coarse–fine seam (`_cf_flux_rewrite!`) OVERWRITES
+# x's coarse-side CF ghosts before the sweep, so a sibling sweeping after it on
+# the same exchange would read rewritten ghosts. On a uniform forest `cfflux` is
+# empty and the forest action is a pure read of the exchange.
+shares_exchange(D::Diffusion) = _uniform_grid(D.grid)
 operator_grid(D::Diffusion) = D.grid
 
 # Complex κ makes the operator symmetric but not Hermitian, and both means commute with

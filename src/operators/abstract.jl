@@ -52,8 +52,12 @@ isselfadjoint(::AbstractOperator) = false
 # halo copies couple both neighbors symmetrically; coarse–fine interpolation does
 # not, so a non-uniform forest breaks self-adjointness even for the Laplacian
 # (queried live: a regrid can flip it, and stencil leaves hold only the grid).
-_selfadjoint_grid(::AbstractGrid) = true
-_selfadjoint_grid(g::BlockForest) = g.forest.uniform[]
+_selfadjoint_grid(g::AbstractGrid) = _uniform_grid(g)
+
+# Whether the grid has no coarse–fine faces: a single grid trivially, a forest
+# while every leaf sits on one level (queried live, like the self-adjoint check).
+_uniform_grid(::AbstractGrid) = true
+_uniform_grid(g::BlockForest) = g.forest.uniform[]
 
 """
     isdiagonal(L::AbstractOperator) -> Bool
@@ -62,6 +66,22 @@ Whether `L` acts pointwise (a diagonal operator). Enables cheap Jacobi-type
 smoothers. Defaults to `false`.
 """
 isdiagonal(::AbstractOperator) = false
+
+"""
+    shares_exchange(L::AbstractOperator) -> Bool
+
+Whether `L`'s action on a [`BlockForest`](@ref) is a single stencil sweep over an
+already-exchanged input — it reads `x`'s interiors and halo-exchanged ghosts,
+writes only the interior of `y`, and never writes into `x` or into an intermediate
+field that would need an exchange of its own. Operands of an `Added` that all hold
+this property can share one `halo_update!`/`apply_bc!` pass instead of each
+running their own (the exchange reads only interiors, so a sibling sweep leaves it
+valid). Defaults to `false`; stencil leaves opt in, `Added`/`Scaled` propagate it,
+and `Composed`/`AdjointOp` never claim it (a composition's intermediate needs its
+own exchange; an adjoint's forest action is a gather plus a cross-block fold). A
+forgotten declaration costs a redundant exchange, never a wrong result.
+"""
+shares_exchange(::AbstractOperator) = false
 
 """
     operator_diagonal(L::AbstractOperator) -> Number | Field
@@ -208,6 +228,9 @@ islinear(L::AdjointOp) = islinear(L.op)
 isconstant(L::AdjointOp) = isconstant(L.op)
 isselfadjoint(L::AdjointOp) = isselfadjoint(L.op)
 isdiagonal(L::AdjointOp) = isdiagonal(L.op)
+# The forest adjoint action is a transpose gather + fold_bc!/halo_update_adjoint!
+# fold, not a sweep over x's exchanged ghosts — sharing would drop the fold.
+shares_exchange(::AdjointOp) = false
 adjoint_operator(L::AdjointOp) = L.op
 operator_grid(L::AdjointOp) = operator_grid(L.op)
 allocate_output(L::AdjointOp, x::AbstractField) = allocate_input(L.op, x)

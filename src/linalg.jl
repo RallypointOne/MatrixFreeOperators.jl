@@ -357,21 +357,20 @@ end
 # the prepared scratch fields (leaf grids are one concrete all-Interface type, so
 # rebuilding them in the sweep is type-stable and free). The combinator
 # structure mirrors forest.jl exactly — Added/Scaled/AdjointOp recurse at the forest
-# level so a nested adjoint still reaches halo_update_adjoint!'s cross-block fold —
-# and additionally handles the PreparedAdjoint nodes _prepare_tree introduces. (The
-# residual per-leaf cost is the stencil apply! itself; see the alloc-free-kernel note
-# on PreparedForest.)
+# level so a nested adjoint still reaches halo_update_adjoint!'s cross-block fold,
+# and an Added whose operands all `shares_exchange` fills the halo once — and
+# additionally handles the PreparedAdjoint nodes _prepare_tree introduces (which,
+# like PreparedComposed, never share an exchange). (The residual per-leaf cost is
+# the stencil apply! itself; see the alloc-free-kernel note on PreparedForest.)
 function _forest_capply!(
     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, P::PreparedForest, α, β
 )
-    _require_current(y)
-    halo_update!(x, P.grid)
-    apply_bc!(x, P.grid)
-    return _forest_sweep!(y, L, x, P.grid, α, β)
+    return _forest_exchange_sweep!(y, L, x, P.grid, α, β)
 end
 function _forest_capply!(
     y::AbstractBlockField, L::Added, x::AbstractBlockField, P::PreparedForest, α, β
 )
+    shares_exchange(L) && return _forest_exchange_sweep!(y, L, x, P.grid, α, β)
     _forest_capply!(y, L.a, x, P, α, β)
     _forest_capply!(y, L.b, x, P, α, true)
     return y
@@ -447,9 +446,11 @@ function _forest_capply_adjoint!(
     end
     return x̄
 end
+# Self-adjoint sums take the (exchange-sharing) forward path, as in forest.jl.
 function _forest_capply_adjoint!(
     x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, P::PreparedForest, α, β
 )
+    isselfadjoint(L) && return _forest_capply!(x̄, L, ȳ, P, α, β)
     _forest_capply_adjoint!(x̄, L.a, ȳ, P, α, β)
     _forest_capply_adjoint!(x̄, L.b, ȳ, P, α, true)
     return x̄

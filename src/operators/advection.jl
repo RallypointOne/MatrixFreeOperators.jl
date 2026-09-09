@@ -92,6 +92,8 @@ islinear(::Advection{<:AbstractGrid,<:AbstractField}) = true
 islinear(::Advection{<:AbstractGrid,SelfAdvection}) = false
 isconstant(::Advection{<:AbstractGrid,<:AbstractField}) = true
 isconstant(::Advection{<:AbstractGrid,SelfAdvection}) = false
+# One sweep reading x's (and the velocity's construction-filled) ghosts, both forms.
+shares_exchange(::Advection) = true
 operator_grid(L::Advection) = L.grid
 
 # Adjoint of passive transport, expressed in the operator algebra: the mechanical

@@ -29,8 +29,8 @@
 # with the cell count as you would hope (5.7x on 5.3x fewer cells) and regridding
 # costs under 6%, but diffusion runs *slower* on the adaptive forest.  Essentially
 # all of the adaptivity overhead is the coarse-fine halo exchange — 92% of an apply
-# on an adapted forest, and paid twice here because the anisotropic operator is an
-# `Added` whose operands each exchange independently.
+# on an adapted forest.  (The anisotropic operator is an `Added` of two stencil
+# leaves; both `shares_exchange`, so the sum exchanges once, not once per operand.)
 #
 # Run with:      julia -t auto --project=examples examples/niederer_benchmark.jl
 # Fast check:    NIEDERER_SMOKE=true        ...  (seconds; exercises the 3D forest paths)
