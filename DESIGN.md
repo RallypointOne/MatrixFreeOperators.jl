@@ -307,6 +307,10 @@ Optional:
 - linearize!(L, u) -> L                     in-place refresh of a Jacobian op at state u
 Traits (default false — opt in):
 - islinear, isconstant, isselfadjoint, isdiagonal
+- shares_exchange                     forest action is one stencil sweep over an already-exchanged
+                                      input (reads x's interiors and ghosts, writes nothing into x
+                                      or any intermediate); an Added fills the halos once for all
+                                      such operands. Never true for a Composed or an adjoint.
 Invariants:
 - islinear(L) ⇒ L(0)=0: homogeneous BCs only (§10.6 linear/affine split)
 - size(L) spans interior DOFs only (ghosts are never solver unknowns)
