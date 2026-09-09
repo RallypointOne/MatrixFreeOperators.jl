@@ -225,6 +225,99 @@
         @test maximum(abs, u .- ustar) < 0.01
     end
 
+    # Preparing binds buffers and rewrites Composed/AdjointOp nodes into their
+    # prepared twins; it does not change the map, so every trait of the prepared
+    # tree must equal the trait of the tree handed to prepare. Both the boundary
+    # object (PreparedOperator / PreparedForest) and the rewritten tree it holds are
+    # checked, and each case pins the twin type it exercises so a future rewrite
+    # cannot quietly stop covering PreparedComposed or PreparedAdjoint. Cases with a
+    # *false* trait (isconstant of a LinearizedOp, isselfadjoint of a composition,
+    # isdiagonal of a stencil) catch a forwarding that hard-codes `true`.
+    @testset "prepared trees declare the traits of the unprepared tree" begin
+        MFO = MatrixFreeOperators
+        traits = (islinear, isconstant, isselfadjoint, isdiagonal)
+        g = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (6, 5);
+            bc=((Dirichlet(), Neumann()), (Periodic(), Periodic())),
+        )
+        κ = set!(scalar_field(g), x -> 1 + x[1] * x[2])
+        v = set!(vector_field(g), x -> SVector(1 + x[1], x[2]))
+        u0 = set!(scalar_field(g), x -> sin(π * x[1]))
+        Lap = laplacian(g)
+        Adv = advection(g, v)
+        S = scaling(κ)
+        D1 = derivative(g, 1; order=1)             # order 1 ⇒ adjoint is a PreparedAdjoint
+        J = linearize(Adv, u0)                     # linear, but NOT isconstant
+        @test islinear(J) && !isconstant(J)
+
+        gp = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (16, 16);
+            bc=((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
+        )
+        bf = BlockForest(gp; blocksize=(4, 4), maxlevel=2)
+        Df = derivative(bf, 1; order=1)            # order 1 ⇒ adjoint is a PreparedAdjoint
+
+        # (label, operator, input prototype, expected twin type of P.op)
+        cases = (
+            ("Laplacian leaf", Lap, scalar_field(g), MFO.Laplacian),
+            ("ScalingOp leaf (diagonal, self-adjoint)", S, scalar_field(g), MFO.ScalingOp),
+            ("Scaled", 2.5 * Lap, scalar_field(g), Scaled),
+            ("Added", Lap + S, scalar_field(g), Added),
+            ("Added with LinearizedOp (not constant)", Lap - 0.1 * J, scalar_field(g), Added),
+            ("Composed → PreparedComposed", Lap * S, scalar_field(g), MFO.PreparedComposed),
+            ("Composed of diagonals → PreparedComposed (diagonal)", S * identity_op(),
+                scalar_field(g), MFO.PreparedComposed),
+            ("Composed of self-adjoints → PreparedComposed (never self-adjoint)", Lap * Lap,
+                scalar_field(g), MFO.PreparedComposed),
+            ("rank-changing Composed div∘κ∘grad", divergence(g) * S * MFO.gradient(g),
+                scalar_field(g), MFO.PreparedComposed),
+            ("AdjointOp over a leaf → PreparedAdjoint", adjoint(D1), scalar_field(g),
+                MFO.PreparedAdjoint),
+            ("Added(leaf, PreparedAdjoint)", Lap + adjoint(D1), scalar_field(g), Added),
+            ("AdjointOp over a composite (rewritten to Composed(Sᵀ, D1ᵀ))",
+                MFO.AdjointOp(D1 * S), scalar_field(g), MFO.PreparedComposed),
+            # Advection's declared adjoint is an algebra expression Σ D_dᵀ∘diag(v_d),
+            # so its prepared form nests PreparedAdjoint under PreparedComposed.
+            ("declared adjoint of Advection (Added of PreparedComposed)", adjoint(Adv),
+                scalar_field(g), Added),
+            ("forest leaf", laplacian(bf), scalar_field(bf), MFO.Laplacian),
+            ("forest Added(leaf, PreparedAdjoint)", laplacian(bf) + adjoint(Df),
+                scalar_field(bf), Added),
+            ("forest Composed → PreparedComposed", Df * laplacian(bf), scalar_field(bf),
+                MFO.PreparedComposed),
+        )
+        for (label, L, proto, twin) in cases
+            @testset "$label" begin
+                P = prepare(L, proto)
+                @test P.op isa twin
+                @test P isa (proto isa BlockField ? PreparedForest : PreparedOperator)
+                for trait in traits
+                    expected = trait(L)
+                    got = @inferred trait(P)
+                    @test got === expected
+                    @test trait(P.op) === expected
+                    got === expected || @info "trait mismatch" label trait expected got typeof(P.op)
+                end
+            end
+        end
+
+        # The truth table behind the cases above, spelled out so a regression reads
+        # as "which trait" rather than "which case".
+        @test isselfadjoint(prepare(Lap))
+        @test !isselfadjoint(prepare(Lap * Lap))
+        @test isdiagonal(prepare(S * identity_op()))
+        @test !isdiagonal(prepare(Lap * S))
+        @test isconstant(prepare(Lap * S))
+        @test !isconstant(prepare(Lap - 0.1 * J))
+        @test islinear(prepare(Lap - 0.1 * J))
+        @test !isselfadjoint(prepare(adjoint(Adv)))
+        @test !isselfadjoint(prepare(adjoint(D1)))
+        @test prepare(adjoint(D1)).op isa MFO.PreparedAdjoint
+        @test prepare(MFO.AdjointOp(D1 * S)).op.a isa MFO.ScalingOp
+        @test prepare(MFO.AdjointOp(D1 * S)).op.b isa MFO.PreparedAdjoint
+        @test !isselfadjoint(prepare(laplacian(bf) + adjoint(Df)))
+    end
+
     @testset "boundary_rhs through combinators" begin
         g = CartesianGrid(((0.0, 1.0),), (8,); bc=((Dirichlet(2.0), Neumann(1.0)),))
         L = laplacian(g)

@@ -20,6 +20,13 @@ found them. The distributed path ([`prepare_distributed`](@ref)) depends on that
 same discipline throughout: it drives the operator tree itself so it can fill
 [`Interface`](@ref) ghost slabs from a neighbor exchange between applies, and
 anything that zeroed ghosts on the way in would silently discard exchanged data.
+
+The traits [`islinear`](@ref), [`isconstant`](@ref), [`isselfadjoint`](@ref) and
+[`isdiagonal`](@ref) are those of the operator handed to `prepare` — binding
+buffers changes nothing about the map. A `PreparedOperator` is the solver
+boundary rather than a node of the lazy algebra, so it is not an
+[`AbstractOperator`](@ref): it does not enter `+`, `*`, `adjoint`, or `apply`;
+compose first, then prepare.
 """
 struct PreparedOperator{O<:AbstractOperator,G<:AbstractGrid,FX<:AbstractField,FY<:AbstractField}
     op::O
@@ -60,6 +67,15 @@ struct PreparedForest{
 end
 
 const _AnyPrepared = Union{PreparedOperator,PreparedForest}
+
+# A prepared operator is the same linear map as the tree it binds buffers to, so
+# its traits are the tree's. Declared explicitly (there is no supertype to fall
+# through to) — an undeclared trait must be a MethodError, never a silent
+# default the wrapper did not earn.
+islinear(P::_AnyPrepared) = islinear(P.op)
+isconstant(P::_AnyPrepared) = isconstant(P.op)
+isselfadjoint(P::_AnyPrepared) = isselfadjoint(P.op)
+isdiagonal(P::_AnyPrepared) = isdiagonal(P.op)
 
 """
     prepare(L::AbstractOperator, x::Field) -> PreparedOperator
@@ -273,6 +289,15 @@ struct PreparedComposed{A<:AbstractOperator,B<:AbstractOperator,F<:AbstractField
     tmp::F
 end
 
+# Same map as Composed(a, b), so the same trait propagation (algebra.jl): a twin
+# that fell through to the `false` defaults would still be *safe*, but by
+# accident rather than by declaration, and would hide a linear prepared tree from
+# any consumer (SciML caching, the isconstant path) that asks.
+islinear(L::PreparedComposed) = islinear(L.a) && islinear(L.b)
+isconstant(L::PreparedComposed) = isconstant(L.a) && isconstant(L.b)
+isdiagonal(L::PreparedComposed) = isdiagonal(L.a) && isdiagonal(L.b)
+isselfadjoint(::PreparedComposed) = false       # not compositional — see Composed
+
 # The inner factor sees the grid of the intermediate it consumes (transfer
 # chains compose factors living on different grids).
 function apply!(y::Field, L::PreparedComposed, x::Field, g::AbstractGrid, α, β)
@@ -290,6 +315,12 @@ struct PreparedAdjoint{O<:AbstractOperator,F<:AbstractField} <: AbstractOperator
     op::O
     scratch::F
 end
+
+# Same map as AdjointOp(op), so the same trait forwarding (operators/abstract.jl).
+islinear(L::PreparedAdjoint) = islinear(L.op)
+isconstant(L::PreparedAdjoint) = isconstant(L.op)
+isselfadjoint(L::PreparedAdjoint) = isselfadjoint(L.op)
+isdiagonal(L::PreparedAdjoint) = isdiagonal(L.op)
 
 function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)
     iszero(β) && return apply_adjoint!(y, L.op, x, g, α, β)
