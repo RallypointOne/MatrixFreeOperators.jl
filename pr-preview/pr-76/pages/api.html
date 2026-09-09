@@ -382,7 +382,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="blockfield"><code>BlockField</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">BlockField</span><span class="dt">{L,P}</span>(blocks, grid)</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">BlockField</span><span class="dt">{L,P}</span>(blocks, grid[, generation])</span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="fu">BlockField</span><span class="dt">{L}</span>(blocks, grid)</span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="fu">BlockField</span>(blocks, grid)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Field over a <a href="@ref"><code>BlockForest</code></a>: one halo-padded array per leaf block, indexed in the forest’s Morton (storage) order, with location trait <code>L</code> (default <a href="@ref"><code>Center</code></a>) and regrid-transfer policy <code>P</code> (default <a href="@ref"><code>Interpolated</code></a>; see <a href="@ref"><code>Conservative</code></a>/<a href="@ref"><code>SlopeLimited</code></a> and <a href="@ref"><code>with_transfer</code></a>). The vector-of-blocks layout is the simplest correct storage; a packed contiguous buffer can replace it later without touching operators. Block storage is tied to the leaf set at allocation time — the forest’s regrid generation is stamped into the field, and any use after a <code>refine!</code>/<code>coarsen!</code> that changed the leaf set throws; allocate a fresh field after a regrid.</p>
@@ -663,7 +663,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h4 class="anchored" data-anchor-id="packedblockfield"><code>PackedBlockField</code></h4>
 </section>
 <div class="card-body">
-<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">PackedBlockField</span><span class="dt">{L,P}</span>(data, levels, grid)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb38"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="fu">PackedBlockField</span><span class="dt">{L,P}</span>(data, levels, grid[, generation])</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Packed twin of <a href="@ref"><code>BlockField</code></a>: every leaf’s halo-padded block stored in one contiguous <code>(blocksize .+ 2halo ..., nleaves)</code> array (<code>data</code>, leaves in Morton order along the trailing dimension), with the per-leaf refinement levels in a device-resident vector (<code>levels</code>) — the geometry SoA forest-native kernels read; spacing derives from the forest’s root spacing and the level. <code>L</code> is the location trait and <code>P</code> the regrid-transfer policy (default <a href="@ref"><code>Interpolated</code></a>); both survive <a href="@ref"><code>pack</code></a>/<a href="@ref"><code>unpack</code></a>, and <code>P</code> is consulted only by <a href="@ref"><code>regrid!</code></a>, never on an operator path. Behind the shared <code>AbstractBlockField</code> interface every operator runs on packed storage via the per-leaf fallback sweep (each leaf is a trailing-dim view), and operators with a forest-native kernel sweep all leaves in a single launch. Convert with <a href="@ref"><code>pack</code></a> / <a href="@ref"><code>unpack</code></a>; <code>BlockField</code> remains the reference layout for AD, Reactant, and <a href="@ref"><code>regrid!</code></a> (re-<code>pack</code> after a regrid).</p>
 <p>See also: <a href="@ref"><code>block</code></a>, <a href="@ref"><code>flatten</code></a>.</p>
 </div>
@@ -1989,7 +1989,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       &nbsp;
     </div>   
     <div class="nav-footer-center">
-<p>Built on 2026-09-08 (PR #76)</p>
+<p>Built on 2026-09-09 (PR #76)</p>
 </div>
     <div class="nav-footer-right">
       &nbsp;
