@@ -82,6 +82,10 @@ struct UnsupportedBC <: MatrixFreeOperators.AbstractBC end
         bf2 = Adapt.adapt(Array, bf)
         @test bf2 isa BlockForest
         @test MFO.nleaves(bf2) == MFO.nleaves(bf)
+        # the schedule Ref is shared and stays concretely typed across adaptation
+        @test bf2.schedule === bf.schedule
+        @test eltype(bf2.schedule) === eltype(bf.schedule) === MFO._schedule_type(Val(2), Float64)
+        @test isconcretetype(eltype(bf2.schedule))
     end
 
     @testset "operators apply across refinement levels (coarse–fine phase)" begin

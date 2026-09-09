@@ -124,9 +124,10 @@ tape** — nothing from the forward pass has to survive to the reverse pass.
 There are two reasons to bother:
 
 - **The coarse–fine descriptor sweep.** On a refined forest the exchange runs over
-  `GhostFill` descriptors, each holding a nested `Vector` — not an `isbits` type,
-  and hostile to Enzyme's type analysis. Routing through the declared transpose
-  means it never reaches that analysis at all.
+  `GhostFill` descriptors. These used to hold a nested `Vector` — not an `isbits`
+  type, and hostile to Enzyme's type analysis; they are flat `isbits` records now
+  (issue #42), but routing through the declared transpose means the sweep never
+  reaches that analysis at all, whatever shape the descriptors take.
 - **Kernels must never be differentiated through.** On GPU backends the same sweeps
   run as KernelAbstractions kernels. A rule makes "the adjoint is declared, not
   discovered" structural rather than incidental.

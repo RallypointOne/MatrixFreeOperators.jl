@@ -51,15 +51,20 @@ _dev_term(t::SlabTerm{N,T}) where {N,T} = _DevTerm{N,T}(
 )
 
 # CSR-flatten one fill phase: fills in host order, all terms concatenated in
-# host fill/term order (the accumulation order the kernel must reproduce).
-function _flatten_fills(fills::Vector{GhostFill{N,T}}) where {N,T}
+# host fill/term order (the accumulation order the kernel must reproduce). Every
+# row is K wide, so the term buffer is sized up front and row i is
+# (i-1)K+1 : iK — the explicit [tfirst, tlast] on each fill is kept so the kernel
+# stays K-agnostic.
+function _flatten_fills(fills::Vector{GhostFill{N,T,K}}) where {N,T,K}
     devfills = Vector{_DevFill{N}}(undef, length(fills))
-    terms = _DevTerm{N,T}[]
+    terms = Vector{_DevTerm{N,T}}(undef, K * length(fills))
     maxcells = 0
     for (i, f) in enumerate(fills)
-        tfirst = length(terms) + 1
-        append!(terms, (_dev_term(t) for t in f.terms))
-        devfills[i] = _dev_fill(f, tfirst, length(terms))
+        tfirst = (i - 1) * K + 1
+        for (k, t) in enumerate(f.terms)
+            terms[tfirst + k - 1] = _dev_term(t)
+        end
+        devfills[i] = _dev_fill(f, tfirst, i * K)
         maxcells = max(maxcells, prod(length.(f.dst_ranges)))
     end
     return devfills, terms, maxcells

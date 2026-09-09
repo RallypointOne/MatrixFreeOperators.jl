@@ -418,8 +418,8 @@ wrap any `AbstractOperator` exposing `mul!`/`size`/`eltype`.)
   by the existing generation guards on both the prepared and un-prepared paths.
   The exchange itself is kernelized for packed fields on GPU backends: the
   per-generation schedule flattens into a device-resident descriptor SoA
-  (`_DeviceSchedule` — copies bucketed by normal dim, the nested
-  `GhostFill.terms` CSR-flattened per phase, bcfaces as device leaf lists,
+  (`_DeviceSchedule` — copies bucketed by normal dim, the
+  `GhostFill.terms` tuples CSR-flattened per phase, bcfaces as device leaf lists,
   cached keyed on generation and backend), executed as a constant number of
   launches whose arithmetic is bit-identical to the host loops except
   copy-phase corner ghosts (last dim wins; no axis-aligned stencil reads them).
@@ -808,8 +808,15 @@ pre-built.
     volume average leaves O(1) interface truncation ⇒ 1st-order solutions, rejected).
     Forward sweep: copies → interp → restrict (restriction reads interp-filled fine
     ghosts); the adjoint runs phases and descriptors in exact reverse order, making it
-    the exact transpose by construction. The restriction's conservation guarantee is
-    for *unweighted* differences: a variable-coefficient flux weights each side of a
+    the exact transpose by construction. Every descriptor is **isbits**: a
+    fill's term count is a function of `N` alone (interpolation `1 + 2·3^(N−1)`,
+    restriction `1 + 2^N` — fixed by the emitters' tensor-product loops, never by
+    topology), so `GhostFill{N,T,K}` carries an `NTuple{K}` of terms and the
+    schedule vectors are flat inline buffers with no per-term pointer chase
+    (#42); the concrete `ExchangeSchedule{N,T,KI,KR}` is derivable from `(N, T)`,
+    which is what lets `BlockForest` cache it in a concretely typed `Ref`. The
+    restriction's conservation guarantee is for *unweighted* differences: a
+    variable-coefficient flux weights each side of a
     coarse–fine face by an independently formed face κ, so `Diffusion` owns a
     κ-weighted coarse-ghost rewrite (issue #58) fed by weight-free `cfflux`
     descriptors emitted in the same schedule build — κ must stay out of schedule

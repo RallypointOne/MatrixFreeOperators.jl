@@ -30,20 +30,43 @@ struct SlabTerm{N,T}
 end
 
 """
-    GhostFill{N,T}
+    GhostFill{N,T,K}
 
-One coarse–fine ghost sub-slab fill: `dst .= Σₖ wₖ · srcₖ` over `terms`. The same
-concrete shape serves both directions of a 2:1 interface — coarse→fine quadratic
-interpolation and fine→coarse flux-matching restriction. Each dst region is
-written by exactly one descriptor, so the adjoint is the same-weight scatter-add
-into every term source followed by zeroing the dst — forward and adjoint share
-their weights by construction.
+One coarse–fine ghost sub-slab fill: `dst .= Σₖ wₖ · srcₖ` over the `K` `terms`.
+The same concrete shape serves both directions of a 2:1 interface — coarse→fine
+quadratic interpolation and fine→coarse flux-matching restriction. Each dst
+region is written by exactly one descriptor, so the adjoint is the same-weight
+scatter-add into every term source followed by zeroing the dst — forward and
+adjoint share their weights by construction.
+
+`K` is fixed per fill kind by `N` alone, never by topology (see
+[`_ninterp_terms`](@ref) / [`_nrestrict_terms`](@ref)), so `terms` is an
+`NTuple` and the descriptor is fully isbits: a `Vector{GhostFill}` is one flat
+inline buffer, the term loop unrolls statically, and the record is a shape
+Enzyme's type analysis can see through (issue #26 territory otherwise).
 """
-struct GhostFill{N,T}
+struct GhostFill{N,T,K}
     dst_block::Int
     dst_ranges::NTuple{N,StepRange{Int,Int}}
-    terms::Vector{SlabTerm{N,T}}
+    terms::NTuple{K,SlabTerm{N,T}}
 end
+
+"""
+    _ninterp_terms(::Val{N}) -> 1 + 2·3^(N-1)
+    _nrestrict_terms(::Val{N}) -> 1 + 2^N
+
+Term count of every coarse→fine interpolation / fine→coarse restriction
+[`GhostFill`](@ref), a function of the dimension only. Interpolation reads the
+fine block's own first interior cell plus a 3-point tangential tensor stencil on
+each of two coarse layers; restriction reads the coarse first interior layer plus
+one (interior, ghost) pair per tangential fine-column parity combination. Both are
+fixed by the emitters' `Iterators.product` loops (`_emit_interp!` /
+`_emit_restrict!` in transfer.jl), which never branch on topology — a face fill at
+a domain boundary or a coarse tangential extreme only changes *which* cells the
+terms read (one-sided stencils), never how many. Checked at emission.
+"""
+_ninterp_terms(::Val{N}) where {N} = 1 + 2 * 3^(N - 1)
+_nrestrict_terms(::Val{N}) where {N} = 1 + 2^N
 
 """
     CFFluxDescriptor{N}
@@ -58,9 +81,9 @@ coefficient storage, keeping κ on the AD tape (a κ-dependent `SlabTerm.weight`
 would be hidden by the halo Enzyme rules, which report zero derivative for
 schedule weights — the coefficient-gradient failure mode the package forbids).
 Fully isbits, so a loop over `Vector{CFFluxDescriptor}` is a shape Enzyme can
-type-analyze inside a differentiated apply (unlike `GhostFill`, issue #26). The
-per-parity fine boxes are reconstructed at use from `d`, the layer indices, and
-the blocksize.
+type-analyze inside a differentiated apply (the issue-#26 constraint; `GhostFill`
+has since been made isbits too, #42). The per-parity fine boxes are reconstructed
+at use from `d`, the layer indices, and the blocksize.
 """
 struct CFFluxDescriptor{N}
     coarse::Int32
@@ -73,7 +96,7 @@ struct CFFluxDescriptor{N}
 end
 
 """
-    ExchangeSchedule{N,T}
+    ExchangeSchedule{N,T,KI,KR}
 
 Halo-exchange plan for one forest generation, replacing every runtime topology
 query in [`halo_update!`](@ref) with flat homogeneous descriptor vectors:
@@ -94,23 +117,42 @@ physical-BC passes ([`apply_bc!`](@ref)/[`fold_bc!`](@ref)/
 `fill_bc_inhomogeneous!` on a [`BlockField`](@ref)); periodic dimensions stay
 empty, their wrap being halo-exchange territory.
 
+Every descriptor vector has an isbits eltype — `KI`/`KR` are the fixed
+interpolation/restriction term counts (`_ninterp_terms`/`_nrestrict_terms`), so the
+sweeps walk flat inline buffers with no per-term pointer chase. The concrete
+schedule type is a function of `(N, T)` alone ([`_schedule_type`](@ref)), which is
+what lets a [`BlockForest`](@ref) hold it in a concretely typed `Ref`.
+
 Built by `_build_exchange_schedule` and cached on the grid per regrid generation
 by `_exchange_schedule`; a stale schedule is unusable by construction because the
 cache keys on the live `forest.generation[]`.
 """
-struct ExchangeSchedule{N,T}
+struct ExchangeSchedule{N,T,KI,KR}
     copies::Vector{CopyDescriptor{N}}
-    interp::Vector{GhostFill{N,T}}
-    restrict::Vector{GhostFill{N,T}}
+    interp::Vector{GhostFill{N,T,KI}}
+    restrict::Vector{GhostFill{N,T,KR}}
     cfflux::Vector{CFFluxDescriptor{N}}
     bcfaces::NTuple{N,NTuple{2,Vector{Int}}}
     generation::Int
 end
 
+"""
+    _schedule_type(::Val{N}, ::Type{T}) -> Type{ExchangeSchedule{N,T,KI,KR}}
+
+The one concrete [`ExchangeSchedule`](@ref) type a forest of dimension `N` and
+element type `T` ever builds — the term counts are dimension-fixed, so the type
+parameters are derivable rather than discovered per build.
+"""
+_schedule_type(::Val{N}, ::Type{T}) where {N,T} =
+    ExchangeSchedule{N,T,_ninterp_terms(Val(N)),_nrestrict_terms(Val(N))}
+
 # Sentinel: generation -1 never matches a live forest generation (construction
 # already bumps it to ≥ 1), so the first _exchange_schedule fetch always builds.
-_empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(
-    CopyDescriptor{N}[], GhostFill{N,T}[], GhostFill{N,T}[], CFFluxDescriptor{N}[],
+_empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule(
+    CopyDescriptor{N}[],
+    GhostFill{N,T,_ninterp_terms(Val(N))}[],
+    GhostFill{N,T,_nrestrict_terms(Val(N))}[],
+    CFFluxDescriptor{N}[],
     ntuple(_ -> (Int[], Int[]), Val(N)), -1,
 )
 
@@ -119,11 +161,12 @@ _empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(
 # Flattened, device-resident twin of an ExchangeSchedule for the batched
 # single-launch exchange of packed fields on GPU backends (transfer_kernels.jl).
 # Isbits AoS records in device vectors — Int32 indices (descriptor metadata is
-# bandwidth), ranges flattened to first/step/len scalars, and the ragged
-# GhostFill.terms concatenated per phase in host fill order with each fill
-# carrying its embedded CSR row [tfirst, tlast]. Copy boxes need no shape
-# fields: for normal dim d the box is h[d] × the full padded transverse extent,
-# recomputed at launch. Built lazily by _device_schedule, cached on the forest
+# bandwidth), ranges flattened to first/step/len scalars, and the
+# GhostFill.terms tuples concatenated per phase in host fill order with each
+# fill carrying its embedded CSR row [tfirst, tlast] (fixed-width rows now that
+# K is dimension-fixed; the CSR shape stays so the kernel needs no K
+# parameter). Copy boxes need no shape fields: for normal dim d the box is
+# h[d] × the full padded transverse extent, recomputed at launch. Built lazily by _device_schedule, cached on the forest
 # keyed on generation AND backend; _NoDeviceSchedule is the unbuilt sentinel
 # behind the abstract-eltype Ref (only GPU paths ever touch it).
 abstract type _AbstractDeviceSchedule end

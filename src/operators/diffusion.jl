@@ -85,9 +85,9 @@ method and `_average_to_coarse` document.
 
 Written as a plain topology walk rather than through the cached [`ExchangeSchedule`](@ref)
 descriptors on purpose. It must stay differentiable with respect to κ, and the `GhostFill`
-descriptor loop is precisely the shape the halo Enzyme rules exist to hide (issue #26);
-those rules report `nothing` for every derivative slot, so routing a coefficient through
-them would silently zero its gradient. Recomputing topology here is free — this runs once
+descriptor sweep runs under the halo Enzyme rules (`_exchange_storage!`, issue #26); those
+rules report `nothing` for every derivative slot, so routing a coefficient through them
+would silently zero its gradient. Recomputing topology here is free — this runs once
 per operator, never per application.
 """
 function fill_coefficient_ghosts!(κ::AbstractBlockField, bf::BlockForest{N}) where {N}
