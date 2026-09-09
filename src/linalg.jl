@@ -316,17 +316,27 @@ struct PreparedAdjoint{O<:AbstractOperator,F<:AbstractField} <: AbstractOperator
     scratch::F
 end
 
-# Same map as AdjointOp(op), so the same trait forwarding (operators/abstract.jl).
+# Same map as AdjointOp(op), so the same trait forwarding AND the same declared
+# transpose (operators/abstract.jl): the twin's adjoint is the leaf it wraps.
+# `adjoint_operator` must be declared with `isdiagonal` — the generic forest
+# adjoint walk below turns a diagonal transpose into `adjoint_operator(L)`, and
+# the AbstractOperator default would hand back AdjointOp(PreparedAdjoint(op)),
+# whose apply is this node's transpose again: recursion without bound.
 islinear(L::PreparedAdjoint) = islinear(L.op)
 isconstant(L::PreparedAdjoint) = isconstant(L.op)
 isselfadjoint(L::PreparedAdjoint) = isselfadjoint(L.op)
 isdiagonal(L::PreparedAdjoint) = isdiagonal(L.op)
+adjoint_operator(L::PreparedAdjoint) = L.op
 
 function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)
     iszero(β) && return apply_adjoint!(y, L.op, x, g, α, β)
     apply_adjoint!(L.scratch, L.op, x, g)
     interior(y) .= α .* interior(L.scratch) .+ β .* interior(y)
     return y
+end
+# (opᵀ)ᵀ = op, as for AdjointOp.
+function apply_adjoint!(x̄::Field, L::PreparedAdjoint, ȳ::Field, g::AbstractGrid, α, β)
+    return apply!(x̄, L.op, ȳ, g, α, β)
 end
 
 #--------------------------------------------------------------------------------# Cached forest apply (the PreparedForest hot path)
@@ -437,6 +447,11 @@ _forest_capply_adjoint!(
 ) = _forest_capply_adjoint!(x̄, L.op, ȳ, P, α * conj(L.α), β)
 _forest_capply_adjoint!(
     x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, P::PreparedForest, α, β
+) = _forest_capply!(x̄, L.op, ȳ, P, α, β)
+# The prepared twin transposes the same way; without this method a PreparedAdjoint
+# would fall into the generic body above, whose sweep has no adjoint action for it.
+_forest_capply_adjoint!(
+    x̄::AbstractBlockField, L::PreparedAdjoint, ȳ::AbstractBlockField, P::PreparedForest, α, β
 ) = _forest_capply!(x̄, L.op, ȳ, P, α, β)
 
 #--------------------------------------------------------------------------------# Boundary lift (linear/affine split)
