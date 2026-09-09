@@ -17,10 +17,13 @@ Enzyme is the default backend, DifferentiationInterface the recommended frontend
 and gradients extend to operator parameters such as material-coefficient fields
 (see [Automatic Differentiation](pages/autodiff.qmd)) — and feeds Krylov.jl
 directly through `prepare` + `mul!` with zero steady-state allocations. Explicit
-time stepping does not go through that flat boundary: an integrator calls the
-field-level `apply!(du, L, u)` (or `apply!(du, P, u)` on a prepared operator)
-and skips the copies `mul!` makes for Krylov — see
+time stepping does not go through that flat boundary: a hand-rolled stepper calls
+the field-level `apply!(du, L, u)` (or `apply!(du, P, u)` on a prepared
+operator), adds `boundary_rhs(L, g)` when the BCs are inhomogeneous, and skips the
+copies `mul!` makes for Krylov — see
 [`examples/heat_equation.jl`](https://github.com/RallypointOne/MatrixFreeOperators.jl/blob/main/examples/heat_equation.jl).
+There is no OrdinaryDiffEq.jl integration yet; that is tracked in
+[#81](https://github.com/RallypointOne/MatrixFreeOperators.jl/issues/81).
 When one device is not enough,
 `prepare_distributed` partitions the grid across several GPUs without changing a
 line of operator code — see
