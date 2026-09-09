@@ -32,11 +32,19 @@ end
 
 #--------------------------------------------------------------------------------# Leaf diagonals
 
-# Laplacian: -2·Σ_d h_d⁻² at interior cells. Dirichlet/Neumann faces mirror the
-# boundary cell into ghost layer 1 with sign ∓1, so the stencil's ghost read
-# feeds back into its own diagonal: the face-adjacent cell gains
-# _bc_sign(bc)·h_d⁻² in that dimension. Periodic ghost fills read a *different*
-# cell (the far side), so they contribute off-diagonal only.
+# A face's diagonal weight is s_f − 1, where s_f = ∂u[neighbour slot]/∂u_I: an interior
+# or periodic neighbour is an independent unknown (s_f = 0, weight −1), Dirichlet mirrors
+# with −1 (weight −2), Neumann mirrors with +1 (weight 0), and a periodic dimension of a
+# *single* cell wraps onto the cell itself (s_f = +1, weight 0). That last row is the one
+# a naive "periodic faces need no correction" rule gets wrong (issue #55); both leaves
+# below read this one table so they cannot disagree on it.
+_diag_face_weight(::Dirichlet, ::Int) = -2
+_diag_face_weight(::Neumann, ::Int) = 0
+_diag_face_weight(::Periodic, n::Int) = n == 1 ? 0 : -1
+
+# Laplacian: the interior value is -2·Σ_d h_d⁻² (weight −1 on both faces of every
+# dimension); a face-adjacent cell is corrected by (weight + 1)·h_d⁻² on that face. Under
+# all-periodic BCs every cell sees the same faces, so the diagonal is a uniform Number.
 function operator_diagonal(L::Laplacian)
     g = L.grid
     g isa CartesianGrid || throw(
@@ -49,42 +57,39 @@ function operator_diagonal(L::Laplacian)
             "operator_diagonal(::Laplacian) does not support Interface faces (forest leaves)",
         ),
     )
+    N = dimension(g)
     inv_h2 = _inv_spacing2(g)
-    c = -2 * sum(inv_h2)
     bcs = boundary_conditions(g)
-    all(pair -> pair[1] isa Periodic, bcs) && return c
+    n = local_size(g)
+    if all(pair -> pair[1] isa Periodic, bcs)
+        return sum(d -> 2 * _diag_face_weight(bcs[d][1], n[d]) * inv_h2[d], 1:N)
+    end
     d = scalar_field(g)
     di = interior(d)
-    di .= c
-    _diag_bc_adjust!(di, g, Val(1), bcs, inv_h2)
+    di .= -2 * sum(inv_h2)
+    _diag_bc_adjust!(di, n, Val(1), bcs, inv_h2)
     return d
 end
 
-function _diag_bc_adjust!(di, g, ::Val{D}, bcs::Tuple, inv_h2) where {D}
+function _diag_bc_adjust!(di, n, ::Val{D}, bcs::Tuple, inv_h2) where {D}
     lo, hi = first(bcs)
-    n = local_size(g)[D]
-    _diag_bc_face!(di, Val(D), 1:1, lo, inv_h2[D])
-    _diag_bc_face!(di, Val(D), n:n, hi, inv_h2[D])
-    return _diag_bc_adjust!(di, g, Val(D + 1), Base.tail(bcs), inv_h2)
+    nd = n[D]
+    _diag_bc_face!(di, Val(D), 1:1, (_diag_face_weight(lo, nd) + 1) * inv_h2[D])
+    _diag_bc_face!(di, Val(D), nd:nd, (_diag_face_weight(hi, nd) + 1) * inv_h2[D])
+    return _diag_bc_adjust!(di, n, Val(D + 1), Base.tail(bcs), inv_h2)
 end
-_diag_bc_adjust!(di, g, ::Val, ::Tuple{}, inv_h2) = nothing
+_diag_bc_adjust!(di, n, ::Val, ::Tuple{}, inv_h2) = nothing
 
-_diag_bc_face!(di, ::Val, r, ::Periodic, w) = nothing
-function _diag_bc_face!(di, dim::Val, r, bc::AbstractBC, w)
+function _diag_bc_face!(di, dim::Val, r, δ)
+    iszero(δ) && return nothing
     slab = _dimslice(di, dim, r)
-    slab .+= _bc_sign(bc) * w
+    slab .+= δ
     return nothing
 end
 
 # Diffusion: every face carries its own coefficient, so unlike the Laplacian there is no
 # uniform value to correct — the whole row is assembled from the same face average the
 # action uses, which is what keeps a Jacobi diagonal from drifting away from the operator.
-#
-# A face's diagonal weight is s_f − 1, where s_f = ∂u[neighbour slot]/∂u_I: an interior or
-# periodic neighbour is an independent unknown (s_f = 0, weight −1), Dirichlet mirrors
-# with −1 (weight −2), Neumann mirrors with +1 (weight 0), and a periodic dimension of a
-# *single* cell wraps onto the cell itself (s_f = +1, weight 0). That last row is the one
-# a naive "periodic faces need no correction" rule gets wrong.
 @inline function _diff_diag_axis(
     κ, avg, I, κc, w, wlo::Int, whi::Int, lo, hi, ::Val{N}, ::Val{D}
 ) where {N,D}
@@ -117,10 +122,6 @@ end
     return _diff_diag_axes(κ, avg, I, κc, inv_h2, wbc, lo, hi, Val(N), Val(N))
 end
 
-_diff_diag_weight(::Dirichlet, ::Int) = -2
-_diff_diag_weight(::Neumann, ::Int) = 0
-_diff_diag_weight(::Periodic, n::Int) = n == 1 ? 0 : -1
-
 function operator_diagonal(D::Diffusion)
     g = D.grid
     g isa CartesianGrid || throw(
@@ -141,7 +142,7 @@ function operator_diagonal(D::Diffusion)
     lo = ntuple(d -> h[d] + 1, Val(N))
     hi = ntuple(d -> h[d] + n[d], Val(N))
     wbc = ntuple(
-        d -> (_diff_diag_weight(bcs[d][1], n[d]), _diff_diag_weight(bcs[d][2], n[d])), Val(N)
+        d -> (_diag_face_weight(bcs[d][1], n[d]), _diag_face_weight(bcs[d][2], n[d])), Val(N)
     )
     # Always a Field: κ varies, so the Laplacian's uniform-diagonal Number collapse does
     # not apply here even when every face is periodic.
