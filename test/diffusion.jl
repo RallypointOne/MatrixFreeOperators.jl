@@ -148,6 +148,111 @@ end
             dot(collect(interior(x)), collect(interior(Dty)))
     end
 
+    # Issue #77: on an Interface-bearing grid the declared transpose runs the
+    # `@inbounds` forward stencil over the interior and the bounds-masked gather over
+    # the 2N ghost planes only, instead of the generic engine's masked sweep of every
+    # padded cell. The engine, driven by the same gather, is the reference: the two
+    # must agree on the WHOLE padded output — Interface ghosts carry the cotangents the
+    # slab reduction / halo_update_adjoint! fold — bit for bit (`isequal`, so a
+    # signed-zero flip counts), in both engine branches and at α ≠ 1.
+    @testset "Interface adjoint ≡ adjoint_gather! bit for bit" begin
+        M = MatrixFreeOperators
+        function reference_adjoint!(x̄, D, ȳ, g, α, β)
+            inv_h2 = M._inv_spacing2(g)
+            κ = M._conj_op(D).κ.data
+            avg = D.avg
+            gather = (u, J) -> M._diff_adjoint_gather(u, κ, J, inv_h2, avg)
+            return M.adjoint_gather!(x̄, ȳ, gather, α, β)
+        end
+        # Interface-bearing grids the leaf meets in practice — every slab of a
+        # partitioned grid (cut faces on one or both sides, a physical wall on the
+        # other) — plus a hand-built grid with Interface on two different axes and a
+        # halo of 2 in one of them, so a deeper ghost plane (all-zero) is covered too.
+        function interface_grids(T, N)
+            ext = ntuple(d -> (zero(T), T(2)), N)
+            walls = (Dirichlet(), Neumann())
+            grids = Any[]
+            for cut in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))
+                sz = ntuple(d -> d == N ? 8 : 3 + d, N)
+                bc = ntuple(d -> d == N ? cut : walls, N)
+                append!(grids, partition_grid(CartesianGrid(ext, sz; bc=bc), 2))
+                append!(grids, partition_grid(CartesianGrid(ext, sz; bc=bc), 3))
+            end
+            I = M.Interface()
+            bc = ntuple(d -> d == 1 ? (I, Dirichlet()) : d == 2 ? (Neumann(), I) : walls, N)
+            push!(grids, CartesianGrid(ext, ntuple(d -> 3 + d, N); bc=bc,
+                                       halo=ntuple(d -> d == 2 ? 2 : 1, N)))
+            return grids
+        end
+        for T in (Float64, Float32), N in (2, 3), gi in interface_grids(T, N),
+            # κ is an external input on a slab, ghosts included; a sign-changing κ
+            # under ArithmeticMean exercises the signed zeros the corner gathers make.
+            (name, avg, κfill) in (
+                ("ArithmeticMean", ArithmeticMean(), r -> 1 + r),
+                ("HarmonicMean", HarmonicMean(), r -> 1 + r),
+                ("ArithmeticMean signed κ", ArithmeticMean(), r -> r - T(0.5)),
+            )
+
+            rng = Random.MersenneTwister(77)
+            κ = scalar_field(gi, T)
+            κ.data .= κfill.(rand(rng, T, padded_size(gi)...))
+            D = M.Diffusion(gi, κ, avg)
+            @test M._has_interface(gi)
+            for α in (one(T), T(0.7)), β in (zero(T), T(0.3))
+                @testset "$T $(N)D $(join(local_size(gi), "×")) $name α=$α β=$β" begin
+                    # Nonzero garbage in every ghost of ȳ (both paths must zero it) and
+                    # in every cell of x̄ (the β branch blends it, the corners included:
+                    # a plane overlap would fold a corner twice).
+                    ȳ = scalar_field(gi, T)
+                    ȳ.data .= rand(rng, T, padded_size(gi)...) .- T(0.5)
+                    x̄0 = scalar_field(gi, T)
+                    x̄0.data .= rand(rng, T, padded_size(gi)...) .+ T(0.25)
+                    ref = reference_adjoint!(copy(x̄0), D, copy(ȳ), gi, α, β)
+                    got = apply_adjoint!(copy(x̄0), D, copy(ȳ), gi, α, β)
+                    ndiff = count(!isequal(a, b) for (a, b) in zip(got.data, ref.data))
+                    @test ndiff == 0
+                    @test !any(isnan, got.data)
+                    @test !all(iszero, interior(got))
+                end
+            end
+        end
+    end
+
+    # The ghost-plane engine's own contract: it writes every ghost cell exactly once
+    # and no interior cell. Interior NaN survives a sweep; a corner (gather exactly
+    # 0 for κ > 0) blended with α = 2, β = 1/2 lands on β·x̄, which a second, overlapping
+    # plane write would have taken to β²·x̄.
+    @testset "adjoint_gather_ghosts! sweeps the ghost region once" begin
+        M = MatrixFreeOperators
+        I = M.Interface()
+        for T in (Float64, Float32), (sz, halo) in (((5, 4), (1, 2)), ((3, 4, 5), (2, 1, 1)))
+            N = length(sz)
+            bc = ntuple(d -> d == 1 ? (I, Dirichlet()) : (Neumann(), I), N)
+            gi = CartesianGrid(ntuple(d -> (zero(T), one(T)), N), sz; bc=bc, halo=halo)
+            κ = scalar_field(gi, T)
+            κ.data .= 1 .+ rand(Random.MersenneTwister(5), T, padded_size(gi)...)
+            inv_h2 = M._inv_spacing2(gi)
+            gather = (u, J) -> M._diff_adjoint_gather(u, κ.data, J, inv_h2, ArithmeticMean())
+            ȳ = scalar_field(gi, T)
+            interior(ȳ) .= rand(Random.MersenneTwister(6), T, sz...)
+            ghost = [!(J in interior(gi)) for J in CartesianIndices(padded_size(gi))]
+
+            x̄ = scalar_field(gi, T)
+            fill!(x̄.data, T(NaN))
+            M.adjoint_gather_ghosts!(x̄, ȳ, gather, true, false)
+            @test all(isnan, interior(x̄))
+            @test all(isfinite, x̄.data[ghost])
+            @test !all(iszero, x̄.data[ghost])                  # depth-1 planes are live
+
+            fill!(x̄.data, one(T))
+            M.adjoint_gather_ghosts!(x̄, ȳ, gather, T(2), T(0.5))
+            corner = [count(d -> !(J[d] in interior(gi).indices[d]), 1:N) ≥ 2
+                      for J in CartesianIndices(padded_size(gi))]
+            @test all(==(T(0.5)), x̄.data[corner])
+            @test all(isone, interior(x̄))
+        end
+    end
+
     @testset "operator_diagonal: $name n=$n $(nameof(typeof(avg)))" for (name, bc) in
                                                                        DIFF_BCS,
         n in DIFF_SIZES, avg in DIFF_AVGS

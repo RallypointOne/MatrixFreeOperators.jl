@@ -263,6 +263,67 @@ function adjoint_gather!(x̄::Field, ȳ::Field, gather::F, α::Number, β::Numbe
     return x̄
 end
 
+# Ghost-plane sweep of the engine above, for leaves whose interior rows of the
+# transpose are the forward stencil itself (symmetric weights, so the flipped
+# stencil at an interior cell reads only in-bounds neighbours and the bounds
+# masking is dead weight there). The leaf runs its `@inbounds` forward stencil
+# over `interior(g)` and this over the 2N ghost planes, where a ghost's value is
+# exactly the weight the abutting interior row carries into it — reproducing
+# `adjoint_gather!` bit for bit at O(surface) masked reads instead of O(volume).
+# The α/β contract is the engine's, applied per region: overwrite with the raw
+# gather when β = 0 (the caller folds and scales afterwards), else blend
+# `α·gather + β·x̄` in place.
+#
+# The planes are a DISJOINT partition of the ghost region — dimension d's two
+# runs are restricted to the interior in dimensions < d and span the full padded
+# extent in dimensions > d — so the accumulating branch touches each corner cell
+# exactly once.
+function adjoint_gather_ghosts!(x̄::Field, ȳ::Field, gather::F, α::Number, β::Number) where {F}
+    g = x̄.grid
+    hn = ntuple(d -> (halo_width(g)[d], local_size(g)[d]), Val(ndims(x̄.data)))
+    _gather_ghost_dims!(x̄.data, ȳ.data, gather, hn, Val(1), hn, α, β)
+    return x̄
+end
+
+# `rest` is the tail of `hn` from dimension D on, and its empty-tuple base case is
+# what keeps every level specialized — the same idiom as `_zero_ghosts_dims!`. A
+# `D > N` guard on a forwarded `Val(D + 1)` call boxes `hn` and the gather closure
+# at the last level — a per-apply allocation Profile.Allocs pinned to that call.
+function _gather_ghost_dims!(
+    x̄::AbstractArray{<:Any,N}, ȳ::AbstractArray{<:Any,N}, gather::F,
+    hn::NTuple{N,Tuple{Int,Int}}, ::Val{D}, rest::Tuple{Tuple{Int,Int},Vararg{Tuple{Int,Int}}},
+    α, β,
+) where {N,D,F}
+    h, n = first(rest)
+    _gather_box!(x̄, ȳ, gather, _ghost_box(hn, Val(D), 1:h), α, β)
+    _gather_box!(x̄, ȳ, gather, _ghost_box(hn, Val(D), (h + n + 1):(n + 2h)), α, β)
+    return _gather_ghost_dims!(x̄, ȳ, gather, hn, Val(D + 1), Base.tail(rest), α, β)
+end
+_gather_ghost_dims!(x̄, ȳ, gather, hn, ::Val, ::Tuple{}, α, β) = nothing
+
+# Padded-index box of dimension D's ghost run `r`: interior in dimensions before
+# D, full extent after — see `adjoint_gather_ghosts!`. Every element is a
+# `UnitRange{Int}` so the tuple infers homogeneous (a `Colon` mix would not).
+@inline function _ghost_box(
+    hn::NTuple{N,Tuple{Int,Int}}, ::Val{D}, r::UnitRange{Int}
+) where {N,D}
+    return ntuple(Val(N)) do d
+        h, n = hn[d]
+        d < D ? ((h + 1):(h + n)) : (d == D ? r : (1:(n + 2h)))
+    end
+end
+
+function _gather_box!(x̄, ȳ, gather::F, box::NTuple{N,UnitRange{Int}}, α, β) where {N,F}
+    dst = view(x̄, box...)
+    idx = CartesianIndices(box)
+    if iszero(β)
+        dst .= gather.(Ref(ȳ), idx)
+    else
+        dst .= α .* gather.(Ref(ȳ), idx) .+ β .* dst
+    end
+    return nothing
+end
+
 #--------------------------------------------------------------------------------# Size, eltype, show
 
 # Grid an operator is bound to; `nothing` for grid-free operators (resolved from a

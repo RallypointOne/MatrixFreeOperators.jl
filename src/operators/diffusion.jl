@@ -701,16 +701,41 @@ end
 function apply_adjoint!(x̄::Field, D::Diffusion, ȳ::Field, g::AbstractGrid, α, β)
     # On an all-physical-BC grid the homogeneous fill makes the interior→interior map
     # symmetric, so the forward action of the conjugated leaf IS the adjoint. A forest
-    # leaf's Interface ghosts are external inputs: the mechanical transpose must scatter
-    # cotangents into them for halo_update_adjoint! to fold across blocks.
+    # leaf's or partition slab's Interface ghosts are external inputs: the mechanical
+    # transpose must scatter cotangents into them for halo_update_adjoint! / the slab
+    # reduction to fold across blocks.
     _has_interface(g) || return apply!(x̄, _conj_op(D), ȳ, g, α, β)
     inv_h2 = _inv_spacing2(g)
     κ = _conj_op(D).κ.data
     avg = D.avg
+    # The transpose is `adjoint_gather!` split by region (issue #77). Both face
+    # averages are symmetric, so every row of the transpose is the forward stencil on
+    # a ghost-zeroed ȳ: at an interior cell all neighbour reads are in bounds and the
+    # engine's bounds-masked sweep is pure overhead, so the interior runs the
+    # `@inbounds` forward stencil and only the 2N ghost planes run the masked gather
+    # (their value is the weight the abutting interior row carries into the ghost).
+    # Same fold_bc! and the engine's exact α/β order, so the padded output is
+    # bit-identical (test/diffusion.jl). Broadcast with `Ref`s, not a closure: a
+    # closure over κ stops the two-array stencil from inlining and vectorizing.
     gather = let κ = κ, inv_h2 = inv_h2, avg = avg
         (u, J) -> _diff_adjoint_gather(u, κ, J, inv_h2, avg)
     end
-    return adjoint_gather!(x̄, ȳ, gather, α, β)
+    zero_ghosts!(ȳ)
+    x̄i = interior(x̄)
+    if iszero(β)
+        x̄i .= _diff_at.(Ref(ȳ.data), Ref(κ), interior(g), Ref(inv_h2), Ref(avg))
+        adjoint_gather_ghosts!(x̄, ȳ, gather, α, β)
+        fold_bc!(x̄)
+        isone(α) || (x̄.data .*= α)
+    else
+        zero_bc_ghosts!(x̄)
+        x̄i .=
+            α .* _diff_at.(Ref(ȳ.data), Ref(κ), interior(g), Ref(inv_h2), Ref(avg)) .+
+            β .* x̄i
+        adjoint_gather_ghosts!(x̄, ȳ, gather, α, β)
+        fold_bc!(x̄)
+    end
+    return x̄
 end
 
 function Adapt.adapt_structure(to, D::Diffusion)

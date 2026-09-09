@@ -1156,8 +1156,9 @@ end
             g -> laplacian(g) + laplacian(g),
             g -> laplacian(g) + derivative(g, 1),
             g -> (laplacian(g) * laplacian(g)) + laplacian(g),
-            # ...and the slab diffusion leaf, whose adjoint is the masked gather
-            # over a padded κ rather than the self-adjoint shortcut.
+            # ...and the slab diffusion leaf, whose adjoint is the interior stencil
+            # plus the ghost-plane gather over a padded κ (issue #77) rather than the
+            # self-adjoint shortcut.
             g -> diffusion(g, set!(scalar_field(g), diff_coeff_fun)) + laplacian(g),
         )
             small = steady((16, 16), mk, dist_adjoint!)

@@ -631,9 +631,13 @@ same padded window, and because it reads its coefficient pointwise the ghosts it
 now carries are inert (a CPU testset poisons them with `NaN`). The real-eltype
 restriction in `_partitionable_coeff` carries over unchanged, for the same reason
 — the distributed vectors are real. The leaf's mechanical transpose — the
-`adjoint_gather!` branch `apply_adjoint!` takes on a slab's `Interface` faces,
-scattering cotangents into ghosts for the slab reduction to fold — is reached only
-through the test-facing `_mul_adjoint!`. A Krylov `mul!` never sees it:
+`Interface` branch of `apply_adjoint!`, scattering cotangents into ghosts for the
+slab reduction to fold — is reached only through the test-facing `_mul_adjoint!`.
+Since #77 that branch is the `@inbounds` forward stencil over the interior plus
+the bounds-masked gather over the 2N ghost planes only (`adjoint_gather_ghosts!`),
+bit-identical to the all-cells `adjoint_gather!` sweep it replaced and a few
+times cheaper; the per-leaf forest reference path takes the same branch, while
+the packed GPU kernel keeps its single full-extent launch. A Krylov `mul!` never sees it:
 `_push_adjoints` folds `adjoint(Diffusion)` to the conjugated leaf at setup, which
 for real κ is the leaf itself, running forward.
 
