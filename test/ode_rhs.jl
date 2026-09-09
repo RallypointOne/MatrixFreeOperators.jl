@@ -146,6 +146,55 @@ end
         @test_throws ArgumentError apply!(du, P, uf)
     end
 
+    @testset "apply!(du, P, u) refuses fields off the prototype" begin
+        # This entry point hands a user field straight to the prepared tree, so a
+        # field on another grid would run as a hybrid: halo_update! and the stencil
+        # spacing from P.grid, apply_bc! from x.grid. Same shape, different BCs is
+        # the silent case; it must throw rather than return a plausible answer.
+        gd = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 6))
+        gn = CartesianGrid(
+            ((0.0, 1.0), (0.0, 1.0)), (8, 6);
+            bc=((Neumann(), Neumann()), (Neumann(), Neumann())),
+        )
+        P = prepare(laplacian(gd))
+        u = set!(scalar_field(gd), x -> x[1] + x[2]^2)
+        du = similar(u)
+        @test apply!(du, P, u) === du
+
+        un = Field(copy(u.data), gn)
+        err = try apply!(similar(un), P, un); nothing catch e; e end
+        @test err isa ArgumentError
+        @test occursin("x lives on a different grid", err.msg)
+        @test_throws ArgumentError apply!(similar(un), P, u)     # y off the grid
+        # a structurally identical CartesianGrid is the same grid (isbits ===)
+        u2 = Field(copy(u.data), CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (8, 6)))
+        @test apply!(similar(u2), P, u2) |> flatten == flatten(du)
+
+        # same grid, wrong element type: the prepared scratch is Float64
+        u32 = Field(Float32.(u.data), gd)
+        err32 = try apply!(similar(u32), P, u32); nothing catch e; e end
+        @test err32 isa ArgumentError
+        @test occursin("Float32", err32.msg) && occursin("Float64", err32.msg)
+        @test_throws ArgumentError apply!(similar(u32), P, u)    # y of the wrong eltype
+        # rank-changing output: a scalar y for a Gradient's SVector output
+        Pg = prepare(MatrixFreeOperators.gradient(gd), scalar_field(gd))
+        @test_throws ArgumentError apply!(similar(u), Pg, u)
+        gu = similar(vector_field(gd))
+        @test apply!(gu, Pg, u) === gu
+
+        # forest form: a second forest over the same extent is a different grid
+        bc = ((Dirichlet(), Dirichlet()), (Neumann(), Neumann()))
+        g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bc)
+        bf = BlockForest(g; blocksize=(4, 4), maxlevel=1)
+        bf2 = BlockForest(g; blocksize=(4, 4), maxlevel=1)
+        Pf = prepare(laplacian(bf))
+        uf = set!(scalar_field(bf), x -> x[1])
+        @test apply!(similar(uf), Pf, uf) isa BlockField
+        uf2 = set!(scalar_field(bf2), x -> x[1])
+        @test_throws ArgumentError apply!(similar(uf2), Pf, uf2)
+        @test_throws ArgumentError apply!(similar(uf2), Pf, uf)
+    end
+
     @testset "flat mul! RHS still works (the Krylov boundary as an RHS)" begin
         g = CartesianGrid(((0.0, 2π),), (64,); bc=((Periodic(), Periodic()),))
         P = prepare(laplacian(g))

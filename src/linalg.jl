@@ -616,6 +616,38 @@ function _require_prepared_current(P::PreparedForest)
     return nothing
 end
 
+# The field-level entry point hands user fields straight to the prepared tree, so
+# it is the one place a field on the wrong grid could run: halo_update! and the
+# stencil spacing would come from P.grid while apply_bc! reads x.grid. Refuse
+# anything that is not on the prototype's grid with the prototype's element type.
+function _require_prepared_match(P::_AnyPrepared, x::AbstractField, y::AbstractField)
+    x.grid === P.grid || throw(
+        ArgumentError(
+            "apply!(y, P, x): x lives on a different grid than the prototype prepare " *
+            "was given; prepare the operator on x's grid or pass a field on P.grid",
+        ),
+    )
+    y.grid === P.grid || throw(
+        ArgumentError(
+            "apply!(y, P, x): y lives on a different grid than the prototype prepare " *
+            "was given; allocate y with similar on a field over P.grid",
+        ),
+    )
+    eltype(x) === eltype(P.xpad) || throw(
+        ArgumentError(
+            "apply!(y, P, x): x has element type $(eltype(x)) but the prepared " *
+            "operator was built for $(eltype(P.xpad))",
+        ),
+    )
+    eltype(y) === eltype(P.ypad) || throw(
+        ArgumentError(
+            "apply!(y, P, x): y has element type $(eltype(y)) but the prepared " *
+            "operator produces $(eltype(P.ypad))",
+        ),
+    )
+    return nothing
+end
+
 function Base.size(P::_AnyPrepared)
     return (flat_length(P.ypad), flat_length(P.xpad))
 end
@@ -662,17 +694,22 @@ performs. Ghosts of `x` are scratch (overwritten by halo/BC fills), ghosts of `y
 are left alone, exactly as for [`apply!`](@ref) on an unprepared operator.
 
 This is the explicit time-stepping idiom: `prepare` once, then `apply!(du, P, u)`
-per stage, and keep `mul!` for the Krylov boundary. `x` and `y` must match the
-prototype `prepare` was given in shape and element type. The forest form throws
-if the forest was regridded since `prepare`, as `mul!` does.
+per stage, and keep `mul!` for the Krylov boundary. `x` and `y` must live on the
+grid `prepare` was given (`===` to `P.grid`: structural equality for an isbits
+`CartesianGrid`, identity for a `BlockForest`) and carry the prototype's element
+type; anything else throws an `ArgumentError` rather than running a hybrid of two
+grids — halo and spacing from `P.grid`, ghost fills from `x.grid`. The forest form also throws if the forest was
+regridded since `prepare`, as `mul!` does.
 """
 function apply!(y::Field, P::PreparedOperator, x::Field, α::Number=true, β::Number=false)
+    _require_prepared_match(P, x, y)
     return apply!(y, P.op, x, P.grid, α, β)
 end
 function apply!(
     y::AbstractBlockField, P::PreparedForest, x::AbstractBlockField, α::Number=true, β::Number=false
 )
     _require_prepared_current(P)
+    _require_prepared_match(P, x, y)
     return _forest_capply!(y, P.op, x, P, α, β)
 end
 
