@@ -72,9 +72,12 @@ end
         @info "field-level RK4 heat equation" t err
         @test err < 1e-3
 
-        # A leaf needs no prepare to step allocation-free.
+        # A leaf needs no prepare to step allocation-free, nor does a +/scalar
+        # combination of leaves — exactly zero bytes, as the docstrings promise.
         du = similar(u)
-        @test alloc_apply(du, L, u) ≤ 512
+        @test alloc_apply(du, L, u) == 0
+        A = laplacian(g) + 2.0 * derivative(g, 1; order=1)          # Added(leaf, Scaled)
+        @test alloc_apply(du, A, u) == 0
     end
 
     @testset "inhomogeneous BCs: the explicit RHS is L(u) + boundary_rhs" begin
@@ -155,8 +158,43 @@ end
         a_prepared = alloc_apply(du, P, u)
         a_pure = alloc_apply(du, K, u)
         @info "explicit-stepping allocations on a Composed tree" a_prepared a_pure
-        @test a_prepared ≤ 512
-        @test a_pure > a_prepared
+        @test a_prepared == 0
+        @test a_pure > 0
+
+        # 3D Float32, mixed BCs, Composed + Scaled + Added under one prepare. The
+        # default call is bitwise mul!; the α/β call is only ≈ because the tree
+        # pushes α/β into each node (Added applies them per branch) while mul!
+        # applies them once in interior_to_flat!'s axpby, so the rounding order
+        # differs at the eps level. eltype must survive as Float32 throughout.
+        g3 = CartesianGrid(
+            ((0.0f0, 1.0f0), (0.0f0, 2.0f0), (0.0f0, 1.0f0)), (6, 5, 4);
+            bc=((Dirichlet(), Dirichlet()), (Periodic(), Periodic()), (Neumann(), Neumann())),
+        )
+        κ3 = set!(scalar_field(g3), x -> 1.0f0 + x[1] * x[3])
+        K3 = divergence(g3) * scaling(κ3) * MatrixFreeOperators.gradient(g3) + 0.5f0 * laplacian(g3)
+        P3 = prepare(K3, scalar_field(g3))
+        u3 = scalar_field(g3)
+        interior(u3) .= rand(rng, Float32, local_size(g3)...)
+        du3 = similar(u3)
+        @test apply!(du3, P3, u3) === du3
+        @test eltype(du3) === Float32
+        y3 = similar(flatten(u3))
+        mul!(y3, P3, flatten(u3))
+        @test eltype(y3) === Float32
+        @test flatten(du3) == y3
+        @test flatten(du3) ≈ flatten(apply(K3, u3))
+        du30 = rand(rng, Float32, local_size(g3)...)
+        interior(du3) .= du30
+        apply!(du3, P3, u3, 2.5f0, -0.5f0)
+        @test interior(du3) ≈ 2.5f0 .* reshape(y3, local_size(g3)) .- 0.5f0 .* du30
+        @test alloc_apply(du3, P3, u3) == 0
+        # adjoint through the prepared field-level path: ⟨K u, v⟩ = ⟨u, Kᵀ v⟩
+        P3t = prepare(adjoint(K3), scalar_field(g3))
+        v3 = scalar_field(g3)
+        interior(v3) .= rand(rng, Float32, local_size(g3)...)
+        Ku = apply!(similar(u3), P3, u3)
+        Ktv = apply!(similar(v3), P3t, v3)
+        @test dot(flatten(Ku), flatten(v3)) ≈ dot(flatten(u3), flatten(Ktv))
     end
 
     @testset "apply!(du, P, u) on a prepared forest" begin
@@ -183,9 +221,33 @@ end
         apply!(du2, P, uf, 2.0, 3.0)
         @test flatten(du2) ≈ 2.0 .* y .+ 3.0 .* flatten(du)
 
+        # The packed prototype routes prepare to the forest-native kernel sweeps
+        # and packed coefficients; the same entry point must give the same numbers.
+        up = pack(uf)
+        Pp = prepare(Sf, up)
+        @test Pp isa PreparedForest
+        dp = similar(up)
+        @test apply!(dp, Pp, up) === dp
+        @test dp isa PackedBlockField
+        @test flatten(dp) == y
+        yp = similar(v)
+        mul!(yp, Pp, flatten(up))
+        @test flatten(dp) == yp
+        dp2 = copy(dp)
+        apply!(dp2, Pp, up, 2.0, 3.0)
+        @test flatten(dp2) ≈ 2.0 .* y .+ 3.0 .* flatten(dp)
+        # per-leaf forest sweeps are the one path documented to allocate; keep a
+        # loose bound here and report the measured value
+        a_block = alloc_apply(similar(uf), P, uf)
+        a_packed = alloc_apply(similar(up), Pp, up)
+        @info "explicit-stepping allocations on a prepared forest" a_block a_packed
+        @test a_block ≤ 512
+        @test a_packed ≤ 512
+
         # tied to the forest generation, exactly like mul!
         refine!(bf, _ -> true)
         @test_throws ArgumentError apply!(du, P, uf)
+        @test_throws ArgumentError apply!(dp, Pp, up)
     end
 
     @testset "apply!(du, P, u) refuses fields off the prototype" begin
