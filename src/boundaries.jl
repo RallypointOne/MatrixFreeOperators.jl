@@ -170,14 +170,19 @@ function _fold_ghost!(data, dim::Val, ghost::Int, bc::AbstractBC, source::Int)
     return nothing
 end
 
+# Per-dimension `(halo, local size)` pairs — the shrinking tuple every ghost-region
+# recursion below dispatches on. `Val(N)` off the grid type keeps it inferred.
+function _halo_extents(g::AbstractGrid{N}) where {N}
+    return ntuple(d -> (halo_width(g)[d], local_size(g)[d]), Val(N))
+end
+
 """
     zero_ghosts!(data, g::AbstractGrid) -> data
 
 Set every ghost cell of the halo-padded array `data` to zero.
 """
 function zero_ghosts!(data::AbstractArray{<:Any,N}, g::AbstractGrid{N}) where {N}
-    hn = ntuple(d -> (halo_width(g)[d], local_size(g)[d]), Val(N))
-    _zero_ghosts_dims!(data, Val(1), hn)
+    _zero_ghosts_dims!(data, Val(1), _halo_extents(g))
     return data
 end
 

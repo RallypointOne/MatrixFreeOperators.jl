@@ -279,8 +279,7 @@ end
 # extent in dimensions > d — so the accumulating branch touches each corner cell
 # exactly once.
 function adjoint_gather_ghosts!(x̄::Field, ȳ::Field, gather::F, α::Number, β::Number) where {F}
-    g = x̄.grid
-    hn = ntuple(d -> (halo_width(g)[d], local_size(g)[d]), Val(ndims(x̄.data)))
+    hn = _halo_extents(x̄.grid)
     _gather_ghost_dims!(x̄.data, ȳ.data, gather, hn, Val(1), hn, α, β)
     return x̄
 end
