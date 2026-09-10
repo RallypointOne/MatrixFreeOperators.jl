@@ -101,10 +101,12 @@ with [`linearize`](@ref).
 halo-padded field and copies the result back out, and those two copies are a
 measurable fraction of a stencil sweep. Explicit time integrators do not need
 them — step at field level with [`apply!`](@ref) instead, either on the operator
-itself (`apply!(du, L, u)`; allocation-free for leaves and `+`/scalar
-combinations of them) or on the prepared operator (`apply!(du, P, u)`; also
-allocation-free for `*`-composed and adjoint trees, whose intermediates `prepare`
-allocated once). Keep `mul!` for Krylov. Either `apply!` is the homogeneous linear
+itself (`apply!(du, L, u)`; no per-cell allocation for leaves and `+`/scalar
+combinations of them) or on the prepared operator (`apply!(du, P, u)`; also free
+of per-cell allocation for `*`-composed and adjoint trees, whose intermediates
+`prepare` allocated once). Both keep a small fixed per-node residual — a few tens
+to a few thousand bytes depending on the tree, the dimension and the platform's
+codegen — so neither is promised to measure exactly zero. Keep `mul!` for Krylov. Either `apply!` is the homogeneous linear
 part: with inhomogeneous boundary data add the lift `b = boundary_rhs(L, g)` to
 `du` each stage, exactly as the solve folds it into its right-hand side.
 

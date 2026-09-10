@@ -92,9 +92,11 @@ This is the explicit time-stepping idiom. An explicit integrator only ever needs
 `du = L(u)` on fields, so it should call `apply!` directly rather than go through
 `prepare` + `mul!`: the flat `mul!` boundary exists for Krylov solvers and pays
 for a copy into and out of a halo-padded scratch field on every call. Leaves and
-their `+`/scalar combinations are allocation-free here as they stand; a
-`*`-composed or adjoint tree allocates its intermediate per call on this pure
-path, so `prepare` it once and call `apply!(du, P, u)` on the
+their `+`/scalar combinations allocate nothing *per cell* here as they stand — a
+small fixed per-node residual remains (broadcast `Ref` wrappers, ghost-slab
+views) that some platforms elide to exactly zero and others do not. A
+`*`-composed or adjoint tree, by contrast, allocates its whole intermediate per
+call on this pure path, so `prepare` it once and call `apply!(du, P, u)` on the
 [`PreparedOperator`](@ref) instead, which reuses the held buffers and still skips
 the flat copies.
 
