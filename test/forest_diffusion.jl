@@ -463,6 +463,14 @@
         # uniform forest, where `cfflux` is empty and the seam is a no-op. A boxed
         # capture or a dynamic ntuple in the rewrite would add ~180 B per coarse–fine
         # face while producing the right numbers — only this catches it.
+        #
+        # For adj = true the denominator is NOT the adjoint: a uniform forest has no
+        # coarse–fine coupling, so `isselfadjoint` holds and `_forest_capply_adjoint!`
+        # short-circuits to the forward sweep. The budget therefore reads "the
+        # adjoint must cost no more per leaf than the forward sweep", which is the
+        # right thing to enforce and is what caught the ghost-plane gather in #91
+        # (136 B/leaf against the forward path's 72). Do not mistake it for a
+        # per-leaf-cost cancellation and loosen it.
         function alloc_mul(P, out, v)
             mul!(out, P, v)
             mul!(out, P, v)

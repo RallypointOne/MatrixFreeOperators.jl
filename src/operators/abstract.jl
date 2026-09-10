@@ -313,13 +313,26 @@ _gather_ghost_dims!(x̄, ȳ, gather, hn, ::Val, ::Tuple{}, α, β) = nothing
     end
 end
 
+# Scalar loop, not a broadcast: `view(x̄, box...)` plus `gather.(Ref(ȳ), idx)`
+# escapes a `Base.RefValue` and a boxed `GenericMemoryRef` per box per call (16 +
+# 32 B) and pushes the gather out of line, one call per ghost cell — visible only
+# under `--check-bounds=yes`, which is what `Pkg.test` runs and what blocks the
+# SROA that hides them elsewhere. That cost 136 B instead of 72 B per forest leaf
+# and broke test/forest_diffusion.jl's per-leaf budget on CI. The loop reads and
+# writes the same padded cells in the same order, so the α/β rounding order and
+# the bit-parity with `adjoint_gather!` are unchanged, and it measured faster
+# than the broadcast — the planes are O(surface), so vectorizing them buys
+# nothing. `@inbounds` is load-bearing off the checked build; do not drop it and
+# the bit-parity tests in test/diffusion.jl together.
 function _gather_box!(x̄, ȳ, gather::F, box::NTuple{N,UnitRange{Int}}, α, β) where {N,F}
-    dst = view(x̄, box...)
-    idx = CartesianIndices(box)
     if iszero(β)
-        dst .= gather.(Ref(ȳ), idx)
+        @inbounds for I in CartesianIndices(box)
+            x̄[I] = gather(ȳ, I)
+        end
     else
-        dst .= α .* gather.(Ref(ȳ), idx) .+ β .* dst
+        @inbounds for I in CartesianIndices(box)
+            x̄[I] = α * gather(ȳ, I) + β * x̄[I]
+        end
     end
     return nothing
 end
