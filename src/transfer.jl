@@ -144,28 +144,69 @@ function _emit_interp!(
         push!(
             interp,
             _close_fill(
-                i, _cf_box(Val(N), d, g_n:1:g_n, tdims, fine_t),
-                tfirst, length(terms), _ninterp_terms(Val(N)),
+                terms, i, _cf_box(Val(N), d, g_n:1:g_n, tdims, fine_t),
+                tfirst, _ninterp_terms(Val(N)),
             ),
         )
     end
     return nothing
 end
 
-# Close one fill over the terms pushed onto the phase buffer since `tfirst`. The
-# row width is a function of N alone (schedule.jl); a mismatch is an emitter bug,
-# not a topology case, so it throws rather than recording a ragged row.
+# Close one fill over the terms pushed onto the phase buffer since `tfirst`, and
+# check the three invariants the sweeps and the device kernel index by (see the
+# `GhostFill` docstring). All three are emitter bugs rather than topology cases, so
+# they throw at schedule build — never as an out-of-bounds read, a shape error
+# inside a broadcast, or (for the disjointness one) a silently wrong answer:
+#
+#   1. the row is `nexpected` terms wide (a function of N alone, schedule.jl),
+#   2. every term window has the dst slab's shape, cell for cell,
+#   3. every term window is disjoint from the dst slab.
+#
+# (3) is what lets the fused gather read all K windows while writing the dst in one
+# broadcast: the term views ride an immutable `Ref` wrapper, which takes them out of
+# Base's `broadcast_unalias` machinery, so nothing else would notice a dst that
+# aliased a source. No emitter produces one — dst boxes are ghost layers and the
+# terms read interiors — but the fusion is what makes it load-bearing.
 function _close_fill(
-    dst_block::Int, dst_ranges::NTuple{N,StepRange{Int,Int}},
-    tfirst::Int, tlast::Int, nexpected::Int,
-) where {N}
+    terms::Vector{SlabTerm{N,T}}, dst_block::Int,
+    dst_ranges::NTuple{N,StepRange{Int,Int}}, tfirst::Int, nexpected::Int,
+) where {N,T}
+    tlast = length(terms)
     nterms = tlast - tfirst + 1
     nterms == nexpected || throw(
         AssertionError(
             "coarse–fine fill emitted $nterms terms, expected $nexpected for N = $N",
         ),
     )
+    len = length.(dst_ranges)
+    for k in tfirst:tlast
+        t = terms[k]
+        length.(t.ranges) == len || throw(
+            AssertionError(
+                "coarse–fine fill term $(k - tfirst + 1) reads a $(length.(t.ranges)) " *
+                "window but the dst slab is $len; every term must match it cell for cell",
+            ),
+        )
+        _boxes_overlap(dst_block, dst_ranges, t.block, t.ranges) && throw(
+            AssertionError(
+                "coarse–fine fill term $(k - tfirst + 1) reads block $(t.block) " *
+                "$(t.ranges), which overlaps the dst slab $dst_block $dst_ranges; a " *
+                "fill's sources must be disjoint from the cells it writes",
+            ),
+        )
+    end
     return GhostFill{N}(dst_block, dst_ranges, tfirst, tlast)
+end
+
+# Do two index boxes of the same storage share a cell? Build-time only.
+function _boxes_overlap(
+    b1::Int, r1::NTuple{N,StepRange{Int,Int}}, b2::Int, r2::NTuple{N,StepRange{Int,Int}}
+) where {N}
+    b1 == b2 || return false
+    for d in 1:N
+        isempty(intersect(r1[d], r2[d])) && return false
+    end
+    return true
 end
 
 # Fine→coarse (flux-matching restriction): fill the coarse leaf K's ghost layer
@@ -210,8 +251,8 @@ function _emit_restrict!(
         push!(
             restrict,
             _close_fill(
-                i, _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t),
-                tfirst, length(terms), _nrestrict_terms(Val(N)),
+                terms, i, _cf_box(Val(N), d, gC_n:1:gC_n, tdims, dst_t),
+                tfirst, _nrestrict_terms(Val(N)),
             ),
         )
         # The same child walk also records the weight-free coarse–fine-face topology
@@ -337,10 +378,10 @@ Julia 1.12 on (EnzymeAD/Enzyme.jl#2707). Keeping the seam here rather than at
 Restriction runs last because it reads the interpolation-filled fine ghosts; no
 other cross-phase dependency exists.
 """
-function _exchange_storage!(store, lay::BlockLayout, sched::ExchangeSchedule)
+function _exchange_storage!(store, lay::BlockLayout, sched::ExchangeSchedule{N}) where {N}
     _run_copies!(store, lay, sched.copies)
-    _run_fills!(store, lay, sched.interp, sched.interp_terms)
-    _run_fills!(store, lay, sched.restrict, sched.restrict_terms)
+    _run_fills!(store, lay, sched.interp, sched.interp_terms, _interp_width(Val(N)))
+    _run_fills!(store, lay, sched.restrict, sched.restrict_terms, _restrict_width(Val(N)))
     return nothing
 end
 
@@ -354,27 +395,110 @@ function _run_copies!(store, lay::BlockLayout, copies::Vector{CopyDescriptor{N}}
     return nothing
 end
 
-# `fills` and `terms` are the phase's flat isbits buffers: each fill names its CSR
-# row `tfirst:tlast` into `terms`, so no per-fill record wider than a dst box is
-# ever copied (96 bytes in 3D against 1752 for a 19-term row held inline). That
-# is a structural choice, not a measured one — this loop times the same either
-# way, the broadcasts dominating the descriptor walk. Seed with term 1,
-# accumulate in term order — the arithmetic the device CSR kernel reproduces
-# term-for-term.
+# The phase row widths as compile-time values. Both are functions of N alone
+# (schedule.jl), so `Val(N)` in, `Val(K)` out: dispatching the gather on K
+# specializes it over two values per dimension, not over a dynamic loop bound.
+@inline _interp_width(::Val{N}) where {N} = Val(_ninterp_terms(Val(N)))
+@inline _restrict_width(::Val{N}) where {N} = Val(_nrestrict_terms(Val(N)))
+
+# One fused gather pass per fill: `dst[I] = Σₖ wₖ · srcₖ[I]` over the fill's K term
+# windows, which all have the dst slab's shape (`_close_fill` enforces it). The
+# retired form ran one `dst .= / .+=` broadcast per term — 7 per fill in 2D, 19 in
+# 3D — each re-reading and re-writing the same handful of dst cells and each paying
+# broadcast setup for them, so the fill phases dominated the exchange on a refined
+# forest (#49/#84). Here the K term views are built once per fill and the weighted
+# sum is evaluated per cell inside a single broadcast over the dst indices, the same
+# `f.(CartesianIndices(dst), Ref(arrays))` shape the stencil leaves use, so the body
+# stays array-level and device-agnostic.
+#
+# `fills`/`terms` stay the phase's flat CSR buffers — the fill record is its dst box
+# plus a `[tfirst, tlast]` row (96 bytes in 3D against 1752 for a 19-term row held
+# inline) — and the K views are built by recursion over `Val(K)` off `terms[tfirst +
+# k - 1]`, closure-free: an `ntuple(Val(K)) do k` over two arrays stops inlining and
+# loses the vectorization (`_diff_axes` in operators/diffusion.jl is the same trap).
+#
+# Term and accumulation order are unchanged: seed with term 1, add term k to the
+# running sum, plain `*`/`+` and no fma, so `((w₁s₁ + w₂s₂) + w₃s₃) + …` is what the
+# per-term loop computed and what the device CSR kernel (`_fill_kernel!`) reproduces
+# term-for-term. It is therefore bit-identical to the retired loop whenever the
+# field eltype IS the schedule's weight type `T`. When it is not — a Float32 field
+# on a Float64 forest — the retired loop rounded its partial sum into the field's
+# eltype K−1 times where this keeps the promoted accumulator and rounds once: about
+# one ulp on the affected cells, and in the device kernel's direction, since
+# `_fill_kernel!` accumulates the same promoted way. The fusion removes that
+# pre-existing host/device divergence rather than introducing one (#84).
 function _run_fills!(
-    store, lay::BlockLayout, fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}}
-) where {N,T}
+    store, lay::BlockLayout, fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}},
+    ::Val{K},
+) where {N,T,K}
     for f in fills
+        f.tlast - f.tfirst + 1 == K && checkbounds(Bool, terms, f.tfirst:f.tlast) ||
+            _throw_row_width(f, K, length(terms))
         dst = _leaf_view(store, lay, f.dst_block, f.dst_ranges)
-        t1 = terms[f.tfirst]
-        dst .= t1.weight .* _leaf_view(store, lay, t1.block, t1.ranges)
-        for k in (f.tfirst + 1):f.tlast
-            tk = terms[k]
-            dst .+= tk.weight .* _leaf_view(store, lay, tk.block, tk.ranges)
-        end
+        srcs = _term_views(store, lay, terms, f.tfirst, Val(K))
+        ws = _term_weights(terms, f.tfirst, Val(K))
+        dst .= _gather_at.(CartesianIndices(dst), _AsScalar(srcs), _AsScalar(ws))
     end
     return nothing
 end
+
+# The row width licenses the `@inbounds` walk down `terms`, so it is checked per
+# fill rather than trusted — once, outside the broadcast.
+@noinline _throw_row_width(f::GhostFill, K::Int, nterms::Int) = throw(
+    AssertionError(
+        "ghost fill row $(f.tfirst):$(f.tlast) is not $K terms inside a $nterms-term " *
+        "buffer — the phase's row width is fixed by the dimension",
+    ),
+)
+
+# Immutable stand-in for `Ref` as a broadcast scalar. `Ref(x)` is a mutable
+# `RefValue`: once the gather body is too big to inline into `copyto!` (it is, at 19
+# term views) the Ref escapes and is heap-allocated per fill — the whole tuple of
+# views, on every fill of every exchange, inside the Enzyme rule seam that must not
+# allocate. An immutable `Ref` subtype rides every 0-dimensional `Ref`
+# specialization of Base.Broadcast and stays on the stack.
+#
+# The Adapt rule keeps the wrapped views convertible for a device broadcast: a
+# refined `BlockField` of GPU arrays is the one path that reaches this host body on
+# a GPU (packed fields take the batched CSR kernels in transfer_kernels.jl, and a
+# vector of device arrays is not something a kernel can index). It ships K device
+# `SubArray`s as kernel parameters — ~2.4 KB for a 19-term 3D interpolation fill
+# against CUDA's 4 KB parameter budget on pre-sm_90 hardware, so it fits, but with
+# under 2× of headroom and none to spare for a wider stencil. Untested on GPU here.
+struct _AsScalar{X} <: Ref{X}
+    x::X
+end
+@inline Base.getindex(s::_AsScalar) = s.x
+Adapt.adapt_structure(to, s::_AsScalar) = _AsScalar(Adapt.adapt(to, s.x))
+
+# The K source windows of one fill as a tuple of concrete SubArrays, and its K
+# weights as a tuple — both by recursion down the CSR row from `i` (closure-free;
+# see the note above).
+@inline _term_views(store, lay::BlockLayout, terms, i::Int, ::Val{0}) = ()
+@inline function _term_views(store, lay::BlockLayout, terms, i::Int, ::Val{K}) where {K}
+    t = @inbounds terms[i]
+    return (
+        _leaf_view(store, lay, t.block, t.ranges),
+        _term_views(store, lay, terms, i + 1, Val(K - 1))...,
+    )
+end
+
+@inline _term_weights(terms, i::Int, ::Val{0}) = ()
+@inline _term_weights(terms, i::Int, ::Val{K}) where {K} =
+    (@inbounds(terms[i].weight), _term_weights(terms, i + 1, Val(K - 1))...)
+
+# Per-cell body of the fused gather: the K-term weighted sum at the dst-local index
+# I, left-associated in term order. `@inbounds` is licensed by the shape invariant —
+# every term window has the dst slab's shape, and I ranges over that slab.
+@inline function _gather_at(
+    I::CartesianIndex, srcs::Tuple{Vararg{AbstractArray,K}}, ws::Tuple{Vararg{Number,K}}
+) where {K}
+    return _gather_terms(I, srcs, ws, Val(K))
+end
+@inline _gather_terms(I::CartesianIndex, srcs::Tuple, ws::Tuple, ::Val{1}) =
+    @inbounds ws[1] * srcs[1][I]
+@inline _gather_terms(I::CartesianIndex, srcs::Tuple, ws::Tuple, ::Val{k}) where {k} =
+    @inbounds _gather_terms(I, srcs, ws, Val(k - 1)) + ws[k] * srcs[k][I]
 
 """
     halo_update_adjoint!(x::AbstractBlockField, g::BlockForest) -> x
@@ -429,6 +553,14 @@ end
 # Fills in reverse, terms within a fill in forward order — the scatter-adds of
 # one fill collide on shared source cells, so the term order is part of the
 # bit-exact contract.
+#
+# Deliberately still one scatter-add broadcast per term, unlike the fused forward
+# gather, and the slower half of the exchange because of it. Those collisions are
+# exactly what blocks the transposition: a dst-centric single pass would accumulate
+# into a shared source cell in dst-cell order instead of term order and change the
+# roundoff. The bit-identical fused form is a source-centric transposed CSR — a
+# second descriptor set built at schedule time, deferred to issue #94. This runs off
+# the mul! hot path, in apply_adjoint! and the reverse rule only.
 function _run_fills_adjoint!(
     store, lay::BlockLayout, fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}}
 ) where {N,T}

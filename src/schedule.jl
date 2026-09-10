@@ -46,6 +46,21 @@ box plus a row index pair; a term is one slab window plus a weight) and the host
 sweeps walk exactly the layout the device schedule uploads (`_DevFill` /
 `_DevTerm`). Row widths are dimension-fixed — see [`_ninterp_terms`](@ref) /
 [`_nrestrict_terms`](@ref) — which the emitters assert at close.
+
+Two shape invariants hold of every row, asserted at close by `_close_fill` and
+relied on by both the host sweep and the device kernel:
+
+  - **Every term window has the dst slab's shape** — cell `I` of the dst reads cell
+    `I` of every term — which is what lets the host sweep run one fused gather
+    `dst[I] = Σₖ wₖ · srcₖ[I]` per fill (`_run_fills!`) and the device kernel index
+    every term by the dst cell's decoded offset (`_fill_kernel!`).
+  - **Every term window is disjoint from the dst slab.** dst boxes are ghost layers
+    and terms read interiors, so no emitter produces an overlap; the fused gather
+    makes it load-bearing, because its term views ride an immutable `Ref` wrapper
+    that Base's `broadcast_unalias` never sees.
+
+A mis-shaped or self-reading emitter therefore fails at schedule build, never as an
+out-of-bounds read or a silently wrong ghost value in a sweep.
 """
 struct GhostFill{N}
     dst_block::Int
