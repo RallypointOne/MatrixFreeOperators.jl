@@ -21,6 +21,10 @@ same discipline throughout: it drives the operator tree itself so it can fill
 [`Interface`](@ref) ghost slabs from a neighbor exchange between applies, and
 anything that zeroed ghosts on the way in would silently discard exchanged data.
 
+Those copies are the price of the Krylov boundary, not of the operator: a
+prepared operator also takes fields directly through `apply!(du, P, u)`, the
+explicit time-stepping path.
+
 The traits [`islinear`](@ref), [`isconstant`](@ref), [`isselfadjoint`](@ref) and
 [`isdiagonal`](@ref) are those of the operator handed to `prepare` — binding
 buffers changes nothing about the map. A `PreparedOperator` is the solver
@@ -92,6 +96,10 @@ The prepared operator is stateful and single-threaded — prepare once per
 concurrent solve. Requires `islinear(L)`; linearize nonlinear operators first
 with [`linearize`](@ref).
 
+`mul!` is the *solver* boundary: every call stages the flat vector into a
+halo-padded field and back out again. Explicit integrators do not need that —
+step at field level with [`apply!`](@ref) instead.
+
 ### Examples
 
 ```julia
@@ -100,8 +108,12 @@ A = prepare(laplacian(g))
 b = flatten(set!(scalar_field(g), x -> sin(π * x[1])))
 u, stats = Krylov.minres(A, b)
 
-# explicit time stepping (OrdinaryDiffEq-style RHS closure):
-f!(du, u, p, t) = mul!(du, A, u)
+# explicit stepping stays at field level:
+uf = set!(scalar_field(g), x -> sin(π * x[1]))
+du = similar(uf)
+dt = 0.4 * spacing(g)[1]^2              # forward-Euler bound
+apply!(du, A, uf)                       # or apply!(du, laplacian(g), uf)
+interior(uf) .+= dt .* interior(du)
 ```
 """
 function prepare(L::AbstractOperator, x::AbstractField)
@@ -586,6 +598,48 @@ function boundary_rhs(L::Composed, x_proto::AbstractBlockField)
     return lift
 end
 
+# A PreparedForest is tied to the forest generation it was built on.
+function _require_prepared_current(P::PreparedForest)
+    P.generation == P.grid.forest.generation[] || throw(
+        ArgumentError(
+            "this PreparedForest was built before the forest was regridded " *
+            "(refine!/coarsen!/balance!); re-run prepare on the current forest",
+        ),
+    )
+    return nothing
+end
+
+# The field-level entry point hands user fields straight to the prepared tree, so a
+# field off the prototype would run halo/spacing from P.grid but ghost fills from
+# x.grid. Refuse it.
+function _require_prepared_match(P::_AnyPrepared, x::AbstractField, y::AbstractField)
+    x.grid === P.grid || throw(
+        ArgumentError(
+            "apply!(y, P, x): x lives on a different grid than the prototype prepare " *
+            "was given; prepare the operator on x's grid or pass a field on P.grid",
+        ),
+    )
+    y.grid === P.grid || throw(
+        ArgumentError(
+            "apply!(y, P, x): y lives on a different grid than the prototype prepare " *
+            "was given; allocate y with similar on a field over P.grid",
+        ),
+    )
+    eltype(x) === eltype(P.xpad) || throw(
+        ArgumentError(
+            "apply!(y, P, x): x has element type $(eltype(x)) but the prepared " *
+            "operator was built for $(eltype(P.xpad))",
+        ),
+    )
+    eltype(y) === eltype(P.ypad) || throw(
+        ArgumentError(
+            "apply!(y, P, x): y has element type $(eltype(y)) but the prepared " *
+            "operator produces $(eltype(P.ypad))",
+        ),
+    )
+    return nothing
+end
+
 function Base.size(P::_AnyPrepared)
     return (flat_length(P.ypad), flat_length(P.xpad))
 end
@@ -609,12 +663,7 @@ end
 function LinearAlgebra.mul!(
     y::AbstractVector, P::PreparedForest, x::AbstractVector, α::Number, β::Number
 )
-    P.generation == P.grid.forest.generation[] || throw(
-        ArgumentError(
-            "this PreparedForest was built before the forest was regridded " *
-            "(refine!/coarsen!/balance!); re-run prepare on the current forest",
-        ),
-    )
+    _require_prepared_current(P)
     flat_to_interior!(P.xpad, x)
     _forest_capply!(P.ypad, P.op, P.xpad, P, true, false)
     interior_to_flat!(y, P.ypad, α, β)
@@ -622,6 +671,34 @@ function LinearAlgebra.mul!(
 end
 function LinearAlgebra.mul!(y::AbstractVector, P::PreparedForest, x::AbstractVector)
     return mul!(y, P, x, true, false)
+end
+
+#--------------------------------------------------------------------------------# Field-level action of a prepared operator (the explicit-stepping path)
+
+"""
+    apply!(y::AbstractField, P::PreparedOperator, x::AbstractField, α=true, β=false) -> y
+    apply!(y::AbstractField, P::PreparedForest, x::AbstractField, α=true, β=false) -> y
+
+Apply a [`prepare`](@ref)d operator at field level: `y = α·P(x) + β·y` on the
+interior of `y`, reusing the scratch `prepare` bound (so `*`-composed and adjoint
+nodes do not reallocate) and skipping the flat staging copies `mul!` performs.
+Ghost handling and the homogeneous-BC caveat are those of [`apply!`](@ref) on an
+unprepared operator.
+
+`prepare` once, then `apply!(du, P, u)` per explicit stage; keep `mul!` for
+Krylov. `x` and `y` must be on `P.grid` with the prototype's element type, and
+the forest form additionally rejects a regridded forest.
+"""
+function apply!(y::Field, P::PreparedOperator, x::Field, α::Number=true, β::Number=false)
+    _require_prepared_match(P, x, y)
+    return apply!(y, P.op, x, P.grid, α, β)
+end
+function apply!(
+    y::AbstractBlockField, P::PreparedForest, x::AbstractBlockField, α::Number=true, β::Number=false
+)
+    _require_prepared_current(P)
+    _require_prepared_match(P, x, y)
+    return _forest_capply!(y, P.op, x, P, α, β)
 end
 
 function LinearAlgebra.mul!(::AbstractVector, L::AbstractOperator, ::AbstractVector)

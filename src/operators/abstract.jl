@@ -85,9 +85,25 @@ operator_diagonal(L::AbstractOperator) = throw(
 
 Apply the operator in place: `y = α·L(x) + β·y` on the interior of `y`. Ghost
 layers of `x` are treated as scratch (overwritten with halo/BC fills); ghost
-layers of `y` are left untouched by the accumulating form.
+layers of `y` are left untouched by the accumulating form. The three-argument
+form takes the grid from `x`.
 
-See also: [`apply`](@ref), [`apply_adjoint!`](@ref).
+This is the explicit time-stepping path; `prepare` + `mul!` is the Krylov
+boundary and stages through flat vectors. `*`-composed and adjoint trees
+allocate their intermediates here — [`prepare`](@ref) those once and call
+`apply!(du, P, u)` instead. Like every `apply!` this is the homogeneous linear
+part: with inhomogeneous BCs the RHS is `L(u) + b`, `b = boundary_rhs(L, g)`.
+
+### Examples
+
+```julia
+L = laplacian(g)
+du = similar(u)
+apply!(du, L, u)                        # du = Δu
+interior(u) .+= dt .* interior(du)      # one forward-Euler step
+```
+
+See also: [`apply`](@ref), [`apply_adjoint!`](@ref), [`prepare`](@ref).
 """
 function apply!(y::AbstractField, L::AbstractOperator, x::AbstractField, g::AbstractGrid)
     return apply!(y, L, x, g, true, false)
@@ -98,7 +114,8 @@ apply!(y::AbstractField, L::AbstractOperator, x::AbstractField) = apply!(y, L, x
     apply(L::AbstractOperator, x::AbstractField) -> AbstractField
 
 Allocating application `L(x)`. The pure path used by autodiff; hot loops should
-use [`prepare`](@ref) + `mul!` or in-place [`apply!`](@ref) instead.
+use in-place [`apply!`](@ref) instead (explicit stepping), or [`prepare`](@ref) +
+`mul!` at the Krylov boundary.
 
 ### Examples
 

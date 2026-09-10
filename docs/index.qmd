@@ -16,8 +16,13 @@ so the same operator runs on CPU and GPU arrays, differentiates automatically �
 Enzyme is the default backend, DifferentiationInterface the recommended frontend,
 and gradients extend to operator parameters such as material-coefficient fields
 (see [Automatic Differentiation](pages/autodiff.qmd)) — and feeds Krylov.jl
-directly through `prepare` + `mul!` with zero steady-state allocations. When one
-device is not enough,
+directly through `prepare` + `mul!` with zero steady-state allocations. Explicit
+time stepping skips that flat boundary — a hand-rolled stepper calls the
+field-level `apply!(du, L, u)`, as in
+[`examples/heat_equation.jl`](https://github.com/RallypointOne/MatrixFreeOperators.jl/blob/main/examples/heat_equation.jl);
+there is no OrdinaryDiffEq.jl integration yet
+([#81](https://github.com/RallypointOne/MatrixFreeOperators.jl/issues/81)).
+When one device is not enough,
 `prepare_distributed` partitions the grid across several GPUs without changing a
 line of operator code — see
 [Distributed Multi-GPU Solves](pages/distributed.qmd).

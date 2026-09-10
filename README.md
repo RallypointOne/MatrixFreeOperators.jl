@@ -10,7 +10,8 @@ built for device-agnostic execution (CPU/GPU) and efficient forward- and
 reverse-mode automatic differentiation — including gradients with respect to
 operator parameters for inverse problems and PDE-constrained optimization. The
 package exposes a composable operator algebra (`L1 * L2`, `L1 + L2`,
-`adjoint(L)`) and targets the Krylov.jl + OrdinaryDiffEq.jl solver stack.
+`adjoint(L)`), feeds Krylov.jl through a flat `mul!` boundary, and steps
+explicitly in time through field-level `apply!`.
 
 <p align="center">
   <img src="docs/assets/monodomain_amr.gif" width="512"
@@ -130,6 +131,10 @@ Everything composes from here with the same pieces:
   for adjoint-based optimization;
 - `boundary_rhs(L, g)` — the lift vector for inhomogeneous BCs, folded into the
   solve RHS so the operator itself stays linear;
+- `apply!(du, L, u)` — the explicit time-stepping idiom: the operator on fields
+  directly, without the flat copies `prepare` + `mul!` makes for Krylov (add
+  `boundary_rhs` per stage under inhomogeneous BCs) — see
+  `examples/heat_equation.jl`;
 - `linearize(F, u₀)` — the matrix-free Jacobian of a nonlinear operator such as
   `advection`, for implicit stepping and JFNK;
 - gradients through `apply` with respect to the input field *or* the coefficient
@@ -141,8 +146,9 @@ Everything composes from here with the same pieces:
   driven from inside the operator tree.
 
 See the [documentation](https://RallypointOne.github.io/MatrixFreeOperators.jl/stable/)
-for the full operator catalog, GPU usage, the multi-GPU path, AD examples, and
-the OrdinaryDiffEq.jl interop.
+for the full operator catalog, GPU usage, the multi-GPU path, and AD examples.
+There is no OrdinaryDiffEq.jl / SciML integration yet
+([#81](https://github.com/RallypointOne/MatrixFreeOperators.jl/issues/81)).
 
 ## Comparison with related packages
 
@@ -156,7 +162,8 @@ intersection this package targets.
   convention and `cache_operator` ceremony attached. MatrixFreeOperators.jl
   supplies the operators themselves (with declared, BC-correct adjoints) and
   keeps a plain `mul!` interface; a thin SciMLOperators adapter is planned only
-  as the `jac_prototype` hook for implicit OrdinaryDiffEq stepping.
+  as the `jac_prototype` hook for implicit OrdinaryDiffEq stepping
+  ([#65](https://github.com/RallypointOne/MatrixFreeOperators.jl/issues/65)).
 - **[LinearMaps.jl](https://github.com/JuliaLinearAlgebra/LinearMaps.jl)** and
   **[LinearOperators.jl](https://github.com/JuliaSmoothOptimizers/LinearOperators.jl)**
   wrap a user-supplied function as a linear map for iterative solvers. They are

@@ -658,8 +658,15 @@ cut-plane ghosts at zero or the mirror — `κ_I/2` face coefficients under
 `ArithmeticMean`, `0` under `HarmonicMean` — and no guard here would catch it.
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
-- *Explicit* solvers (RK4, SSPRK, …): provide a trivial RHS adapter
-  `f!(du,u,p,t) = apply!(du, L, u, grid)` and hand it to `ODEProblem`.
+- *Explicit* stepping (RK4, SSPRK, …): the RHS is the **field-level**
+  `apply!(du, L, u)` (or `apply!(du, P, u)` on a prepared tree), not the flat
+  `mul!`, whose staging is a Krylov cost an explicit integrator has no reason to
+  pay (#87). It is the homogeneous linear part (§10.6): with inhomogeneous data
+  the RHS is `L(u) + b`, `b = boundary_rhs(L, g)`. This is a **hand-rolled**
+  stepper over `Field`s, not an `ODEProblem` — `Field` is not an `AbstractArray`,
+  so it cannot be an OrdinaryDiffEq state, and a flat-state `f!(du,u,p,t)`
+  adapter would stage back into a padded field per call. A copy-free path needs
+  `Field` to grow the array interface or the #81 extension to own the state.
 - *Implicit/stiff* solvers (needed for diffusion): the idiomatic way to give
   OrdinaryDiffEq a **matrix-free Jacobian** is `ODEFunction(f; jac_prototype = J)`
   where `J` is a SciML-style lazy operator. Here `J` is the linear
