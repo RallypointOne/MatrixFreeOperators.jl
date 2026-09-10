@@ -148,6 +148,10 @@ end
             dot(collect(interior(x)), collect(interior(Dty)))
     end
 
+    # Reached into by both #77 testsets below: the transpose's engine, its stencil and
+    # the Interface BC are internals, not exports.
+    M = MatrixFreeOperators
+
     # Issue #77: on an Interface-bearing grid the declared transpose runs the
     # `@inbounds` forward stencil over the interior and the bounds-masked gather over
     # the 2N ghost planes only, instead of the generic engine's masked sweep of every
@@ -156,7 +160,6 @@ end
     # slab reduction / halo_update_adjoint! fold — bit for bit (`isequal`, so a
     # signed-zero flip counts), in both engine branches and at α ≠ 1.
     @testset "Interface adjoint ≡ adjoint_gather! bit for bit" begin
-        M = MatrixFreeOperators
         function reference_adjoint!(x̄, D, ȳ, g, α, β)
             inv_h2 = M._inv_spacing2(g)
             κ = M._conj_op(D).κ.data
@@ -180,8 +183,10 @@ end
                 append!(grids, partition_grid(CartesianGrid(ext, sz; bc=bc), 2))
                 append!(grids, partition_grid(CartesianGrid(ext, sz; bc=bc), 3))
             end
-            I = M.Interface()
-            bc = ntuple(d -> d == 1 ? (I, Dirichlet()) : d == 2 ? (Neumann(), I) : walls, N)
+            iface = M.Interface()
+            bc = ntuple(
+                d -> d == 1 ? (iface, Dirichlet()) : d == 2 ? (Neumann(), iface) : walls, N
+            )
             push!(grids, CartesianGrid(ext, ntuple(d -> 3 + d, N); bc=bc,
                                        halo=ntuple(d -> d == 2 ? 2 : 1, N)))
             return grids
@@ -229,11 +234,10 @@ end
     # 0 for κ > 0) blended with α = 2, β = 1/2 lands on β·x̄, which a second, overlapping
     # plane write would have taken to β²·x̄.
     @testset "adjoint_gather_ghosts! sweeps the ghost region once" begin
-        M = MatrixFreeOperators
-        I = M.Interface()
+        iface = M.Interface()
         for T in (Float64, Float32), (sz, halo) in (((5, 4), (1, 2)), ((3, 4, 5), (2, 1, 1)))
             N = length(sz)
-            bc = ntuple(d -> d == 1 ? (I, Dirichlet()) : (Neumann(), I), N)
+            bc = ntuple(d -> d == 1 ? (iface, Dirichlet()) : (Neumann(), iface), N)
             gi = CartesianGrid(ntuple(d -> (zero(T), one(T)), N), sz; bc=bc, halo=halo)
             κ = scalar_field(gi, T)
             κ.data .= 1 .+ rand(Random.MersenneTwister(5), T, padded_size(gi)...)
