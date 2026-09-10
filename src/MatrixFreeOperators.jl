@@ -16,7 +16,7 @@ export Interpolated, Conservative, SlopeLimited, with_transfer
 export AbstractField, Field, Center, scalar_field, vector_field, set!, ncomponents, component
 export flatten, flat_to_interior!, interior_to_flat!
 export AbstractOperator, apply, apply!, apply_adjoint!, AdjointOp
-export islinear, isconstant, isselfadjoint, isdiagonal, operator_diagonal
+export islinear, isconstant, isselfadjoint, isdiagonal, shares_exchange, operator_diagonal
 export Laplacian, laplacian, laplacian_stencil, laplacian_7pt_noflux
 export Derivative, derivative, derivative_stencil
 export Gradient, gradient, Divergence, divergence

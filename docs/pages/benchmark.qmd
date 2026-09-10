@@ -73,10 +73,10 @@ diffusion_operator(g) = D_T * laplacian(g) + (D_L - D_T) * derivative(g, 1; orde
 ```
 
 This is exact, not an approximation, and it stays entirely inside the
-adjoint-tested API. Writing it as a Laplacian plus a correction rather than three
-separate second derivatives also costs one fewer inter-block halo exchange per
-step, since `Added` recurses at the forest level and each operand exchanges
-independently.
+adjoint-tested API. Both operands are stencil leaves that declare
+`shares_exchange`, so the `Added` fills the halos once and runs both sweeps on
+that one exchange: the sum costs a single inter-block halo exchange per step,
+the same as a bare `laplacian`, rather than one per operand.
 
 Zero-flux boundaries are just `Neumann()` on all six faces: for axis-aligned
 diagonal `D`, n·D∇V = 0 reduces to ∂V/∂n = 0, which is precisely what the
@@ -174,13 +174,18 @@ an apply, because every coarse–fine face runs the Martin–Cartwright quadrati
 interpolation and the flux-matching restriction rather than a slab copy — roughly
 20× the per-leaf cost of a same-level exchange.
 
-And this example pays it twice. `D_T ∇² + (D_L − D_T) ∂ₓₓ` is an `Added`, and
-`Added` recurses at the forest level so each operand performs its own exchange.
-Fusing the two into a single custom operator — the escape hatch
+When this table was measured, the example paid that exchange twice:
+`D_T ∇² + (D_L − D_T) ∂ₓₓ` is an `Added`, and each operand then ran its own
+full forest action, exchange included. It no longer does. An `Added` whose
+operands all `shares_exchange` — every stencil leaf does — fills the halos once
+and sweeps each operand on that one exchange, so the anisotropic apply now costs
+one exchange, the same as a bare `laplacian`. The phase table above predates
+that change (issue #85) and has not been re-measured; the projected saving was
+roughly 9 s off the adaptive run, lifting the overall speedup from 2.3× to about
+3.2×. Fusing the two leaves into a single custom operator — the escape hatch
 [DESIGN.md §4a](https://github.com/RallypointOne/MatrixFreeOperators.jl/blob/main/DESIGN.md)
-exists for — would eliminate one of the two, taking roughly 9 s off the adaptive
-run and lifting the overall speedup from 2.3× to about 3.2×. That is the obvious
-next optimization, and it is measured rather than guessed.
+exists for — would still save the second stencil sweep, but that is a far smaller
+share of an adapted apply than the exchange was.
 
 ## Results
 

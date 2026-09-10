@@ -9,7 +9,8 @@
 # AdjointOp) recurse at the FOREST level — never per leaf — so a nested adjoint
 # always reaches the forest adjoint action and its cross-block fold, and a
 # Composed intermediate is a whole BlockField whose operand application performs
-# its own inter-block exchange.
+# its own inter-block exchange — except that an Added whose operands all
+# `shares_exchange` fills one exchange for the set (below).
 
 """
     apply!(y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α=true, β=false) -> y
@@ -18,6 +19,14 @@ Apply `L` over a block-structured forest: exchange inter-block halos once, then 
 the stencil sweep over every block.
 """
 function apply!(
+    y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β
+)
+    return _forest_exchange_sweep!(y, L, x, g, α, β)
+end
+
+# The forest action itself: fill x's ghosts, then sweep. Shared by the apply! above,
+# the prepared hot path (linalg.jl), and the exchange-sharing Added below.
+function _forest_exchange_sweep!(
     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β
 )
     _require_current(y)
@@ -98,15 +107,32 @@ end
 # Combinators recurse at the forest level (mirroring their Field methods in
 # algebra.jl): running a whole Added/Scaled tree per leaf would route any nested
 # AdjointOp through the per-leaf adjoint, silently dropping its interface-ghost
-# fold. Each operand re-exchanges halos — idempotent, since exchanges read only
-# interiors, which the operand applications never mutate.
+# fold. Operands that all `shares_exchange` sweep back to back on one exchange;
+# otherwise each runs its own full forest action, which is what a Composed
+# intermediate, a nested AdjointOp, and Diffusion's coarse–fine rewrite need.
 function apply!(y::AbstractBlockField, L::Added, x::AbstractBlockField, g::BlockForest, α, β)
+    shares_exchange(L) && return _forest_exchange_sweep!(y, L, x, g, α, β)
     apply!(y, L.a, x, g, α, β)
     apply!(y, L.b, x, g, α, true)
     return y
 end
 function apply!(y::AbstractBlockField, L::Scaled, x::AbstractBlockField, g::BlockForest, α, β)
     return apply!(y, L.op, x, g, α * L.α, β)
+end
+
+# Sweep recursion behind a shared exchange — reachable only through the
+# `shares_exchange` gates, since an un-gated operand can rewrite x's ghosts.
+function _forest_sweep!(
+    y::AbstractBlockField, L::Added, x::AbstractBlockField, g::BlockForest, α, β
+)
+    _forest_sweep!(y, L.a, x, g, α, β)
+    _forest_sweep!(y, L.b, x, g, α, true)
+    return y
+end
+function _forest_sweep!(
+    y::AbstractBlockField, L::Scaled, x::AbstractBlockField, g::BlockForest, α, β
+)
+    return _forest_sweep!(y, L.op, x, g, α * L.α, β)
 end
 # The intermediate is a whole BlockField (allocated per call, like the single-grid
 # pure path): the outer operand's forest apply! performs its own inter-block
@@ -130,9 +156,14 @@ function apply_adjoint!(
     return apply!(x̄, L.op, ȳ, g, α, β)
 end
 
+# A self-adjoint sum is its own adjoint, so it takes the (exchange-sharing) forward
+# path. The per-operand transposes stay separate: each needs its own
+# fold_bc!/halo_update_adjoint!, since a diagonal operand's transpose writes
+# interiors only and leaves ghost scratch a shared fold would spread to neighbors.
 function apply_adjoint!(
     x̄::AbstractBlockField, L::Added, ȳ::AbstractBlockField, g::BlockForest, α, β
 )
+    isselfadjoint(L) && return apply!(x̄, L, ȳ, g, α, β)
     apply_adjoint!(x̄, L.a, ȳ, g, α, β)
     apply_adjoint!(x̄, L.b, ȳ, g, α, true)
     return x̄

@@ -106,6 +106,10 @@ isselfadjoint(L::Added) = isselfadjoint(L.a) && isselfadjoint(L.b)
 # have to commute), so Composed never claims it.
 isselfadjoint(::Composed) = false
 isselfadjoint(L::Scaled) = isselfadjoint(L.op) && isreal(L.α)
+shares_exchange(L::Added) = shares_exchange(L.a) && shares_exchange(L.b)
+# b(x) is a fresh field needing its own exchange before a reads its ghosts.
+shares_exchange(::Composed) = false
+shares_exchange(L::Scaled) = shares_exchange(L.op)
 
 #--------------------------------------------------------------------------------# Grid resolution, size, show, Adapt
 

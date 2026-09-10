@@ -59,6 +59,7 @@ gradient(g::AbstractGrid) = Gradient(g)
 
 islinear(::Gradient) = true
 isconstant(::Gradient) = true
+shares_exchange(::Gradient) = true
 operator_grid(L::Gradient) = L.grid
 
 function Base.size(L::Gradient)

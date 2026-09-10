@@ -83,6 +83,7 @@ end
 islinear(::Derivative) = true
 isconstant(::Derivative) = true
 isselfadjoint(L::Derivative) = L.order == 2 && _selfadjoint_grid(L.grid)
+shares_exchange(::Derivative) = true
 operator_grid(L::Derivative) = L.grid
 adjoint_operator(L::Derivative) = isselfadjoint(L) ? L : AdjointOp(L)
 

@@ -95,6 +95,7 @@ laplacian(g::AbstractGrid) = Laplacian(g)
 islinear(::Laplacian) = true
 isconstant(::Laplacian) = true
 isselfadjoint(L::Laplacian) = _selfadjoint_grid(L.grid)
+shares_exchange(::Laplacian) = true
 operator_grid(L::Laplacian) = L.grid
 adjoint_operator(L::Laplacian) = isselfadjoint(L) ? L : AdjointOp(L)
 

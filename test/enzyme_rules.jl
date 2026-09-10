@@ -100,8 +100,8 @@ end
         wf = rand(rng, n)
 
         @testset "$(name)" for (name, L, nexchange) in (
-            ("Added: Δ + 2Δ", laplacian(bf) + 2 * laplacian(bf), 2),
-            ("Added: Δ + ∂x", laplacian(bf) + derivative(bf, 1), 2),
+            ("Added: Δ + 2Δ", laplacian(bf) + 2 * laplacian(bf), 1),
+            ("Added: Δ + ∂x", laplacian(bf) + derivative(bf, 1), 1),
             ("Composed: Δ∘Δ", laplacian(bf) * laplacian(bf), 2),
         )
             dv = zero(v)
@@ -115,8 +115,10 @@ end
                 Enzyme.Const(L),
                 Enzyme.Const(bf),
             )
-            # One rule invocation per operand exchange — proof the combinator really
-            # did re-exchange, so this test is not vacuous.
+            # One rule invocation per exchange: an Added of stencil leaves shares a
+            # single exchange (`shares_exchange`), a Composed exchanges x and then its
+            # intermediate — proof the count is what the combinator really did, so
+            # this test is not vacuous.
             @test ENZ_EXT.rule_hits().exchange - before.exchange == nexchange
 
             # Relative, not absolute: Δ∘Δ scales like h⁻⁴, so these gradients run to

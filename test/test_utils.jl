@@ -27,3 +27,71 @@ function materialize(P)
     end
     return A
 end
+
+_leaf_interior(f, i) = interior(MatrixFreeOperators.block(f, i))
+_nleaves(f) = MatrixFreeOperators.nleaves(f.grid)
+
+# Forest-field comparisons over interiors only — ghosts are scratch, so they stay
+# out of the equality check, the inner product, and the error norm alike.
+interiors_equal(a, b) = all(i -> _leaf_interior(a, i) == _leaf_interior(b, i), 1:_nleaves(a))
+interior_dot(a, b) =
+    sum(i -> dot(collect(_leaf_interior(a, i)), collect(_leaf_interior(b, i))), 1:_nleaves(a))
+max_interior_diff(a, b) =
+    maximum(i -> maximum(abs, _leaf_interior(a, i) .- _leaf_interior(b, i)), 1:_nleaves(a))
+
+# Exchange-counting view of a forest field. An AbstractBlockField that forwards
+# storage, layout, and per-leaf access to the wrapped field, and intercepts only
+# the two execution seams every forest action passes through — the inter-block
+# halo exchange (`_run_exchange!`) and the physical-BC face pass (`_run_bc!`) —
+# to tally them. Wrap the *input* of an `apply!`/`_forest_capply!` to assert how
+# many exchanges one operator application performs. `similar` unwraps, so a
+# composition's intermediate (and an allocating `apply`'s output) is a plain,
+# uncounted field: the tally is exchanges *on the wrapped input* only.
+struct CountingBlockField{
+    F<:MatrixFreeOperators.AbstractBlockField,G<:MatrixFreeOperators.BlockForest
+} <: MatrixFreeOperators.AbstractBlockField
+    inner::F
+    grid::G
+    generation::Int
+    exchanges::Base.RefValue{Int}
+    bcfills::Base.RefValue{Int}
+end
+CountingBlockField(f::MatrixFreeOperators.AbstractBlockField) =
+    CountingBlockField(f, f.grid, f.generation, Ref(0), Ref(0))
+
+MatrixFreeOperators._storage(c::CountingBlockField) = MatrixFreeOperators._storage(c.inner)
+MatrixFreeOperators._layout(c::CountingBlockField) = MatrixFreeOperators._layout(c.inner)
+MatrixFreeOperators._block_array(c::CountingBlockField, i::Integer) =
+    MatrixFreeOperators._block_array(c.inner, i)
+MatrixFreeOperators._block_view(c::CountingBlockField, i::Integer, ranges) =
+    MatrixFreeOperators._block_view(c.inner, i, ranges)
+MatrixFreeOperators.block(c::CountingBlockField, i::Integer, leaf_grid) =
+    MatrixFreeOperators.block(c.inner, i, leaf_grid)
+Base.eltype(c::CountingBlockField) = eltype(c.inner)
+Base.similar(c::CountingBlockField) = similar(c.inner)
+Base.similar(c::CountingBlockField, ::Type{E}) where {E} = similar(c.inner, E)
+
+function MatrixFreeOperators._run_exchange!(
+    c::CountingBlockField,
+    g::MatrixFreeOperators.BlockForest,
+    sched::MatrixFreeOperators.ExchangeSchedule,
+)
+    c.exchanges[] += 1
+    return MatrixFreeOperators._run_exchange!(c.inner, g, sched)
+end
+function MatrixFreeOperators._run_bc!(
+    c::CountingBlockField,
+    g::MatrixFreeOperators.BlockForest,
+    sched::MatrixFreeOperators.ExchangeSchedule,
+)
+    c.bcfills[] += 1
+    return MatrixFreeOperators._run_bc!(c.inner, g, sched)
+end
+
+# Number of halo exchanges `apply!(y, L, x, g)` performs, plus the result — the
+# count is reset per call so it reads as "exchanges per apply".
+function count_exchanges!(y, L, x, g, α=true, β=false)
+    c = CountingBlockField(x)
+    apply!(y, L, c, g, α, β)
+    return c.exchanges[], c.bcfills[]
+end

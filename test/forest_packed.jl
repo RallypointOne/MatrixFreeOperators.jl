@@ -10,17 +10,6 @@
         ((Dirichlet(), Dirichlet()), (Neumann(), Neumann())),
     ]
 
-    parity(a, b) = all(
-        i -> interior(MFO.block(a, i)) == interior(MFO.block(b, i)),
-        1:MFO.nleaves(a.grid),
-    )
-
-    ipdot(a, b) = sum(
-        i -> dot(
-            collect(interior(MFO.block(a, i))), collect(interior(MFO.block(b, i)))
-        ),
-        1:MFO.nleaves(a.grid),
-    )
     # Near-zero inner products (symmetric cancellation, e.g. periodic BCs) defeat
     # a purely relative isapprox; compare with a scale floor instead.
     adjid(ip1, ip2) = abs(ip1 - ip2) ≤ 1e-10 * max(1.0, abs(ip1), abs(ip2))
@@ -33,11 +22,11 @@
             uf = set!(scalar_field(bf), fun)
             for makeL in (laplacian, g -> derivative(g, 1; order=1))
                 L = makeL(bf)
-                @test parity(L * pack(uf), L * uf)
+                @test interiors_equal(L * pack(uf), L * uf)
             end
             refine!(bf, x -> x[1] < 0.5)
             ur = set!(scalar_field(bf), fun)
-            @test parity(laplacian(bf) * pack(ur), laplacian(bf) * ur)
+            @test interiors_equal(laplacian(bf) * pack(ur), laplacian(bf) * ur)
         end
     end
 
@@ -63,7 +52,7 @@
                 y.data, x.data, x.levels, bf.spacing0, bf.halo, 2.0, false;
                 ndrange=(bf.blocksize..., MFO.nleaves(bf)),
             )
-            @test parity(y, ref)
+            @test interiors_equal(y, ref)
             # accumulating form: β ≠ 0 blends into existing y
             y2 = MFO._zero_all!(similar(x))
             for i in 1:MFO.nleaves(bf)
@@ -75,7 +64,7 @@
                 y2.data, x.data, x.levels, bf.spacing0, bf.halo, 2.0, 3.0;
                 ndrange=(bf.blocksize..., MFO.nleaves(bf)),
             )
-            @test parity(y2, ref2)
+            @test interiors_equal(y2, ref2)
         end
     end
 
@@ -89,7 +78,7 @@
             # action IS the kernel sweep.
             At = apply_adjoint!(similar(pack(uf)), laplacian(bf), pack(uf), bf)
             Ar = apply_adjoint!(scalar_field(bf), laplacian(bf), copy(uf), bf)
-            @test parity(At, Ar)
+            @test interiors_equal(At, Ar)
 
             # Refined forest: grid-aware isselfadjoint flips false; packed runs the
             # per-leaf transpose-gather fallback + fold_bc! + halo_update_adjoint!
@@ -127,12 +116,12 @@
             uf = set!(scalar_field(bf), fun)
             p = pack(uf)
             S = 2.0 * laplacian(bf) + adjoint(derivative(bf, 1; order=1))
-            @test parity(S * copy(p), S * copy(uf))
+            @test interiors_equal(S * copy(p), S * copy(uf))
             DG = divergence(bf) * MFO.gradient(bf)   # packed SVector intermediate
-            @test parity(DG * copy(p), DG * copy(uf))
-            @test parity(MFO.gradient(bf) * p, MFO.gradient(bf) * uf)
+            @test interiors_equal(DG * copy(p), DG * copy(uf))
+            @test interiors_equal(MFO.gradient(bf) * p, MFO.gradient(bf) * uf)
             w = set!(vector_field(bf), vfun)
-            @test parity(divergence(bf) * pack(w), divergence(bf) * w)
+            @test interiors_equal(divergence(bf) * pack(w), divergence(bf) * w)
         end
     end
 
@@ -144,9 +133,9 @@
         bref = boundary_rhs(laplacian(bf), scalar_field(bf))
         bpk = boundary_rhs(laplacian(bf), proto)
         @test bpk isa PackedBlockField
-        @test parity(bpk, bref)
+        @test interiors_equal(bpk, bref)
         Lc = 2.0 * laplacian(bf) + derivative(bf, 1; order=1)
-        @test parity(boundary_rhs(Lc, proto), boundary_rhs(Lc, scalar_field(bf)))
+        @test interiors_equal(boundary_rhs(Lc, proto), boundary_rhs(Lc, scalar_field(bf)))
     end
 
     @testset "prepared packed mul!: bit-parity, type stability, generation guard" begin
@@ -257,12 +246,12 @@
                 _ -> identity_op(),
             )
                 L = makeL(bf)
-                @test parity(L * pack(uf), L * uf)
+                @test interiors_equal(L * pack(uf), L * uf)
             end
             w = set!(vector_field(bf), vfun)
-            @test parity(divergence(bf) * pack(w), divergence(bf) * w)
+            @test interiors_equal(divergence(bf) * pack(w), divergence(bf) * w)
             A = advection(bf, SelfAdvection())
-            @test parity(apply(A, pack(w)), apply(A, w))
+            @test interiors_equal(apply(A, pack(w)), apply(A, w))
         end
     end
 
@@ -350,13 +339,13 @@
                 ref = MFO._forest_sweep_leaves!(
                     MFO._zero_all!(MFO.allocate_output(L, xin)), L, xin, bf, 2.0, false
                 )
-                @test parity(y, ref)
+                @test interiors_equal(y, ref)
                 # accumulating form blends into the (nontrivial) β = 0 result
                 y2 = copy(y)
                 ref2 = copy(ref)
                 launch(y2, 2.0, 3.0)
                 MFO._forest_sweep_leaves!(ref2, L, xin, bf, 2.0, 3.0)
-                @test parity(y2, ref2)
+                @test interiors_equal(y2, ref2)
             end
         end
     end
@@ -432,22 +421,22 @@
             for L in (derivative(bf, 1; order=1), derivative(bf, 2; order=2))
                 Lx = apply(L, copy(xs))
                 Lty = apply_adjoint!(similar(xs), L, copy(ys), bf)
-                @test adjid(ipdot(Lx, ys), ipdot(xs, Lty))
+                @test adjid(interior_dot(Lx, ys), interior_dot(xs, Lty))
             end
             # advection adjoint is declared algebraically: Σ_d D_dᵀ ∘ scaling(v_d)
             A = advection(bf, pack(vel))
             Ax = apply(A, copy(xs))
             Aty = apply(adjoint(A), copy(ys))
-            @test adjid(ipdot(Ax, ys), ipdot(xs, Aty))
+            @test adjid(interior_dot(Ax, ys), interior_dot(xs, Aty))
             # rank-changers: mixed-rank inner products
             G = MFO.gradient(bf)
             Gx = apply(G, copy(xs))
             Gty = apply_adjoint!(similar(xs), G, copy(yv), bf)
-            @test adjid(ipdot(Gx, yv), ipdot(xs, Gty))
+            @test adjid(interior_dot(Gx, yv), interior_dot(xs, Gty))
             D = divergence(bf)
             Dx = apply(D, copy(xv))
             Dty = apply_adjoint!(similar(xv), D, copy(ys), bf)
-            @test adjid(ipdot(Dx, ys), ipdot(xv, Dty))
+            @test adjid(interior_dot(Dx, ys), interior_dot(xv, Dty))
         end
     end
 
@@ -465,7 +454,7 @@
             for S in (scaling(κc), scaling(pack(κc)), scaling(1.5 + 2.0im))
                 Sx = apply(S, copy(xs))
                 Sty = apply_adjoint!(similar(xs), S, copy(ys), bf)
-                @test adjid(ipdot(Sx, ys), ipdot(xs, Sty))
+                @test adjid(interior_dot(Sx, ys), interior_dot(xs, Sty))
             end
         end
     end

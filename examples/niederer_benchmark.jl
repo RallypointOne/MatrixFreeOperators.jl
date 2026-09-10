@@ -29,8 +29,11 @@
 # with the cell count as you would hope (5.7x on 5.3x fewer cells) and regridding
 # costs under 6%, but diffusion runs *slower* on the adaptive forest.  Essentially
 # all of the adaptivity overhead is the coarse-fine halo exchange — 92% of an apply
-# on an adapted forest, and paid twice here because the anisotropic operator is an
-# `Added` whose operands each exchange independently.
+# on an adapted forest.  The phase split quoted here and in docs/pages/benchmark.qmd
+# was measured before issue #85, when the anisotropic operator — an `Added` of two
+# stencil leaves — paid that exchange once per operand.  Both leaves now
+# `shares_exchange`, so the sum exchanges once; re-measuring the table is a
+# follow-up, and the diffusion phase is the only one expected to move.
 #
 # Run with:      julia -t auto --project=examples examples/niederer_benchmark.jl
 # Fast check:    NIEDERER_SMOKE=true        ...  (seconds; exercises the 3D forest paths)

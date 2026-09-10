@@ -15,7 +15,7 @@ open/deferred choices (staggered grids, distributed backends, AMR, multigrid).
 - AD / MDLA / Reactant integrations: `ext/`
 
 ## Invariants — violating these produces silently wrong results
-- **Traits default to the weaker claim.** `islinear` / `isconstant` / `isselfadjoint` / `isdiagonal` default to `false`; leaves opt in, combinators propagate explicitly. A forgotten declaration must degrade to an error, never a wrong answer.
+- **Traits default to the weaker claim.** `islinear` / `isconstant` / `isselfadjoint` / `isdiagonal` / `shares_exchange` default to `false`; leaves opt in, combinators propagate explicitly. A forgotten declaration must degrade to an error, never a wrong answer.
 - **Adjoints are declared, never assumed.** Every linear leaf declares its adjoint *including boundary contributions* — BCs break self-adjointness even for the Laplacian. Check with the dot-product identity ⟨Lx,y⟩ = ⟨x,Lᵀy⟩.
 - **Linear/affine split.** `apply!` / `apply_bc!` enforce homogeneous BCs only, so `islinear(L)` ⇒ `L(0) = 0`. Inhomogeneous boundary data goes out separately through `boundary_rhs` and is folded into the solve RHS.
 - **Interior-only flat vectors.** Flat (Krylov) vectors span interior DOFs only. Ghost cells are scratch filled by `halo_update!` / `apply_bc!` and are never solver unknowns.
