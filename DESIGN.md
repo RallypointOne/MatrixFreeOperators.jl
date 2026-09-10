@@ -823,9 +823,8 @@ pre-built.
     host sweeps (both within run-to-run noise on refined 2D 256²/32² and 3D
     32³/8³ forests) — so the choice was made on the smaller record and on the
     host walking the same flat buffers the batched device gather consumes, not
-    on a timing. The restriction's
-    conservation guarantee is for *unweighted* differences: a
-    variable-coefficient flux weights each side of a
+    on a timing. The restriction's conservation guarantee is for *unweighted*
+    differences: a variable-coefficient flux weights each side of a
     coarse–fine face by an independently formed face κ, so `Diffusion` owns a
     κ-weighted coarse-ghost rewrite (issue #58) fed by weight-free `cfflux`
     descriptors emitted in the same schedule build — κ must stay out of schedule
