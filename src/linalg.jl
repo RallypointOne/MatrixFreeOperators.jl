@@ -20,6 +20,13 @@ found them. The distributed path ([`prepare_distributed`](@ref)) depends on that
 same discipline throughout: it drives the operator tree itself so it can fill
 [`Interface`](@ref) ghost slabs from a neighbor exchange between applies, and
 anything that zeroed ghosts on the way in would silently discard exchanged data.
+
+The traits [`islinear`](@ref), [`isconstant`](@ref), [`isselfadjoint`](@ref) and
+[`isdiagonal`](@ref) are those of the operator handed to `prepare` — binding
+buffers changes nothing about the map. A `PreparedOperator` is the solver
+boundary rather than a node of the lazy algebra, so it is not an
+[`AbstractOperator`](@ref): it does not enter `+`, `*`, `adjoint`, or `apply`;
+compose first, then prepare.
 """
 struct PreparedOperator{O<:AbstractOperator,G<:AbstractGrid,FX<:AbstractField,FY<:AbstractField}
     op::O
@@ -60,6 +67,15 @@ struct PreparedForest{
 end
 
 const _AnyPrepared = Union{PreparedOperator,PreparedForest}
+
+# A prepared operator is the same linear map as the tree it binds buffers to, so
+# its traits are the tree's. Declared explicitly (there is no supertype to fall
+# through to) — an undeclared trait must be a MethodError, never a silent
+# default the wrapper did not earn.
+islinear(P::_AnyPrepared) = islinear(P.op)
+isconstant(P::_AnyPrepared) = isconstant(P.op)
+isselfadjoint(P::_AnyPrepared) = isselfadjoint(P.op)
+isdiagonal(P::_AnyPrepared) = isdiagonal(P.op)
 
 """
     prepare(L::AbstractOperator, x::Field) -> PreparedOperator
@@ -273,6 +289,15 @@ struct PreparedComposed{A<:AbstractOperator,B<:AbstractOperator,F<:AbstractField
     tmp::F
 end
 
+# Same map as Composed(a, b), so the same trait propagation (algebra.jl): a twin
+# that fell through to the `false` defaults would still be *safe*, but by
+# accident rather than by declaration, and would hide a linear prepared tree from
+# any consumer (SciML caching, the isconstant path) that asks.
+islinear(L::PreparedComposed) = islinear(L.a) && islinear(L.b)
+isconstant(L::PreparedComposed) = isconstant(L.a) && isconstant(L.b)
+isdiagonal(L::PreparedComposed) = isdiagonal(L.a) && isdiagonal(L.b)
+isselfadjoint(::PreparedComposed) = false       # not compositional — see Composed
+
 # The inner factor sees the grid of the intermediate it consumes (transfer
 # chains compose factors living on different grids).
 function apply!(y::Field, L::PreparedComposed, x::Field, g::AbstractGrid, α, β)
@@ -291,11 +316,27 @@ struct PreparedAdjoint{O<:AbstractOperator,F<:AbstractField} <: AbstractOperator
     scratch::F
 end
 
+# Same map as AdjointOp(op), so the same trait forwarding AND the same declared
+# transpose (operators/abstract.jl): the twin's adjoint is the leaf it wraps.
+# `adjoint_operator` must be declared with `isdiagonal` — the generic forest
+# adjoint walk below turns a diagonal transpose into `adjoint_operator(L)`, and
+# the AbstractOperator default would hand back AdjointOp(PreparedAdjoint(op)),
+# whose apply is this node's transpose again: recursion without bound.
+islinear(L::PreparedAdjoint) = islinear(L.op)
+isconstant(L::PreparedAdjoint) = isconstant(L.op)
+isselfadjoint(L::PreparedAdjoint) = isselfadjoint(L.op)
+isdiagonal(L::PreparedAdjoint) = isdiagonal(L.op)
+adjoint_operator(L::PreparedAdjoint) = L.op
+
 function apply!(y::Field, L::PreparedAdjoint, x::Field, g::AbstractGrid, α, β)
     iszero(β) && return apply_adjoint!(y, L.op, x, g, α, β)
     apply_adjoint!(L.scratch, L.op, x, g)
     interior(y) .= α .* interior(L.scratch) .+ β .* interior(y)
     return y
+end
+# (opᵀ)ᵀ = op, as for AdjointOp.
+function apply_adjoint!(x̄::Field, L::PreparedAdjoint, ȳ::Field, g::AbstractGrid, α, β)
+    return apply!(x̄, L.op, ȳ, g, α, β)
 end
 
 #--------------------------------------------------------------------------------# Cached forest apply (the PreparedForest hot path)
@@ -406,6 +447,11 @@ _forest_capply_adjoint!(
 ) = _forest_capply_adjoint!(x̄, L.op, ȳ, P, α * conj(L.α), β)
 _forest_capply_adjoint!(
     x̄::AbstractBlockField, L::AdjointOp, ȳ::AbstractBlockField, P::PreparedForest, α, β
+) = _forest_capply!(x̄, L.op, ȳ, P, α, β)
+# The prepared twin transposes the same way; without this method a PreparedAdjoint
+# would fall into the generic body above, whose sweep has no adjoint action for it.
+_forest_capply_adjoint!(
+    x̄::AbstractBlockField, L::PreparedAdjoint, ȳ::AbstractBlockField, P::PreparedForest, α, β
 ) = _forest_capply!(x̄, L.op, ȳ, P, α, β)
 
 #--------------------------------------------------------------------------------# Boundary lift (linear/affine split)

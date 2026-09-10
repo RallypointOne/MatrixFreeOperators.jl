@@ -62,6 +62,36 @@ end
     end
 end
 
+# Partitioning binds buffers and exchanges; it does not change the map, so a
+# distributed prepared operator declares the traits of the tree handed in (the
+# SciML isconstant consumer asks it the same question it asks PreparedOperator).
+# Cases with a *false* trait catch a forwarding that hard-codes `true`.
+@testset "traits forward to the global tree" begin
+    g = mdla_grid((Dirichlet(), Neumann()))
+    κ = set!(scalar_field(g), x -> 1 + x[1] / 7)
+    D1 = derivative(g, 1; order=1)
+    for L in (
+        laplacian(g),                                  # self-adjoint, not diagonal
+        scaling(κ),                                    # diagonal, self-adjoint
+        laplacian(g) * laplacian(g),                   # never self-adjoint
+        laplacian(g) * scaling(κ),                     # not diagonal, constant
+        adjoint(D1),                                   # PreparedAdjoint leaf
+        MatrixFreeOperators.AdjointOp(D1 * scaling(κ)),  # rewritten to Composed(κ, D1ᵀ)
+        2.0 * diffusion(g, κ) + identity_op(),
+    )
+        P = prepare_distributed(L, 1)
+        for trait in (islinear, isconstant, isselfadjoint, isdiagonal)
+            @test trait(P) === trait(L)
+            trait(P) === trait(L) || @info "distributed trait mismatch" L trait trait(L) trait(P)
+        end
+    end
+    @test isselfadjoint(prepare_distributed(laplacian(g), 1))
+    @test !isselfadjoint(prepare_distributed(laplacian(g) * laplacian(g), 1))
+    @test isdiagonal(prepare_distributed(scaling(κ), 1))
+    @test !isdiagonal(prepare_distributed(laplacian(g), 1))
+    @test islinear(prepare_distributed(adjoint(D1), 1)) && !isselfadjoint(prepare_distributed(adjoint(D1), 1))
+end
+
 @testset "single-partition parity vs single-GPU prepare" begin
     rng = Random.MersenneTwister(31)
     for cutbc in ((Dirichlet(), Neumann()), (Periodic(), Periodic()))

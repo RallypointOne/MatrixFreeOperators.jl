@@ -18,7 +18,7 @@ import MatrixFreeOperators:
     _dist_capply!, _dist_lift_scratch, _dist_map!, _dist_reduce!, _dist_scatter!,
     _dist_set!, _dist_tree, _owned_flat_range, _pack_local_x!, _push_adjoints,
     _require_grid, _slab_ghost_layout, _slab_op, _unpack_ghosts!, zero_ghosts!,
-    boundary_rhs, prepare_distributed
+    boundary_rhs, prepare_distributed, islinear, isconstant, isselfadjoint, isdiagonal
 import MultiDeviceLinearAlgebra: _empty_mdv, copy_exchange
 
 #--------------------------------------------------------------------------------# Backend primitives
@@ -121,8 +121,15 @@ carry no communication buffers).
 Stateful and single-threaded, like [`PreparedOperator`](@ref) and for the same
 reason: `mul!` stages through each exchange's `local_x` and each partition's
 scratch fields, so concurrent solves need one `prepare_distributed` each.
+
+The traits [`islinear`](@ref), [`isconstant`](@ref), [`isselfadjoint`](@ref) and
+[`isdiagonal`](@ref) are those of the operator handed to `prepare_distributed`,
+as for [`PreparedOperator`](@ref): partitioning changes nothing about the map.
 """
-struct MDLAPreparedOperator{T,S<:PartitionSpec,C<:MDLAContext,X<:MDLAExchange,N<:DistNode,V}
+struct MDLAPreparedOperator{
+    T,O<:AbstractOperator,S<:PartitionSpec,C<:MDLAContext,X<:MDLAExchange,N<:DistNode,V
+}
+    op::O                             # the global (adjoint-normalized) tree
     parts::Vector{PreparedOperator}   # heterogeneous local-grid BC type params
     spec::S
     ctx::C
@@ -135,6 +142,17 @@ end
 Base.size(P::MDLAPreparedOperator) = (P.spec.len, P.spec.len)
 Base.size(P::MDLAPreparedOperator, d::Integer) = size(P)[d]
 Base.eltype(::MDLAPreparedOperator{T}) where {T} = T
+
+# Forwarded to the global tree rather than a partition's localized copy: the
+# same answer (`_slab_op` never changes a trait — `_selfadjoint_grid` is true on
+# every CartesianGrid slab, and localizing a coefficient keeps its eltype), but
+# type-stable where `Vector{PreparedOperator}` is not. Declared explicitly, like
+# PreparedOperator's: an undeclared trait must be a MethodError, never a silent
+# default the wrapper did not earn.
+islinear(P::MDLAPreparedOperator) = islinear(P.op)
+isconstant(P::MDLAPreparedOperator) = isconstant(P.op)
+isselfadjoint(P::MDLAPreparedOperator) = isselfadjoint(P.op)
+isdiagonal(P::MDLAPreparedOperator) = isdiagonal(P.op)
 
 # A node's exchange. Scalar intermediates share the root's topology exactly, so
 # copy_exchange clones it with fresh buffers and skips re-probing device P2P.
@@ -208,9 +226,9 @@ function prepare_distributed(L0::AbstractOperator, nparts::Integer; devices=noth
     ypads = AbstractField[p.ypad for p in parts]
     tree = _dist_tree([p.op for p in parts], xpads, proto -> _node_exchange(root, proto))
     return MDLAPreparedOperator{
-        T,typeof(spec),typeof(ctx),typeof(root),typeof(tree),typeof(xpads)
+        T,typeof(L),typeof(spec),typeof(ctx),typeof(root),typeof(tree),typeof(xpads)
     }(
-        parts, spec, ctx, root, tree, xpads, ypads
+        L, parts, spec, ctx, root, tree, xpads, ypads
     )
 end
 
