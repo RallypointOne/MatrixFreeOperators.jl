@@ -64,6 +64,29 @@ if isdefined(MatrixFreeOperators, :Diffusion)
     SUITE["grid"]["3D 64³"]["diffusion mul!"] = @benchmarkable mul!($y3, $PD3, $x3)
 end
 
+# The slab leaf's declared transpose (issue #77): on a partition slab the cut faces
+# are `Interface`, so `apply_adjoint!` cannot take the self-adjoint shortcut above and
+# runs the `@inbounds` interior stencil plus the bounds-masked gather over the 2N
+# ghost planes. Nothing under `mul!` reaches it — `_push_adjoints` folds the adjoint
+# to the leaf itself — so it is driven directly, as the adjoint entries below are.
+# The forward slab sweep sits beside it as the ratio's denominator. Guarded: base
+# revisions without the distributed seam have no `_slab_op`.
+if isdefined(MatrixFreeOperators, :Diffusion) && isdefined(MatrixFreeOperators, :_slab_op)
+    for (dim, g) in (("2D 256²", g2), ("3D 64³", g3))
+        D = diffusion(g, set!(scalar_field(g), p -> 1 + 0.5 * sin(p[1])))
+        lg = partition_grid(g, 2)[1]
+        Ds = MatrixFreeOperators._slab_op(D, lg)
+        ȳs = set!(scalar_field(lg), p -> sin(4p[1]) + cos(3p[end]))
+        x̄s = scalar_field(lg)
+        SUITE["grid"][dim]["diffusion slab apply!"] =
+            @benchmarkable apply!($x̄s, $Ds, $ȳs, $lg, 1.0, 0.0)
+        SUITE["grid"][dim]["diffusion slab adjoint (β = 0)"] =
+            @benchmarkable apply_adjoint!($x̄s, $Ds, $ȳs, $lg, 1.0, 0.0)
+        SUITE["grid"][dim]["diffusion slab adjoint (β ≠ 0)"] =
+            @benchmarkable apply_adjoint!($x̄s, $Ds, $ȳs, $lg, 1.0, 0.5)
+    end
+end
+
 #--------------------------------------------------------------------------------# adjoint action
 
 # The adjoint gather is the one path where an accumulating (β ≠ 0) application does

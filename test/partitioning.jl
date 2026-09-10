@@ -1046,7 +1046,13 @@ end
             κ = set!(scalar_field(g), diff_coeff_fun)
             Dop = diffusion(g, κ; averaging=avg)
             x, y = rand(rng, n), rand(rng, n)
-            for L in (Dop, laplacian(g) * Dop, Dop * laplacian(g), 2.0 * Dop + identity_op())
+            # `laplacian(g) + Dop` puts the leaf SECOND under the Added, so the slab
+            # reduction folds a Diffusion contribution accumulated with β = true — the
+            # blending branch of its Interface transpose (issue #77).
+            for L in (
+                Dop, laplacian(g) * Dop, Dop * laplacian(g), 2.0 * Dop + identity_op(),
+                laplacian(g) + Dop,
+            )
                 D = dist_prepare(L, g, np)
                 @test dist_mul(D, x) == flatten(apply(L, _field(g, x)))
                 @test dot(dist_mul(D, x), y) ≈ dot(x, dist_adjoint(D, y)) rtol = 1e-12
@@ -1156,9 +1162,12 @@ end
             g -> laplacian(g) + laplacian(g),
             g -> laplacian(g) + derivative(g, 1),
             g -> (laplacian(g) * laplacian(g)) + laplacian(g),
-            # ...and the slab diffusion leaf, whose adjoint is the masked gather
-            # over a padded κ rather than the self-adjoint shortcut.
+            # ...and the slab diffusion leaf, whose adjoint is the interior stencil
+            # plus the ghost-plane gather over a padded κ (issue #77) rather than the
+            # self-adjoint shortcut.
             g -> diffusion(g, set!(scalar_field(g), diff_coeff_fun)) + laplacian(g),
+            # ...in both Added slots: as `node.b` the leaf accumulates with β = true.
+            g -> laplacian(g) + diffusion(g, set!(scalar_field(g), diff_coeff_fun)),
         )
             small = steady((16, 16), mk, dist_adjoint!)
             large = steady((32, 32), mk, dist_adjoint!)

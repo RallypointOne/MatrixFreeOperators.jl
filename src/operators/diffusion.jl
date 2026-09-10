@@ -701,16 +701,36 @@ end
 function apply_adjoint!(x̄::Field, D::Diffusion, ȳ::Field, g::AbstractGrid, α, β)
     # On an all-physical-BC grid the homogeneous fill makes the interior→interior map
     # symmetric, so the forward action of the conjugated leaf IS the adjoint. A forest
-    # leaf's Interface ghosts are external inputs: the mechanical transpose must scatter
-    # cotangents into them for halo_update_adjoint! to fold across blocks.
-    _has_interface(g) || return apply!(x̄, _conj_op(D), ȳ, g, α, β)
-    inv_h2 = _inv_spacing2(g)
-    κ = _conj_op(D).κ.data
-    avg = D.avg
-    gather = let κ = κ, inv_h2 = inv_h2, avg = avg
+    # leaf's or partition slab's Interface ghosts are external inputs: the mechanical
+    # transpose must scatter cotangents into them for halo_update_adjoint! / the slab
+    # reduction to fold across blocks.
+    Dc = _conj_op(D)
+    _has_interface(g) || return apply!(x̄, Dc, ȳ, g, α, β)
+    # The transpose is `adjoint_gather!` split by region (issue #77). Both face
+    # averages are symmetric, so every row of the transpose is the forward stencil on
+    # a ghost-zeroed ȳ: at an interior cell all neighbour reads are in bounds and the
+    # engine's bounds-masked sweep is pure overhead, so the interior IS `_apply_raw!`
+    # — the forward sweep of the conjugated leaf — and only the 2N ghost planes run
+    # the masked gather (their value is the weight the abutting interior row carries
+    # into the ghost). Same fold_bc! and the engine's exact α/β order, branch for
+    # branch, so the padded output is bit-identical (test/diffusion.jl); `α = true`
+    # below is the engine's unscaled β = 0 write, exact for any eltype.
+    gather = let κ = Dc.κ.data, inv_h2 = _inv_spacing2(g), avg = D.avg
         (u, J) -> _diff_adjoint_gather(u, κ, J, inv_h2, avg)
     end
-    return adjoint_gather!(x̄, ȳ, gather, α, β)
+    zero_ghosts!(ȳ)
+    if iszero(β)
+        _apply_raw!(x̄, Dc, ȳ, g, true, false)
+        adjoint_gather_ghosts!(x̄, ȳ, gather, α, β)
+        fold_bc!(x̄)
+        isone(α) || (x̄.data .*= α)
+    else
+        zero_bc_ghosts!(x̄)
+        _apply_raw!(x̄, Dc, ȳ, g, α, β)
+        adjoint_gather_ghosts!(x̄, ȳ, gather, α, β)
+        fold_bc!(x̄)
+    end
+    return x̄
 end
 
 function Adapt.adapt_structure(to, D::Diffusion)

@@ -37,13 +37,14 @@ distributed/AMR work later changes only the grid and that function, never operat
 - A stencil that reads **two** arrays must not unroll dimensions with `ntuple(Val(N)) do d`. With one array (`Laplacian`) the closure inlines fine; add a coefficient array and it stops inlining, the broadcast loses vectorization, and one 256² sweep goes from 33 µs to 260 µs with identical numerics. Unroll by recursion over `Val(D)` instead — see `_diff_axes` in `src/operators/diffusion.jl`. Same class of trap as a `Core.Box`: silent, correct, and only visible in a benchmark.
 - `prepare` is stateful and single-threaded: call it once per concurrent solve, not once globally.
 - GPU parity tests are skipped unless `MFO_TEST_GPU=true` and CUDA.jl is available (`test/device.jl` gates `test/device_gpu.jl`) — a green suite does not mean GPU paths ran.
-- Running one test file needs the test env, which `dev`s the package at `path=".."`:
+- Running one test file needs the test env, which `dev`s the package at `path=".."`. Pass `--check-bounds=yes` — `Pkg.test` and therefore CI always do, and without it a local run is not comparable:
   ```
-  julia --project=test -e '
+  julia --project=test --check-bounds=yes -e '
   using MatrixFreeOperators, Test, LinearAlgebra, Random, StaticArrays
   import Adapt, Enzyme, KernelAbstractions, Krylov, Mooncake
   include("test/test_utils.jl"); include("test/laplacian.jl")'
   ```
+- **`--check-bounds=yes` changes what allocates**, so every allocation assertion must be measured under it. Bounds checking blocks the SROA that elides a `Ref` or a `view` escaping a broadcast body: the same code measures 0 B without the flag and tens to thousands of bytes with it. This is not a platform difference — it reproduces on macOS/aarch64. A zero-allocation claim from a run without the flag is worth nothing, and a CI-only allocation failure is this before it is anything exotic.
 - `quarto render docs` runs the **full test suite** — `docs/pages/coverage.qmd` calls `generate_coverage(...; run_test=true)`. Rendering docs is not cheap.
 - The docs sidebar (`docs/_quarto.yml`) has a fixed shape: `pages/api.qmd` lives alone in its own `part: "API"`, between `part: "Docs"` and `part: "Resources"`. `docs/index.qmd` must open with `## Overview`, then `## Quickstart`.
 
