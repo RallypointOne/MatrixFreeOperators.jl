@@ -37,7 +37,7 @@ jobs:
       # Build docs
       - uses: julia-actions/setup-julia@v3
         with:
-          version: '1'
+          version: '1.12'
       - uses: julia-actions/cache@v3
       - name: Install docs dependencies
         run: julia --project=docs -e 'using Pkg; Pkg.develop(path="."); Pkg.instantiate()'

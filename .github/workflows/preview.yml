@@ -26,7 +26,7 @@ jobs:
       - uses: julia-actions/setup-julia@v3
         if: github.event.action != 'closed'
         with:
-          version: '1'
+          version: '1.12'
       - uses: julia-actions/cache@v3
         if: github.event.action != 'closed'
       - uses: quarto-dev/quarto-actions/setup@v2
