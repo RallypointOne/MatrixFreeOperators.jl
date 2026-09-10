@@ -64,7 +64,7 @@ end
 islinear(::ScalingOp) = true
 isconstant(::ScalingOp) = true
 isdiagonal(::ScalingOp) = true
-shares_exchange(::ScalingOp) = true      # pointwise: reads no ghosts at all
+shares_exchange(::ScalingOp) = true   # pointwise — reads no ghosts
 isselfadjoint(S::ScalingOp{<:Number}) = isreal(S.coeff)
 isselfadjoint(S::ScalingOp{<:Field}) = eltype(S.coeff.data) <: Real
 # Sound on refined forests too: a diagonal operator has no cross-block coupling.

@@ -358,10 +358,9 @@ end
 # rebuilding them in the sweep is type-stable and free). The combinator
 # structure mirrors forest.jl exactly — Added/Scaled/AdjointOp recurse at the forest
 # level so a nested adjoint still reaches halo_update_adjoint!'s cross-block fold,
-# and an Added whose operands all `shares_exchange` fills the halo once — and
-# additionally handles the PreparedAdjoint nodes _prepare_tree introduces (which,
-# like PreparedComposed, never share an exchange). (The residual per-leaf cost is
-# the stencil apply! itself; see the alloc-free-kernel note on PreparedForest.)
+# and a shareable Added exchanges once — and additionally handles the PreparedAdjoint
+# nodes _prepare_tree introduces. (The residual per-leaf cost is the stencil apply!
+# itself; see the alloc-free-kernel note on PreparedForest.)
 function _forest_capply!(
     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, P::PreparedForest, α, β
 )
