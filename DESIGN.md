@@ -823,7 +823,30 @@ pre-built.
     host sweeps (both within run-to-run noise on refined 2D 256²/32² and 3D
     32³/8³ forests) — so the choice was made on the smaller record and on the
     host walking the same flat buffers the batched device gather consumes, not
-    on a timing. The restriction's conservation guarantee is for *unweighted*
+    on a timing. Over that layout the host sweep runs each fill as **one fused
+    gather** — `dst[I] = Σₖ wₖ·srcₖ[I]` in a single broadcast over the dst slab,
+    the K term views built by recursion over `Val(K)` off the CSR row and carried
+    as an *immutable* broadcast scalar so the rule seam stays allocation-free
+    (#84). The retired form issued one broadcast per term (7 in 2D, 19 in 3D) over
+    a handful of cells each, and broadcast setup, not arithmetic, was the cost: on
+    a refined 32³ forest `halo_update!` goes 853 → 205 µs packed and 751 → 229 µs
+    per-block at 8³ blocks, and 3.0 → 0.67 ms at 4³ (min-of-N, alternating
+    processes, three rounds, ±4% spread). Term and accumulation order are
+    unchanged, so the result is bit-identical to the retired loop whenever the
+    field eltype is the schedule's weight type `T`, and — unlike that loop, which
+    rounded its partial sum into the field K−1 times — bit-identical to the device
+    CSR kernel in mixed precision too, which removes a pre-existing host/device
+    divergence. Two row invariants make the fusion legal and are asserted at
+    emission: every term window has the dst slab's shape, and every term window is
+    disjoint from the dst slab (the views ride a non-`AbstractArray` scalar, so
+    Base's `broadcast_unalias` never sees them). The price is compile latency — the
+    first `halo_update!` on a refined 3D forest roughly doubles, 0.55 → 1.06 s
+    per-block and 0.27 → 0.68 s packed — accepted for a 4× runtime win. The
+    adjoint's transposed scatter keeps its per-term form and is now the slower half
+    of the exchange (3–5× the forward): a fill's term windows collide on shared
+    source cells, so a dst-centric single pass would reorder the accumulation into
+    those cells; the bit-identical fused route is a source-centric transposed CSR
+    built at schedule time, scoped to issue #94. The restriction's conservation guarantee is for *unweighted*
     differences: a variable-coefficient flux weights each side of a
     coarse–fine face by an independently formed face κ, so `Diffusion` owns a
     κ-weighted coarse-ghost rewrite (issue #58) fed by weight-free `cfflux`
