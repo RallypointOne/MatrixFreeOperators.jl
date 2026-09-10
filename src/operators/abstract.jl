@@ -312,17 +312,14 @@ _gather_ghost_dims!(x̄, ȳ, gather, hn, ::Val, ::Tuple{}, α, β) = nothing
     end
 end
 
-# Scalar loop, not a broadcast: `view(x̄, box...)` plus `gather.(Ref(ȳ), idx)`
-# escapes a `Base.RefValue` and a boxed `GenericMemoryRef` per box per call (16 +
-# 32 B) and pushes the gather out of line, one call per ghost cell — visible only
-# under `--check-bounds=yes`, which is what `Pkg.test` runs and what blocks the
-# SROA that hides them elsewhere. That cost 136 B instead of 72 B per forest leaf
-# and broke test/forest_diffusion.jl's per-leaf budget on CI. The loop reads and
-# writes the same padded cells in the same order, so the α/β rounding order and
-# the bit-parity with `adjoint_gather!` are unchanged, and it measured faster
-# than the broadcast — the planes are O(surface), so vectorizing them buys
-# nothing. `@inbounds` is load-bearing off the checked build; do not drop it and
-# the bit-parity tests in test/diffusion.jl together.
+# Scalar loop, not a broadcast: writing through `view(x̄, box...)` with
+# `gather.(Ref(ȳ), idx)` escapes a `Ref` and a boxed `GenericMemoryRef` per box per
+# call and pushes the gather out of line, one call per ghost cell — 136 B against the
+# forward sweep's 72 B per forest leaf, which broke test/forest_diffusion.jl's budget
+# on CI (the `--check-bounds=yes` note in CLAUDE.md is why that is invisible locally).
+# Nothing is lost: the planes are O(surface), and the loop measured faster. Same cells
+# in the same order, so the α/β rounding and the bit-parity with `adjoint_gather!` are
+# structural. `@inbounds` is load-bearing off the checked build.
 function _gather_box!(x̄, ȳ, gather::F, box::NTuple{N,UnitRange{Int}}, α, β) where {N,F}
     if iszero(β)
         @inbounds for I in CartesianIndices(box)
