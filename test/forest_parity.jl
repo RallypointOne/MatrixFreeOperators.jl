@@ -249,15 +249,6 @@ struct NoTraitOp85 <: AbstractOperator end
             collect(interior(boundary_rhs(laplacian(g16), g16)))
     end
     @testset "Added shares one exchange per operand set (issue #85)" begin
-        # Interiors of two forest fields agree bit-for-bit (either layout).
-        interiors_equal(a, b) = all(
-            i -> interior(MFO.block(a, i)) == interior(MFO.block(b, i)),
-            1:MFO.nleaves(a.grid),
-        )
-        max_interior_diff(a, b) = maximum(
-            i -> maximum(abs, interior(MFO.block(a, i)) .- interior(MFO.block(b, i))),
-            1:MFO.nleaves(a.grid),
-        )
         # The un-shared reference: every operand applied through its own full forest
         # action (exchange + BC pass + sweep), accumulating — what the sum did before.
         function per_operand!(y, L::Added, x, g, α, β)
@@ -429,11 +420,12 @@ struct NoTraitOp85 <: AbstractOperator end
         @testset "adjoint of a sum: self-adjoint shortcut shares, general path unchanged" begin
             g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (16, 16); bc=bc)
             rng = Random.MersenneTwister(85)
-            randomize!(f) = (foreach(i -> (interior(MFO.block(f, i)) .= rand(rng, eltype(f), f.grid.blocksize...)), 1:MFO.nleaves(f.grid)); f)
-            ipdot(a, b) = sum(
-                i -> dot(collect(interior(MFO.block(a, i))), collect(interior(MFO.block(b, i)))),
-                1:MFO.nleaves(a.grid),
-            )
+            function randomize!(f)
+                for i in 1:MFO.nleaves(f.grid)
+                    interior(MFO.block(f, i)) .= rand(rng, eltype(f), f.grid.blocksize...)
+                end
+                return f
+            end
             # (label, root grid, blocksize, identity tolerance): the Float32 row
             # accumulates its inner products in single precision, so its tolerance
             # is loosened to match (measured ~2.5e-7 relative on this forest)
@@ -464,8 +456,8 @@ struct NoTraitOp85 <: AbstractOperator end
                     @test c.exchanges[] ≤ 1
                     isselfadjoint(L) && @test c.exchanges[] == 1
                     @test eltype(Lty) === T
-                    ip1 = ipdot(Lx, y)
-                    ip2 = ipdot(x, Lty)
+                    ip1 = interior_dot(Lx, y)
+                    ip2 = interior_dot(x, Lty)
                     @test abs(ip1 - ip2) ≤ tol * max(one(T), abs(ip1), abs(ip2))
                 end
             end

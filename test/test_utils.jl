@@ -28,6 +28,17 @@ function materialize(P)
     return A
 end
 
+_leaf_interior(f, i) = interior(MatrixFreeOperators.block(f, i))
+_nleaves(f) = MatrixFreeOperators.nleaves(f.grid)
+
+# Forest-field comparisons over interiors only — ghosts are scratch, so they stay
+# out of the equality check, the inner product, and the error norm alike.
+interiors_equal(a, b) = all(i -> _leaf_interior(a, i) == _leaf_interior(b, i), 1:_nleaves(a))
+interior_dot(a, b) =
+    sum(i -> dot(collect(_leaf_interior(a, i)), collect(_leaf_interior(b, i))), 1:_nleaves(a))
+max_interior_diff(a, b) =
+    maximum(i -> maximum(abs, _leaf_interior(a, i) .- _leaf_interior(b, i)), 1:_nleaves(a))
+
 # Exchange-counting view of a forest field. An AbstractBlockField that forwards
 # storage, layout, and per-leaf access to the wrapped field, and intercepts only
 # the two execution seams every forest action passes through — the inter-block
