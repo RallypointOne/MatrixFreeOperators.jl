@@ -251,9 +251,12 @@
         # interpolation stencil partitions unity and the restriction is
         # flux-matching, a constant field must come back constant on every
         # coarse–fine ghost the fills own — an independent check on the weights
-        # frozen into each CSR row.
+        # frozen into each CSR row. Both element types: the weights are formed as
+        # T inside the emitters, so Float32 is the check that no term weight is
+        # computed in Float64 and narrowed (which would still pass a Float64-only
+        # run) — tolerances scale with eps(T).
         rng = Random.MersenneTwister(23)
-        for N in (2, 3), T in (Float64,)
+        for N in (2, 3), T in (Float64, Float32)
             ext = ntuple(_ -> (zero(T), one(T)), N)
             bc = ntuple(d -> d == 1 ? (Dirichlet(), Neumann()) : (Periodic(), Periodic()), N)
             g = CartesianGrid(ext, ntuple(_ -> 16, N); bc=bc)
