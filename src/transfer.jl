@@ -355,12 +355,12 @@ function _run_copies!(store, lay::BlockLayout, copies::Vector{CopyDescriptor{N}}
 end
 
 # `fills` and `terms` are the phase's flat isbits buffers: each fill names its CSR
-# row `tfirst:tlast` into `terms`, so a term is one small inline load and no
-# per-fill record wider than a dst box is ever copied (a 3D interpolation row is
-# 19 terms — carrying them inside the fill costs a ~1.7 KB copy per iteration,
-# and unrolling the row bloats the broadcast body; both measured slower). Seed
-# with term 1, accumulate in term order — the arithmetic the device CSR kernel
-# reproduces term-for-term.
+# row `tfirst:tlast` into `terms`, so no per-fill record wider than a dst box is
+# ever copied (96 bytes in 3D against 1752 for a 19-term row held inline). That
+# is a structural choice, not a measured one — this loop times the same either
+# way, the broadcasts dominating the descriptor walk. Seed with term 1,
+# accumulate in term order — the arithmetic the device CSR kernel reproduces
+# term-for-term.
 function _run_fills!(
     store, lay::BlockLayout, fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}}
 ) where {N,T}

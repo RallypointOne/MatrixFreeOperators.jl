@@ -817,9 +817,13 @@ pre-built.
     (the broadcasts dominate; the pointer chase never showed). A fill's term
     count is a function of `N` alone (interpolation `1 + 2·3^(N−1)`, restriction
     `1 + 2^N` — fixed by the emitters' tensor-product loops, never by topology),
-    which the emitters assert; carrying the row inside the fill as an `NTuple`
-    instead was tried and rejected — a 1.7 KB record copied per 3D fill measured
-    slower, and unrolling the row bloats the broadcast body. The restriction's
+    which the emitters assert. Carrying the row inside the fill as an `NTuple`
+    was the first shape tried and is isbits too, but it makes a 3D interpolation
+    fill a 1752-byte record against 96, and it measures the same as CSR on the
+    host sweeps (both within run-to-run noise on refined 2D 256²/32² and 3D
+    32³/8³ forests) — so the choice was made on the smaller record and on the
+    host walking the same flat buffers the batched device gather consumes, not
+    on a timing. The restriction's
     conservation guarantee is for *unweighted* differences: a
     variable-coefficient flux weights each side of a
     coarse–fine face by an independently formed face κ, so `Diffusion` owns a
