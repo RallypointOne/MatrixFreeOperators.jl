@@ -131,13 +131,10 @@ Everything composes from here with the same pieces:
   for adjoint-based optimization;
 - `boundary_rhs(L, g)` — the lift vector for inhomogeneous BCs, folded into the
   solve RHS so the operator itself stays linear;
-- `apply!(du, L, u)` — the explicit time-stepping idiom: the operator acting on
-  fields directly, with no flat copies. `prepare` + `mul!` is the Krylov
-  boundary and pays for a copy into and out of a halo-padded scratch field on
-  every call, which a Krylov solve needs and an explicit integrator does not —
-  see `examples/heat_equation.jl`. `apply!` is the homogeneous linear part, so
-  with inhomogeneous BCs the RHS is `L(u) + b`: assemble `b = boundary_rhs(L, g)`
-  once and add `interior(b)` to `du` each stage;
+- `apply!(du, L, u)` — the explicit time-stepping idiom: the operator on fields
+  directly, without the flat copies `prepare` + `mul!` makes for Krylov (add
+  `boundary_rhs` per stage under inhomogeneous BCs) — see
+  `examples/heat_equation.jl`;
 - `linearize(F, u₀)` — the matrix-free Jacobian of a nonlinear operator such as
   `advection`, for implicit stepping and JFNK;
 - gradients through `apply` with respect to the input field *or* the coefficient
@@ -150,9 +147,8 @@ Everything composes from here with the same pieces:
 
 See the [documentation](https://RallypointOne.github.io/MatrixFreeOperators.jl/stable/)
 for the full operator catalog, GPU usage, the multi-GPU path, and AD examples.
-There is no OrdinaryDiffEq.jl / SciML integration yet: handing prepared
-operators to the SciML integrator stack is planned work, tracked in
-[#81](https://github.com/RallypointOne/MatrixFreeOperators.jl/issues/81).
+There is no OrdinaryDiffEq.jl / SciML integration yet
+([#81](https://github.com/RallypointOne/MatrixFreeOperators.jl/issues/81)).
 
 ## Comparison with related packages
 

@@ -21,10 +21,9 @@ same discipline throughout: it drives the operator tree itself so it can fill
 [`Interface`](@ref) ghost slabs from a neighbor exchange between applies, and
 anything that zeroed ghosts on the way in would silently discard exchanged data.
 
-The flat copies are the price of the Krylov boundary, not of the operator: a
-prepared operator also accepts [`Field`](@ref)s directly through
-`apply!(du, P, u)`, which runs the same buffer-carrying tree with no flat
-staging at all. That is the explicit time-stepping path — see [`apply!`](@ref).
+Those copies are the price of the Krylov boundary, not of the operator: a
+prepared operator also takes fields directly through `apply!(du, P, u)`, the
+explicit time-stepping path.
 
 The traits [`islinear`](@ref), [`isconstant`](@ref), [`isselfadjoint`](@ref) and
 [`isdiagonal`](@ref) are those of the operator handed to `prepare` — binding
@@ -98,17 +97,8 @@ concurrent solve. Requires `islinear(L)`; linearize nonlinear operators first
 with [`linearize`](@ref).
 
 `mul!` is the *solver* boundary: every call stages the flat vector into a
-halo-padded field and copies the result back out, and those two copies are a
-measurable fraction of a stencil sweep. Explicit time integrators do not need
-them — step at field level with [`apply!`](@ref) instead, either on the operator
-itself (`apply!(du, L, u)`; no per-cell allocation for leaves and `+`/scalar
-combinations of them) or on the prepared operator (`apply!(du, P, u)`; also free
-of per-cell allocation for `*`-composed and adjoint trees, whose intermediates
-`prepare` allocated once). Both keep a small fixed per-node residual — a few tens
-to a few thousand bytes depending on the tree, the dimension and the platform's
-codegen — so neither is promised to measure exactly zero. Keep `mul!` for Krylov. Either `apply!` is the homogeneous linear
-part: with inhomogeneous boundary data add the lift `b = boundary_rhs(L, g)` to
-`du` each stage, exactly as the solve folds it into its right-hand side.
+halo-padded field and back out again. Explicit integrators do not need that —
+step at field level with [`apply!`](@ref) instead.
 
 ### Examples
 
@@ -118,13 +108,12 @@ A = prepare(laplacian(g))
 b = flatten(set!(scalar_field(g), x -> sin(π * x[1])))
 u, stats = Krylov.minres(A, b)
 
-# explicit time stepping stays at field level — no flat copies:
+# explicit stepping stays at field level:
 uf = set!(scalar_field(g), x -> sin(π * x[1]))
 du = similar(uf)
-dt = 0.4 * spacing(g)[1]^2              # inside the forward-Euler stability bound
+dt = 0.4 * spacing(g)[1]^2              # forward-Euler bound
 apply!(du, A, uf)                       # or apply!(du, laplacian(g), uf)
-interior(uf) .+= dt .* interior(du)     # one forward-Euler step
-# with inhomogeneous BCs: b = boundary_rhs(laplacian(g), g); interior(du) .+= interior(b)
+interior(uf) .+= dt .* interior(du)
 ```
 """
 function prepare(L::AbstractOperator, x::AbstractField)
@@ -609,8 +598,7 @@ function boundary_rhs(L::Composed, x_proto::AbstractBlockField)
     return lift
 end
 
-# A PreparedForest is tied to the forest generation it was built on; both the flat
-# and the field-level entry points refuse to run on a regridded forest.
+# A PreparedForest is tied to the forest generation it was built on.
 function _require_prepared_current(P::PreparedForest)
     P.generation == P.grid.forest.generation[] || throw(
         ArgumentError(
@@ -621,10 +609,9 @@ function _require_prepared_current(P::PreparedForest)
     return nothing
 end
 
-# The field-level entry point hands user fields straight to the prepared tree, so
-# it is the one place a field on the wrong grid could run: halo_update! and the
-# stencil spacing would come from P.grid while apply_bc! reads x.grid. Refuse
-# anything that is not on the prototype's grid with the prototype's element type.
+# The field-level entry point hands user fields straight to the prepared tree, so a
+# field off the prototype would run halo/spacing from P.grid but ghost fills from
+# x.grid. Refuse it.
 function _require_prepared_match(P::_AnyPrepared, x::AbstractField, y::AbstractField)
     x.grid === P.grid || throw(
         ArgumentError(
@@ -693,20 +680,14 @@ end
     apply!(y::AbstractField, P::PreparedForest, x::AbstractField, α=true, β=false) -> y
 
 Apply a [`prepare`](@ref)d operator at field level: `y = α·P(x) + β·y` on the
-interior of `y`, running the buffer-carrying tree `prepare` built — so `*`-composed
-and adjoint nodes reuse their scratch — without the flat staging copies `mul!`
-performs. Ghosts of `x` are scratch (overwritten by halo/BC fills), ghosts of `y`
-are left alone, exactly as for [`apply!`](@ref) on an unprepared operator.
+interior of `y`, reusing the scratch `prepare` bound (so `*`-composed and adjoint
+nodes do not reallocate) and skipping the flat staging copies `mul!` performs.
+Ghost handling and the homogeneous-BC caveat are those of [`apply!`](@ref) on an
+unprepared operator.
 
-This is the explicit time-stepping idiom: `prepare` once, then `apply!(du, P, u)`
-per stage, and keep `mul!` for the Krylov boundary. Like every `apply!`, this is
-the homogeneous linear part; with inhomogeneous boundary data add
-`interior(boundary_rhs(L, g))` to `du` each stage (see [`boundary_rhs`](@ref)). `x` and `y` must live on the
-grid `prepare` was given (`===` to `P.grid`: structural equality for an isbits
-`CartesianGrid`, identity for a `BlockForest`) and carry the prototype's element
-type; anything else throws an `ArgumentError` rather than running a hybrid of two
-grids — halo and spacing from `P.grid`, ghost fills from `x.grid`. The forest form also throws if the forest was
-regridded since `prepare`, as `mul!` does.
+`prepare` once, then `apply!(du, P, u)` per explicit stage; keep `mul!` for
+Krylov. `x` and `y` must be on `P.grid` with the prototype's element type, and
+the forest form additionally rejects a regridded forest.
 """
 function apply!(y::Field, P::PreparedOperator, x::Field, α::Number=true, β::Number=false)
     _require_prepared_match(P, x, y)

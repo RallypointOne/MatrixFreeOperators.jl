@@ -659,22 +659,14 @@ cut-plane ghosts at zero or the mirror — `κ_I/2` face coefficients under
 
 **OrdinaryDiffEq.jl:** you do **not** need SciMLOperators to use it.
 - *Explicit* stepping (RK4, SSPRK, …): the RHS is the **field-level**
-  `apply!(du, L, u)` — never the flat `mul!`, whose
-  `flat_to_interior!`/`interior_to_flat!` staging is a Krylov cost an explicit
-  integrator has no reason to pay (#87). A `PreparedOperator` accepts fields
-  through the same `apply!(du, P, u)` so `*`-composed trees step allocation-free
-  too. Both are the homogeneous linear part (§10.6's linear/affine split): with
-  inhomogeneous boundary data the explicit RHS is `L(u) + b`, with
-  `b = boundary_rhs(L, g)` assembled once and added per stage — dropping it
-  silently integrates the homogeneous problem. Today this idiom is for a
-  **hand-rolled** stepper over `Field`s (`examples/heat_equation.jl`,
-  `rk4_field!` in `test/ode_rhs.jl`): `Field` is not an `AbstractArray` and has
-  no broadcast/`norm`, so it cannot be an OrdinaryDiffEq state, and a
-  flat-state RHS adapter `f!(du,u,p,t)` for `ODEProblem` would have to stage
-  into and out of a padded field per call — exactly the copies the idiom
-  avoids. The copy-free path into OrdinaryDiffEq needs either `Field` to grow
-  the array/broadcast interface or the #81 extension to own the padded state;
-  until then there is no explicit-solver adapter to hand to `ODEProblem`.
+  `apply!(du, L, u)` (or `apply!(du, P, u)` on a prepared tree), not the flat
+  `mul!`, whose staging is a Krylov cost an explicit integrator has no reason to
+  pay (#87). It is the homogeneous linear part (§10.6): with inhomogeneous data
+  the RHS is `L(u) + b`, `b = boundary_rhs(L, g)`. This is a **hand-rolled**
+  stepper over `Field`s, not an `ODEProblem` — `Field` is not an `AbstractArray`,
+  so it cannot be an OrdinaryDiffEq state, and a flat-state `f!(du,u,p,t)`
+  adapter would stage back into a padded field per call. A copy-free path needs
+  `Field` to grow the array interface or the #81 extension to own the state.
 - *Implicit/stiff* solvers (needed for diffusion): the idiomatic way to give
   OrdinaryDiffEq a **matrix-free Jacobian** is `ODEFunction(f; jac_prototype = J)`
   where `J` is a SciML-style lazy operator. Here `J` is the linear

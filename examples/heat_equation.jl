@@ -1,9 +1,7 @@
 # 2D heat equation ∂u/∂t = α∇²u on (0,1)², homogeneous Dirichlet, explicit Euler.
 #
-# The stepper works at field level: `apply!(du, L, u)` is the RHS, and the Euler
-# update touches `interior(u)`. `prepare` + `mul!` is the Krylov boundary — it
-# copies the flat vector into and out of a halo-padded scratch field on every
-# call, a cost an explicit integrator has no reason to pay.
+# Steps at field level: `apply!` is the RHS, no flat copies (`prepare` + `mul!` is
+# the Krylov boundary).
 #
 # Run with: julia --project=examples examples/heat_equation.jl
 
@@ -27,7 +25,7 @@ u0 = set!(scalar_field(g), x ->
 interior(u0) ./= maximum(interior(u0))
 
 function step!(u, du, L, αdt)
-    apply!(du, L, u)                        # du = ∇²u on the interior, no flat copies
+    apply!(du, L, u)                        # du = ∇²u
     interior(u) .+= αdt .* interior(du)
     return nothing
 end
