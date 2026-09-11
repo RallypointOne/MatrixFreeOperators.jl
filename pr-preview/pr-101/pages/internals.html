@@ -1,0 +1,2033 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Internals – MatrixFreeOperators.jl</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="../site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="../site_libs/quarto-nav/headroom.min.js"></script>
+<script src="../site_libs/clipboard/clipboard.min.js"></script>
+<script src="../site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="../site_libs/quarto-search/fuse.min.js"></script>
+<script src="../site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="../">
+<link href="../pages/api.html" rel="next">
+<link href="../pages/distributed.html" rel="prev">
+<script src="../site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="../site_libs/quarto-html/popper.min.js"></script>
+<script src="../site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="../site_libs/quarto-html/anchor.min.js"></script>
+<link href="../site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="../site_libs/quarto-html/quarto-syntax-highlighting-095245003bb80bd2beb305de39928752.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="../site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="../site_libs/bootstrap/bootstrap-02a8592a4cf3893cf56a8581db556df5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "/"
+  ],
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "Search  (/)",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script defer="" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-chtml.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+<link rel="stylesheet" href="../assets/styles.css">
+</head>
+
+<body class="nav-sidebar floating nav-fixed quarto-light">
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+    <nav class="navbar navbar-expand-lg " data-bs-theme="dark">
+      <div class="navbar-container container-fluid">
+      <div class="navbar-brand-container mx-auto">
+    <a href="https://rallypoint1.com" class="navbar-brand navbar-brand-logo">
+    <img src="https://github.com/user-attachments/assets/f7216152-0d6e-4459-8e65-b9ed59421638" alt="" class="navbar-logo light-content">
+    <img src="https://github.com/user-attachments/assets/f7216152-0d6e-4459-8e65-b9ed59421638" alt="" class="navbar-logo dark-content">
+    </a>
+    <a class="navbar-brand" href="https://rallypoint1.com">
+    <span class="navbar-title">MatrixFreeOperators.jl</span>
+    </a>
+  </div>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarCollapse" aria-controls="navbarCollapse" role="menu" aria-expanded="false" aria-label="Toggle navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+  <span class="navbar-toggler-icon"></span>
+</button>
+          <div class="collapse navbar-collapse" id="navbarCollapse">
+            <ul class="navbar-nav navbar-nav-scroll ms-auto">
+  <li class="nav-item">
+    <a class="nav-link" href="https://github.com/RallypointOne/MatrixFreeOperators.jl/stargazers"> <i class="bi bi-star" role="img">
+</i> 
+<span class="menu-text">Star</span></a>
+  </li>  
+  <li class="nav-item compact">
+    <a class="nav-link" href="https://github.com/RallypointOne/MatrixFreeOperators.jl"> <i class="bi bi-github" role="img">
+</i> 
+<span class="menu-text"></span></a>
+  </li>  
+</ul>
+          </div> <!-- /navcollapse -->
+            <div class="quarto-navbar-tools">
+</div>
+      </div> <!-- /container-fluid -->
+    </nav>
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/internals.html"><span class="chapter-title">Internals</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article page-navbar">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Docs</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../index.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">MatrixFreeOperators.jl</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/autodiff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Automatic Differentiation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/amr.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Adaptive Mesh Refinement</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/benchmark.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Niederer Benchmark</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/multigrid.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Geometric Multigrid</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/distributed.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Distributed Multi-GPU Solves</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/internals.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Internals</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true">
+ <span class="menu-text">API</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-2" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-2" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/api.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">API</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true">
+ <span class="menu-text">Resources</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-3" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-3" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/coverage.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Coverage</span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul class="collapse">
+  <li><a href="#how-to-read-this-page" id="toc-how-to-read-this-page" class="nav-link active" data-scroll-target="#how-to-read-this-page">How to read this page</a></li>
+  <li><a href="#pseudocode-notation" id="toc-pseudocode-notation" class="nav-link" data-scroll-target="#pseudocode-notation">Pseudocode notation</a></li>
+  <li><a href="#vocabulary" id="toc-vocabulary" class="nav-link" data-scroll-target="#vocabulary">Vocabulary</a></li>
+  <li><a href="#where-the-code-lives" id="toc-where-the-code-lives" class="nav-link" data-scroll-target="#where-the-code-lives">Where the code lives</a></li>
+  <li><a href="#apply-fill-the-ghosts-then-sweep-the-stencil" id="toc-apply-fill-the-ghosts-then-sweep-the-stencil" class="nav-link" data-scroll-target="#apply-fill-the-ghosts-then-sweep-the-stencil">1 — <code>apply!</code>: fill the ghosts, then sweep the stencil</a></li>
+  <li><a href="#adjoints-a-gather-then-fold_bc" id="toc-adjoints-a-gather-then-fold_bc" class="nav-link" data-scroll-target="#adjoints-a-gather-then-fold_bc">2 — Adjoints: a gather, then <code>fold_bc!</code></a></li>
+  <li><a href="#the-solver-boundary-prepare-and-flat-mul" id="toc-the-solver-boundary-prepare-and-flat-mul" class="nav-link" data-scroll-target="#the-solver-boundary-prepare-and-flat-mul">3 — The solver boundary: <code>prepare</code>, and flat <code>mul!</code></a></li>
+  <li><a href="#linearize-a-nonlinear-operator-becomes-a-krylov-ready-jacobian" id="toc-linearize-a-nonlinear-operator-becomes-a-krylov-ready-jacobian" class="nav-link" data-scroll-target="#linearize-a-nonlinear-operator-becomes-a-krylov-ready-jacobian">4 — <code>linearize</code>: a nonlinear operator becomes a Krylov-ready Jacobian</a></li>
+  <li><a href="#forest-topology-keys-the-leaf-vector-and-the-generation-counter" id="toc-forest-topology-keys-the-leaf-vector-and-the-generation-counter" class="nav-link" data-scroll-target="#forest-topology-keys-the-leaf-vector-and-the-generation-counter">5 — Forest topology: keys, the leaf vector, and the generation counter</a></li>
+  <li><a href="#block-field-layouts-one-contract-two-storages" id="toc-block-field-layouts-one-contract-two-storages" class="nav-link" data-scroll-target="#block-field-layouts-one-contract-two-storages">6 — Block field layouts: one contract, two storages</a></li>
+  <li><a href="#forest-apply-one-exchange-one-bc-pass-then-ordinary-stencils" id="toc-forest-apply-one-exchange-one-bc-pass-then-ordinary-stencils" class="nav-link" data-scroll-target="#forest-apply-one-exchange-one-bc-pass-then-ordinary-stencils">7 — Forest <code>apply!</code>: one exchange, one BC pass, then ordinary stencils</a></li>
+  <li><a href="#regrid-a-topology-edit-then-data-motion-keyed-by-identity" id="toc-regrid-a-topology-edit-then-data-motion-keyed-by-identity" class="nav-link" data-scroll-target="#regrid-a-topology-edit-then-data-motion-keyed-by-identity">8 — <code>regrid!</code>: a topology edit, then data motion keyed by identity</a></li>
+  <li><a href="#multigrid-a-tuple-of-levels-and-one-recursive-v-cycle" id="toc-multigrid-a-tuple-of-levels-and-one-recursive-v-cycle" class="nav-link" data-scroll-target="#multigrid-a-tuple-of-levels-and-one-recursive-v-cycle">9 — Multigrid: a tuple of levels, and one recursive V-cycle</a></li>
+  <li><a href="#distributed-slabs-and-one-exchange-in-the-middle-of-the-tree" id="toc-distributed-slabs-and-one-exchange-in-the-middle-of-the-tree" class="nav-link" data-scroll-target="#distributed-slabs-and-one-exchange-in-the-middle-of-the-tree">10 — Distributed: slabs, and one exchange in the middle of the tree</a></li>
+  <li><a href="#rules-for-changing-this-code" id="toc-rules-for-changing-this-code" class="nav-link" data-scroll-target="#rules-for-changing-this-code">Rules for changing this code</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default"><nav class="quarto-page-breadcrumbs quarto-title-breadcrumbs d-none d-lg-block" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="../index.html">Docs</a></li><li class="breadcrumb-item"><a href="../pages/internals.html"><span class="chapter-title">Internals</span></a></li></ol></nav>
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-title">Internals</span></h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>This page is for someone opening <code>src/</code> for the first time. It walks the main operations of the package — applying an operator, taking an adjoint, crossing into a Krylov solver, editing a forest, moving field data across a regrid — and for each one gives the entry point, the call sequence, and <strong>the concrete type of everything that exists at each step</strong>.</p>
+<p>It is deliberately the only page written this way. <a href="../pages/api.html">API</a> is generated from docstrings and has the signatures. <code>DESIGN.md</code> is the record of <em>decisions and rationale</em> — why the package is shaped like this, what was rejected, what is deferred. The sibling pages (<a href="../pages/amr.html">AMR</a>, <a href="../pages/multigrid.html">Geometric Multigrid</a>, <a href="../pages/distributed.html">Distributed Multi-GPU Solves</a>, <a href="../pages/autodiff.html">Automatic Differentiation</a>) tell the user-facing story of each subsystem: what it means and when to reach for it. This page has call sequences and types, and nothing else.</p>
+<section id="how-to-read-this-page" class="level2">
+<h2 class="anchored" data-anchor-id="how-to-read-this-page">How to read this page</h2>
+<p>Every section has the same five parts: a lede naming the one concrete example it traces, a metadata line pointing at the entry point and the source and test files, a <strong>call diagram</strong> (who calls whom), a <strong>type trace</strong> (what object exists at each step), then step commentary and a closing paragraph on what the operation throws and what it invalidates.</p>
+<p>The call diagram and the type trace carry different information on purpose. The diagram is the control flow; the trace is the data. Read the diagram to learn the shape, the trace to learn the types.</p>
+<p>No line numbers appear anywhere on this page — they rot faster than anything else, and a symbol name plus the <em>Source</em> line is enough to <code>grep</code>. Each exported symbol is linked to the API page once, on its first mention; everything else is in bare backticks. Where this page and the tests disagree, the tests are right and this page is a bug.</p>
+</section>
+<section id="pseudocode-notation" class="level2">
+<h2 class="anchored" data-anchor-id="pseudocode-notation">Pseudocode notation</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 50%">
+<col style="width: 50%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Mark</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>name::ConcreteType = …</code></td>
+<td>a binding, with its concrete type named — never elided to an abstract one</td>
+</tr>
+<tr class="even">
+<td><code>f(x) -&gt; T</code></td>
+<td>returns a freshly built <code>T</code></td>
+</tr>
+<tr class="odd">
+<td><code>f!(x)</code></td>
+<td>mutates <code>x</code> in place (Julia’s own convention; no extra mark)</td>
+</tr>
+<tr class="even">
+<td><code># ALLOC</code></td>
+<td>allocates, naming what and how many</td>
+</tr>
+<tr class="odd">
+<td><code># MUTATES x</code></td>
+<td>mutates in place where the name does not end in <code>!</code></td>
+</tr>
+<tr class="even">
+<td><code># SAME</code></td>
+<td>hands back the object it was given — identity preserved, callers’ references stay valid</td>
+</tr>
+<tr class="odd">
+<td><code># THROWS T</code></td>
+<td>a guard, and the exception type it raises</td>
+</tr>
+<tr class="even">
+<td><code># HOLDS:</code></td>
+<td>the invariant that is true once this step returns</td>
+</tr>
+<tr class="odd">
+<td><code># STALE:</code></td>
+<td>what this step invalidates</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="vocabulary" class="level2">
+<h2 class="anchored" data-anchor-id="vocabulary">Vocabulary</h2>
+<p>Six terms recur in every section. They are defined once, here.</p>
+<p><strong>The two index spaces.</strong> Every field’s storage is <em>halo-padded</em>: its array has <code>padded_size(g)</code> entries, of which <code>local_size(g)</code> are owned cells and the rest are ghosts. <code>interior(g)</code> returns the <code>CartesianIndices</code> of the owned cells <em>in padded coordinates</em>, and <code>interior(f)</code> returns the matching <code>SubArray</code>. So a stencil at an owned cell on the low face reads <code>I - δ</code>, which is a ghost. Every operator body indexes the padded array and writes only the interior.</p>
+<p><strong>Ghost cells are scratch.</strong> They are filled by <code>halo_update!</code> and <a href="../pages/api.html"><code>apply_bc!</code></a> at the top of each <code>apply!</code>, so any <code>apply!</code> may clobber its <em>input’s</em> ghosts — that is in the contract, not a bug. Fields the package hands you ship with zeroed ghosts (<code>allocate_output</code> calls <code>zero_ghosts!</code>), and a nonzero ghost cotangent arriving at an adjoint is a bug upstream.</p>
+<p><strong>Interior-only flat vectors.</strong> The Krylov boundary is a flat <code>AbstractVector</code> spanning owned degrees of freedom only. <a href="../pages/api.html"><code>flatten</code></a>, <code>flat_to_interior!</code> and <code>interior_to_flat!</code> cross it. Ghost cells are never solver unknowns, and the flat side cannot address one: the length comes from <code>local_size</code>, and every copy goes through an <code>interior</code> view.</p>
+<p><strong>The <code>apply!</code> prologue.</strong> Each stencil leaf is two pieces: <code>apply!</code> fills ghosts (<code>halo_update!</code> then <code>apply_bc!</code>) and then calls <code>_apply_raw!</code>, the ghost-trusting kernel. The split exists because some callers must <em>not</em> re-run the prologue — <code>boundary_rhs</code> plants inhomogeneous ghost offsets that <code>apply_bc!</code> would immediately overwrite, and the distributed driver stages exchanged ghosts from its neighbours the same way. Those callers reach past <code>apply!</code> to <code>_apply_raw!</code>.</p>
+<p><strong>Traits are declared, never assumed.</strong> <a href="../pages/api.html"><code>islinear</code></a>, <a href="../pages/api.html"><code>isconstant</code></a>, <a href="../pages/api.html"><code>isselfadjoint</code></a>, <a href="../pages/api.html"><code>isdiagonal</code></a> and <a href="../pages/api.html"><code>shares_exchange</code></a> all default to <code>false</code>. Leaves opt in; combinators propagate explicitly. The same rule governs adjoints: there is no generic <code>apply!</code> and no generic <code>apply_adjoint!</code>, so an operator that forgot to declare one produces a <code>MethodError</code> or an <code>ArgumentError</code>. A forgotten declaration must degrade to an error, never to a wrong number. This single idea answers most “why is there no fallback here?” questions below.</p>
+<p><strong>Generations and staleness.</strong> A <code>Forest</code> carries a <code>generation</code> counter. Every <a href="../pages/api.html"><code>BlockField</code></a> and <a href="../pages/api.html"><code>PreparedForest</code></a> stamps the generation it was built against, and <code>_require_current</code> compares the stamp on use. Editing the topology bumps the counter, so “invalidated” here always means <em>throws on next use</em>, never <em>silently reads wrong-shaped storage</em>.</p>
+</section>
+<section id="where-the-code-lives" class="level2">
+<h2 class="anchored" data-anchor-id="where-the-code-lives">Where the code lives</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>File</th>
+<th>Owns</th>
+<th>Section</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Foundation</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>src/Grids.jl</code></td>
+<td><code>AbstractGrid</code>, <code>CartesianGrid</code>, <code>interior</code>, <code>coarsen</code>, the <code>halo_update!</code> seam</td>
+<td>§1</td>
+</tr>
+<tr class="odd">
+<td><code>src/boundaries.jl</code></td>
+<td><code>AbstractBC</code> and its four leaves, <code>apply_bc!</code>, <code>fold_bc!</code>, the ghost fill/fold primitives</td>
+<td>§1, §2</td>
+</tr>
+<tr class="even">
+<td><code>src/Fields.jl</code></td>
+<td><code>AbstractField</code>, <code>Field</code>, the transfer-policy singletons, the flat-vector boundary</td>
+<td>§1, §3</td>
+</tr>
+<tr class="odd">
+<td><strong>Operator algebra</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>src/operators/abstract.jl</code></td>
+<td><code>AbstractOperator</code>, the five traits, <code>AdjointOp</code>, the adjoint gather engine</td>
+<td>§1, §2</td>
+</tr>
+<tr class="odd">
+<td><code>src/operators/algebra.jl</code></td>
+<td><code>Scaled</code>, <code>Added</code>, <code>Composed</code> and their trait and adjoint propagation</td>
+<td>§2</td>
+</tr>
+<tr class="even">
+<td><code>src/operators/laplacian.jl</code>, <code>derivative.jl</code>, <code>gradient.jl</code>, <code>divergence.jl</code>, <code>scaling.jl</code>, <code>diffusion.jl</code>, <code>advection.jl</code></td>
+<td>one leaf each: the struct, <code>_apply_raw!</code>, the declared adjoint, the trait declarations</td>
+<td>§1</td>
+</tr>
+<tr class="odd">
+<td><code>src/operators/diagonal.jl</code></td>
+<td><code>operator_diagonal</code> per leaf and its combinator rules</td>
+<td>§9</td>
+</tr>
+<tr class="even">
+<td><code>src/operators/linearize.jl</code></td>
+<td><code>LinearizedOp</code>, the JVP backend tags</td>
+<td>§4</td>
+</tr>
+<tr class="odd">
+<td><strong>Solver boundary</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>src/linalg.jl</code></td>
+<td><code>prepare</code>, <code>PreparedOperator</code>, <code>PreparedForest</code>, the tree rewrite, flat <code>mul!</code>, <code>boundary_rhs</code></td>
+<td>§3</td>
+</tr>
+<tr class="odd">
+<td><strong>Forest</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>src/topology.jl</code></td>
+<td><code>LeafKey</code>, <code>Forest</code>, Morton ordering, <code>refine!</code>/<code>coarsen!</code>/<code>balance!</code></td>
+<td>§5</td>
+</tr>
+<tr class="odd">
+<td><code>src/BlockForest.jl</code></td>
+<td><code>BlockForest</code>, per-leaf geometry, <code>leaf_grid</code></td>
+<td>§5</td>
+</tr>
+<tr class="even">
+<td><code>src/blockfield.jl</code>, <code>src/packedfield.jl</code></td>
+<td><code>BlockField</code>, <code>PackedBlockField</code>, the layout tags, <code>pack</code>/<code>unpack</code></td>
+<td>§6</td>
+</tr>
+<tr class="odd">
+<td><code>src/schedule.jl</code></td>
+<td>the exchange descriptor structs and their device twins</td>
+<td>§7</td>
+</tr>
+<tr class="even">
+<td><code>src/transfer.jl</code>, <code>src/transfer_kernels.jl</code></td>
+<td>schedule construction, the forest halo and BC sweeps, their transposes</td>
+<td>§7</td>
+</tr>
+<tr class="odd">
+<td><code>src/operators/forest.jl</code>, <code>forest_packed.jl</code></td>
+<td>per-leaf and packed-kernel forest sweeps</td>
+<td>§7</td>
+</tr>
+<tr class="even">
+<td><code>src/amr.jl</code></td>
+<td><code>regrid!</code> and the three transfer kernels</td>
+<td>§8</td>
+</tr>
+<tr class="odd">
+<td><strong>Solvers and partitioning</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="even">
+<td><code>src/multigrid.jl</code>, <code>src/operators/restriction.jl</code>, <code>prolongation.jl</code></td>
+<td>the transfer pair, the level hierarchy, the V-cycle</td>
+<td>§9</td>
+</tr>
+<tr class="odd">
+<td><code>src/partitioning.jl</code>, <code>src/distributed.jl</code></td>
+<td>slab partitioning, the distributability guards, the distributed tree</td>
+<td>§10</td>
+</tr>
+<tr class="even">
+<td><strong>Extensions</strong></td>
+<td></td>
+<td></td>
+</tr>
+<tr class="odd">
+<td><code>ext/</code></td>
+<td>Enzyme rules, the MDLA multi-GPU backend, Reactant. The core depends on none of them</td>
+<td>§7, §10</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="apply-fill-the-ghosts-then-sweep-the-stencil" class="level2">
+<h2 class="anchored" data-anchor-id="apply-fill-the-ghosts-then-sweep-the-stencil">1 — <code>apply!</code>: fill the ghosts, then sweep the stencil</h2>
+<p>Everything else in the package composes this one operation. The example traced here is <code>laplacian(g) * u</code> where <code>g::CartesianGrid{2,Float64,…}</code> carries homogeneous Dirichlet faces and <code>u::Field{Center,Matrix{Float64},…}</code>.</p>
+<p><em>Entry point</em> <code>apply(L, x) -&gt; Field</code>, <code>apply!(y, L, x, g, α, β) -&gt; y</code> · <em>Source</em> <code>src/operators/abstract.jl</code>, <code>src/Grids.jl</code>, <code>src/boundaries.jl</code>, <code>src/operators/laplacian.jl</code> · <em>Tests</em> <code>test/operators_abstract.jl</code>, <code>test/laplacian.jl</code>, <code>test/boundaries.jl</code></p>
+<pre><code>  L * x   or   L(x)
+    │
+    ▼
+  ┌──────────────────────────────────────────────┐
+  │ apply(L, x)                                  │  the allocating entry:
+  │   y = allocate_output(L, x)                  │  similar(x) + zero_ghosts!
+  └──────────────────────────────────────────────┘
+    │
+    ▼
+  ┌──────────────────────────────────────────────┐
+  │ apply!(y, L, x, g)  -&gt;  (…, α=true, β=false) │  the in-place 6-arg form
+  └──────────────────────────────────────────────┘
+    │
+    ├──▶ halo_update!(x, g)      no-op on a CartesianGrid (forest: §7)
+    │
+    ├──▶ apply_bc!(x)            homogeneous ghost fill, dims 1:N
+    │
+    └──▶ _apply_raw!(y, L, x, g, α, β)
+           interior(y) .= α .* stencil.(x.data, interior(g)) [.+ β .* interior(y)]</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb2"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="fu">apply</span>(L<span class="op">::</span><span class="dt">Laplacian</span>, x<span class="op">::</span><span class="dt">Field</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>  y<span class="op">::</span><span class="dt">Field{Center,Matrix{Float64},CartesianGrid{2,…}} </span><span class="op">=</span> <span class="fu">allocate_output</span>(L, x)   <span class="co"># ALLOC 1</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>       <span class="fu">similar</span>(x) <span class="op">-&gt;</span> <span class="fu">Field</span>(<span class="fu">similar</span>(x.data), x.grid); <span class="fu">zero_ghosts!</span>(y)</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">apply!</span>(y, L, x, x.grid)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>    <span class="fu">apply!</span>(y, L, x, g, <span class="cn">true</span>, <span class="cn">false</span>)                        <span class="co"># α=true, β=false</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>      <span class="fu">halo_update!</span>(x, g)                        <span class="co"># SAME — identity on a CartesianGrid</span></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a>      <span class="fu">apply_bc!</span>(x)                              <span class="co"># MUTATES x.data ghost layers</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>        <span class="fu">_apply_bc_dims!</span>(x.data, g, <span class="fu">Val</span>(<span class="fl">1</span>), g.bc)  <span class="co">#   dims ascend 1:N</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>          <span class="fu">_fill_ghost!</span>(data, <span class="fu">Val</span>(D), ghost, bc, source)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>                                    <span class="co">#   ghost .= _bc_sign(bc) .* source; Periodic +1 wrap,</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>                                    <span class="co">#   Dirichlet -1 mirror, Neumann +1 mirror,</span></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>                                    <span class="co">#   Interface skipped entirely</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>      <span class="co"># HOLDS: every ghost x needs now carries its homogeneous value</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>      <span class="fu">_apply_raw!</span>(y, L, x, g, <span class="cn">true</span>, <span class="cn">false</span>)</span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>        inv_h2<span class="op">::</span><span class="dt">NTuple{2,Float64} </span><span class="op">=</span> <span class="fu">_inv_spacing2</span>(g)       <span class="co"># stack, no heap</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>        <span class="fu">interior</span>(y) <span class="op">.=</span> <span class="fu">_lap_at</span>.(<span class="fu">Ref</span>(x.data), <span class="fu">interior</span>(g), <span class="fu">Ref</span>(inv_h2))</span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>                                                           <span class="co"># MUTATES interior(y) only</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>  <span class="co"># HOLDS: y's own ghosts untouched; x's interior untouched</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> y</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. The allocating entry is a thin shell.</strong> <code>L * x</code> and <code>L(x)</code> both land on <code>apply</code>, which calls <code>allocate_output</code> and then the in-place form. <code>allocate_output</code> is where tensor rank is decided: the default is <code>similar(x)</code>, <code>Gradient</code> returns <code>similar(x, SVector{N,T})</code>, and <code>Divergence</code> returns <code>similar(x, T)</code> — each throwing an <code>ArgumentError</code> if handed the wrong input rank. Operators carry no rank parameter; the <em>element type</em> carries it.</p>
+<p><strong>2. <code>halo_update!</code> is a seam, not a function.</strong> On any <a href="../pages/api.html"><code>AbstractGrid</code></a> it is <code>halo_update!(x, ::AbstractGrid) = x</code> — a literal identity. The package has exactly one overload, for <code>BlockForest</code> (§7). Even a <a href="../pages/api.html"><code>partition_grid</code></a> slab, whose cut faces are marked <code>Interface</code>, takes the identity: the distributed driver stages a neighbour’s planes into the prepared input buffer instead of calling through here (§10). The seam exists so operator bodies are written once and distributed and AMR change only what the grid <em>is</em> and what this function <em>does</em>.</p>
+<p><strong>3. <code>apply_bc!</code> fills only the homogeneous part.</strong> It walks dimensions in ascending order <code>1:N</code> on a shrinking BC tuple, and for each halo layer writes <code>ghost = sign · source</code>: <code>+1</code> and a wrapped source for <code>Periodic</code>, <code>-1</code> and a mirrored source for <code>Dirichlet</code>, <code>+1</code> and a mirrored source for <code>Neumann</code>, and nothing at all for <code>Interface</code>. Ascending order is what makes corner ghosts consistent ghost-of-ghost values. Because only the homogeneous part is applied, <code>islinear(L)</code> really does imply <code>L(0) = 0</code>; inhomogeneous boundary data enters the system separately, through <code>boundary_rhs</code> (§3).</p>
+<p><strong>4. The leaf body is an array-level broadcast.</strong> <code>_lap_at</code> reads <code>x.data</code> — the <em>whole padded array</em> — at <code>interior(g)</code>, so the <code>I ± δ</code> taps at a face cell land on the ghosts step 3 just wrote. It writes through <code>interior(y)</code>, a <code>SubArray</code>, so <code>y</code>’s ghosts are never touched and the <code>β ≠ 0</code> accumulating form is safe. There is no device branch and no kernel: the same broadcast runs on a <code>Matrix</code> and on a <code>CuArray</code>, and Enzyme differentiates it without a rule. KernelAbstractions <code>@kernel</code> is the per-operator escape hatch, not the default.</p>
+<p><strong>5. Combinators are the same shape.</strong> <code>Scaled</code> folds its factor into <code>α</code> and costs nothing. <code>Added</code> runs both operands, the second with <code>β = true</code> so it accumulates. <code>Composed</code> allocates an intermediate, applies <code>b</code> into it, then applies <code>a</code> — passing <code>tmp.grid</code> rather than <code>g</code>, because a transfer chain changes grid between factors. On a single grid <code>Added</code> therefore runs the prologue twice over the same <code>x</code>; collapsing that to one exchange is a forest optimisation (§7), where it is worth something.</p>
+<p><strong>Throws and invalidates.</strong> Nothing here invalidates state. There is <strong>no generic six-argument <code>apply!</code></strong> — every leaf and every combinator declares its own, so an operator that forgot is a <code>MethodError</code> at the call site rather than a silently wrong sweep. <code>Field</code>’s inner constructor throws <code>DimensionMismatch</code> unless <code>size(data) == padded_size(grid)</code>. <code>allocate_output</code> for <a href="../pages/api.html"><code>Gradient</code></a> throws <code>ArgumentError</code> on a non-<code>Number</code> element type and for <a href="../pages/api.html"><code>Divergence</code></a> on a non-<code>SVector</code> one.</p>
+</section>
+<section id="adjoints-a-gather-then-fold_bc" class="level2">
+<h2 class="anchored" data-anchor-id="adjoints-a-gather-then-fold_bc">2 — Adjoints: a gather, then <code>fold_bc!</code></h2>
+<p><code>apply_bc!</code> is a linear map from interior cells to the padded array. Call it <code>P</code>, and call the stencil sweep <code>S</code>; then a leaf’s forward action on the interior is <code>S·P</code>, and its exact transpose is <code>Pᵀ·Sᵀ</code>. <code>fold_bc!</code> <strong>is</strong> <code>Pᵀ</code>. That identity is the whole of this section. The example traced is <code>apply_adjoint!(x̄, L, ȳ, g)</code> for the same Dirichlet Laplacian as §1.</p>
+<p><em>Entry point</em> <code>adjoint(L) -&gt; AbstractOperator</code>, <code>apply_adjoint!(x̄, L, ȳ, g, α, β)</code> · <em>Source</em> <code>src/operators/abstract.jl</code>, <code>src/operators/algebra.jl</code>, <code>src/boundaries.jl</code> · <em>Tests</em> <code>test/algebra.jl</code>, <code>test/operators_abstract.jl</code>, <code>test/boundaries.jl</code></p>
+<pre><code>  L'                              apply_adjoint!(x̄, L, ȳ, g, α, β)
+    │                               │
+    ▼                               ▼
+  islinear(L)? ──no──▶ THROW      ┌─────────────────────────────────────┐
+    │ yes                         │ adjoint_gather!(x̄, ȳ, gather, α, β) │
+    ▼                             └─────────────────────────────────────┘
+  adjoint_operator(L)               │
+    │                               ├──▶ zero_ghosts!(ȳ)   only interior
+    ├─ leaf with a closed form ──▶  │                       cotangents are inputs
+    │    e.g. self-adjoint -&gt; L     │
+    │         Restriction -&gt; 2⁻ᴺ·P  ├──▶ x̄.data .= gather.(ȳ.data, …)
+    │                               │      sweeps the WHOLE padded array,
+    └─ otherwise ──▶ AdjointOp(L)   │      so cotangents land in ghosts
+                                    │
+                                    └──▶ fold_bc!(x̄)      Pᵀ: scatter each ghost
+                                           back into its mirror source,
+                                           dims descend N:1, then zero it</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb4"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">adjoint</span>(L<span class="op">::</span><span class="dt">AbstractOperator</span>)</span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">islinear</span>(L) <span class="op">||</span> <span class="fu">throw</span>(<span class="fu">ArgumentError</span>(<span class="op">...</span>))       <span class="co"># THROWS ArgumentError — nonlinear</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">adjoint_operator</span>(L)                            <span class="co"># the gate-free internal hook</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">-&gt;</span> L                 <span class="cf">if</span> the leaf is its own transpose  (isselfadjoint)</span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">-&gt;</span> <span class="fu">Scaled</span>(<span class="op">...</span>)       <span class="cf">if</span> a closed form exists  (Restriction <span class="op">-&gt;</span> <span class="fl">2</span>⁻ᴺ<span class="op">·</span>Prolongation)</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">-&gt;</span> <span class="fu">AdjointOp</span>(L)      otherwise               <span class="co"># ALLOC 1, lazy wrapper</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="fu">apply_adjoint!</span>(x̄<span class="op">::</span><span class="dt">Field</span>, L<span class="op">::</span><span class="dt">Laplacian</span>, ȳ<span class="op">::</span><span class="dt">Field</span>, g<span class="op">::</span><span class="dt">CartesianGrid</span>, α, β)</span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">adjoint_gather!</span>(x̄, ȳ, gather, α, β)</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>    <span class="fu">zero_ghosts!</span>(ȳ)                              <span class="co"># MUTATES ȳ ghosts -&gt; 0</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a>    <span class="co"># HOLDS: only interior cotangents enter, matching the flat Krylov boundary</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="fu">iszero</span>(β)</span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>      x̄.data <span class="op">.=</span> <span class="fu">gather</span>.(<span class="fu">Ref</span>(ȳ.data), <span class="fu">CartesianIndices</span>(x̄.data))   <span class="co"># MUTATES all of x̄</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>      <span class="fu">fold_bc!</span>(x̄)</span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a>      <span class="fu">isone</span>(α) <span class="op">||</span> (x̄.data <span class="op">.*=</span> α)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">else</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>      <span class="fu">zero_bc_ghosts!</span>(x̄)                         <span class="co"># this call's ghosts only; Interface</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>                                                 <span class="co"># slabs kept — a sibling under the</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>                                                 <span class="co"># same Added still needs them</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>      x̄.data <span class="op">.=</span> α <span class="op">.*</span> <span class="fu">gather</span>.(<span class="op">…</span>) <span class="op">.+</span> β <span class="op">.*</span> x̄.data</span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>      <span class="fu">fold_bc!</span>(x̄)</span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">end</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  <span class="co"># HOLDS: ⟨Lx, y⟩ = ⟨x, Lᵀy⟩ exactly, boundary contributions included</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. The gate and the hook are two different functions.</strong> <code>Base.adjoint</code> checks <code>islinear</code> and refuses nonlinear operators with a message pointing at <a href="../pages/api.html"><code>linearize</code></a> (§4). <code>adjoint_operator</code> is the internal hook that skips the check; leaves override it when a cheaper closed form exists, and it is what every combinator recursion calls. <a href="../pages/api.html"><code>AdjointOp</code></a> is the lazy fallback: it forwards <code>islinear</code>, <code>isconstant</code>, <code>isselfadjoint</code> and <code>isdiagonal</code> to its operand. It explicitly declares <code>shares_exchange = false</code>: the forest adjoint needs a gather and a cross-block fold, which sharing a forward exchange would bypass. It swaps <code>allocate_output</code> with <code>allocate_input</code>, is its own involution, and swaps the two actions, so <code>apply!(y, AdjointOp(L), x, …)</code> <em>is</em> <code>apply_adjoint!(y, L, x, …)</code>.</p>
+<p><strong>2. The gather sweeps the padded array, on purpose.</strong> A forward stencil reads ghosts, so its transpose must <em>write</em> them. <code>adjoint_gather!</code> therefore runs over <code>CartesianIndices(x̄.data)</code>, not over the interior, using a bounds-masked read that returns zero outside the array. Cotangents pile up in ghost cells, and the next step is what turns them back into interior contributions.</p>
+<p><strong>3. <code>fold_bc!</code> is the transpose of <code>apply_bc!</code>, structurally.</strong> Where <code>_fill_ghost!</code> gathers <code>ghost = sign · source</code>, <code>_fold_ghost!</code> scatters <code>source += sign · ghost</code> and then zeroes the ghost. And where the fill recurses <em>after</em> doing its work, giving ascending dimensions <code>1:N</code>, the fold recurses <em>first</em>, giving descending <code>N:1</code> — necessary because corner ghosts are ghost-of-ghost values, so the fills compose and the transpose must reverse the composition. <code>Interface</code> faces are skipped on both sides: those ghosts belong to the forest exchange (§7) or the distributed reduction (§10), never to this pair. The trailing <code>fill!(dst, 0)</code> leaves the array in exactly the state the forest adjoint exchange requires as its precondition.</p>
+<p><strong>4. The accumulating branch is the subtle one.</strong> With <code>β ≠ 0</code> the running total in <code>x̄</code> already contains folded contributions from earlier terms. Handing that to <code>fold_bc!</code> again would double-count them, so <code>zero_bc_ghosts!</code> clears exactly the cells the fold touches — and deliberately <em>not</em> the <code>Interface</code> slabs, which carry neighbour-owned cotangents a sibling operator under the same <code>Added</code> still has to accumulate.</p>
+<p><strong>5. Trait propagation is written out, never inherited.</strong> Each combinator declares all five; nothing falls through to a default it did not earn.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+<col style="width: 20%">
+</colgroup>
+<thead>
+<tr class="header">
+<th></th>
+<th><code>Scaled</code></th>
+<th><code>Added</code></th>
+<th><code>Composed</code></th>
+<th><code>AdjointOp</code></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>islinear</code></td>
+<td>operand</td>
+<td>both</td>
+<td>both</td>
+<td>operand</td>
+</tr>
+<tr class="even">
+<td><code>isconstant</code></td>
+<td>operand</td>
+<td>both</td>
+<td>both</td>
+<td>operand</td>
+</tr>
+<tr class="odd">
+<td><code>isdiagonal</code></td>
+<td>operand</td>
+<td>both</td>
+<td>both</td>
+<td>operand</td>
+</tr>
+<tr class="even">
+<td><code>isselfadjoint</code></td>
+<td>operand <strong>and</strong> <code>isreal(α)</code></td>
+<td>both</td>
+<td><strong>always <code>false</code></strong></td>
+<td>operand</td>
+</tr>
+<tr class="odd">
+<td><code>shares_exchange</code></td>
+<td>operand</td>
+<td>both</td>
+<td><strong>always <code>false</code></strong></td>
+<td><strong>always <code>false</code></strong></td>
+</tr>
+<tr class="even">
+<td><code>adjoint_operator</code></td>
+<td><code>Scaled(opᵀ, conj α)</code></td>
+<td><code>Added(aᵀ, bᵀ)</code></td>
+<td><code>Composed(bᵀ, aᵀ)</code> — order flips</td>
+<td>the operand</td>
+</tr>
+</tbody>
+</table>
+<p>The hard <code>false</code>s encode limits on propagation. <code>isselfadjoint(::Composed)</code> cannot be <code>true</code> from its factors: <code>(AB)ᵀ = BᵀAᵀ</code>, which equals <code>AB</code> only when they commute, and nothing here can check that. <code>shares_exchange(::Composed)</code> is <code>false</code> because <code>b(x)</code> is a fresh intermediate that needs its own exchange before <code>a</code> reads it; <code>AdjointOp</code> needs the separate adjoint fold described above. <code>isselfadjoint</code> is also grid-aware rather than fixed: it asks <code>_uniform_grid(L.grid)</code>, which for a <code>BlockForest</code> reads a live <code>Ref</code> — so the moment a regrid makes the forest non-uniform, the Laplacian stops claiming self-adjointness.</p>
+<p><strong>Throws and invalidates.</strong> <code>adjoint(L)</code> on a nonlinear <code>L</code> throws <code>ArgumentError</code> naming <code>linearize</code> as the alternative. <code>apply_adjoint!</code> has a six-argument fallback that throws <code>ArgumentError("no adjoint action declared for …")</code> — the mirror of §1’s missing generic <code>apply!</code>, and for the same reason. The <code>Scaled</code>/<code>Added</code>/<code>Composed</code> size query throws <code>ArgumentError</code> when a composition is bound to no grid at all.</p>
+</section>
+<section id="the-solver-boundary-prepare-and-flat-mul" class="level2">
+<h2 class="anchored" data-anchor-id="the-solver-boundary-prepare-and-flat-mul">3 — The solver boundary: <code>prepare</code>, and flat <code>mul!</code></h2>
+<p>Krylov wants <code>mul!(y::AbstractVector, A, x::AbstractVector)</code> with no allocation per iteration. Operators want fields with ghosts. <a href="../pages/api.html"><code>prepare</code></a> is the seam: it walks the tree once, allocates every buffer the tree will ever need, and returns an object whose only job is to be that <code>mul!</code>. The example traced is <code>P = prepare(scaling(σ) - laplacian(g), scalar_field(g))</code> followed by <code>Krylov.cg(P, flatten(f))</code>.</p>
+<p><em>Entry point</em> <code>prepare(L, x) -&gt; PreparedOperator</code>, <code>mul!(y, P, x, α, β)</code> · <em>Source</em> <code>src/linalg.jl</code>, <code>src/Fields.jl</code> · <em>Tests</em> <code>test/prepare_linalg.jl</code>, <code>test/fields.jl</code></p>
+<pre><code>  prepare(L, x)                         mul!(y::Vector, P, x::Vector, α, β)
+    │                                     │
+    ├──▶ islinear(L)? ──no──▶ THROW       ├──▶ flat_to_interior!(P.xpad, x)
+    │                                     │      reshape, no copy; ghosts LEFT ALONE
+    ├──▶ xpad = similar(x)                │      (the distributed path stages
+    │      zero_ghosts!(xpad)             │       neighbour ghosts here — §10)
+    │                                     │
+    ├──▶ ypad = allocate_output(L, x)     ├──▶ apply!(P.ypad, P.op, P.xpad, P.grid)
+    │                                     │      ALWAYS α=true, β=false
+    └──▶ op = _prepare_tree(L, x)         │
+           │                              └──▶ interior_to_flat!(y, P.ypad, α, β)
+           ├─ Composed  ─▶ PreparedComposed(a, b, tmp)      the caller's α and β
+           ├─ AdjointOp ─▶ _push_adjoints, then              are fused into the
+           │                PreparedAdjoint(op, scratch)     copy-OUT broadcast
+           ├─ ScalingOp{BlockField} on a packed prototype
+           │                ─▶ ScalingOp(pack(coeff))
+           └─ leaves, Added, Scaled ─▶ structural / unchanged</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb6"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="fu">prepare</span>(L<span class="op">::</span><span class="dt">AbstractOperator</span>, x<span class="op">::</span><span class="dt">Field</span>) <span class="op">-&gt;</span> PreparedOperator</span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">islinear</span>(L) <span class="op">||</span> <span class="fu">throw</span>(<span class="fu">ArgumentError</span>(<span class="op">...</span>))              <span class="co"># THROWS ArgumentError</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>  xpad<span class="op">::</span><span class="dt">Field </span><span class="op">=</span> <span class="fu">similar</span>(x); <span class="fu">zero_ghosts!</span>(xpad)          <span class="co"># ALLOC 1</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>  ypad<span class="op">::</span><span class="dt">Field </span><span class="op">=</span> <span class="fu">allocate_output</span>(L, x)                   <span class="co"># ALLOC 1 (maybe another eltype)</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>  op <span class="op">=</span> <span class="fu">_prepare_tree</span>(L, x)                              <span class="co"># ALLOC 1 per Composed / AdjointOp</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">PreparedOperator</span>(op, x.grid, xpad, ypad)              <span class="co"># 4 fields, NOT an AbstractOperator</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="fu">_prepare_tree</span>(L<span class="op">::</span><span class="dt">Composed</span>, x)</span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">PreparedComposed</span>(<span class="fu">_prepare_tree</span>(L.a, <span class="op">…</span>), <span class="fu">_prepare_tree</span>(L.b, x),</span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>                   <span class="fu">allocate_output</span>(L.b, x))             <span class="co"># tmp bound once, reused forever</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="fu">_prepare_tree</span>(L<span class="op">::</span><span class="dt">AdjointOp</span>, x)</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>  pushed <span class="op">=</span> <span class="fu">_push_adjoints</span>(L)                            <span class="co"># (A*B)ᵀ  -&gt;  Composed(Bᵀ, Aᵀ)</span></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>  pushed isa AdjointOp <span class="op">||</span> <span class="cf">return</span> <span class="fu">_prepare_tree</span>(pushed, x)</span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>  op <span class="op">=</span> <span class="fu">_prepare_tree</span>(pushed.op, x)                      <span class="co"># normalise the leaf's coefficient layout</span></span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>  scratch <span class="op">=</span> <span class="fu">allocate_output</span>(pushed, x)                  <span class="co"># adjoint OUTPUT shape, not x's shape</span></span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">PreparedAdjoint</span>(op, scratch)</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a><span class="fu">mul!</span>(y<span class="op">::</span><span class="dt">AbstractVector</span>, P<span class="op">::</span><span class="dt">PreparedOperator</span>, x<span class="op">::</span><span class="dt">AbstractVector</span>, α, β)</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">flat_to_interior!</span>(P.xpad, x)     <span class="co"># MUTATES interior(P.xpad); NO zero_ghosts! here</span></span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">apply!</span>(P.ypad, P.op, P.xpad, P.grid)                  <span class="co"># α=true, β=false — not the caller's</span></span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">interior_to_flat!</span>(y, P.ypad, α, β)                    <span class="co"># vi .= α .* interior .+ β .* vi</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>  <span class="co"># HOLDS: zero allocation in steady state</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. A prepared operator is not an operator.</strong> <code>PreparedOperator</code> and <code>PreparedForest</code> are deliberately <em>not</em> <code>AbstractOperator</code> subtypes: they are the solver boundary, so they cannot re-enter <code>+</code>, <code>*</code>, <code>adjoint</code> or <code>apply</code>. They do implement the small interface Krylov consumes — <code>size</code> as <code>(output DOFs, input DOFs)</code>, so rank changers report an honestly rectangular shape, and <code>eltype</code> unwrapping <code>SVector{M,T}</code> to <code>T</code>. Four traits are forwarded to the wrapped tree explicitly: <code>islinear</code>, <code>isconstant</code>, <code>isselfadjoint</code> and <code>isdiagonal</code>. Neither wrapper exposes <code>shares_exchange</code>; that trait is queried on nodes inside the tree. Calling it on a prepared solver wrapper raises <code>MethodError</code>, because there is no <code>AbstractOperator</code> supertype to supply the default.</p>
+<p><strong>2. The tree rewrite hoists every per-call allocation.</strong> Unprepared, <code>Composed</code> allocates its intermediate on every apply. <code>_prepare_tree</code> replaces it with <code>PreparedComposed</code>, which carries that intermediate as a field — and <code>PreparedComposed</code> <em>is</em> an <code>AbstractOperator</code>, so it re-enters ordinary <code>apply!</code> dispatch and the sweep code below it needs no changes. <code>PreparedAdjoint</code> does the same for a surviving leaf adjoint’s scratch. Both explicitly declare <code>islinear</code>, <code>isconstant</code>, <code>isselfadjoint</code> and <code>isdiagonal</code>, while <code>shares_exchange</code> uses the <code>AbstractOperator</code> default of <code>false</code>. <code>PreparedAdjoint</code> additionally declares <code>adjoint_operator(L) = L.op</code>, without which the generic forest adjoint walk would wrap it in another <code>AdjointOp</code> whose apply is this node’s transpose again, recursing forever.</p>
+<p><strong>3. <code>_push_adjoints</code> runs before any buffer is bound.</strong> It rewrites <code>AdjointOp(A*B)</code> into <code>Composed(Bᵀ, Aᵀ)</code>, with a fixed-point guard so a leaf with no cheaper adjoint does not recurse. The reason is distributed: <code>PreparedComposed</code> carries one intermediate shaped for the <em>forward</em> pass, and a distributed adjoint walk would run <code>aᵀ</code> then <code>bᵀ</code> with no reduction between them, dropping the intermediate’s <code>Interface</code> cotangents. Normalising the tree so the composition is explicit puts the reduction back where it belongs (§10).</p>
+<p><strong>4. The flat boundary is interior-only by construction, not by assertion.</strong> The flat length is derived from <code>local_size</code>, <code>flat_to_interior!</code> reshapes the caller’s vector without copying and broadcasts into an <code>interior</code> view, and <code>interior_to_flat!</code> is the exact mirror. There is no index arithmetic that could reach a ghost. <code>flatten</code> is the one allocating member of the family — it materialises a copy of the interior, reinterpreting <code>SVector{M,T}</code> to component-fastest scalars for a vector field.</p>
+<p><strong>5. Two comments in <code>mul!</code> are load-bearing.</strong> The operator is applied with <code>α = true, β = false</code> always; the caller’s <code>α</code> and <code>β</code> are fused into the copy-out broadcast instead. And there is deliberately no <code>zero_ghosts!</code> on the way in: the distributed path stages exchanged <code>Interface</code> ghosts into <code>P.xpad</code> between applies, and zeroing would discard them. When <code>β = 0</code> the output vector is never <em>read</em>, only written, so solvers may hand in an uninitialised buffer.</p>
+<p><strong>6. <code>boundary_rhs</code> is the affine lift, and it reaches past the prologue.</strong> <code>apply!</code> enforces homogeneous boundaries, so <code>L</code> is linear and inhomogeneous data has to enter the right-hand side: solve <code>L·u = f − b</code> where <code>b</code> is this lift. It builds a zeroed field, fills <em>inhomogeneous</em> ghosts into it — Dirichlet ghost <code>2·value</code>, Neumann layer <code>k</code> ghost <code>(2k−1)·Δ·flux</code>, periodic and <code>Interface</code> left at zero — and then calls <code>_apply_raw!</code> rather than <code>apply!</code>, because the prologue would overwrite exactly the offsets it just planted. It recurses through the combinators on the algebra: <code>Added</code> sums the two lifts, <code>Scaled</code> scales, <code>Composed</code> uses <code>a(b(x) + c_b) + c_a</code>, and <code>AdjointOp</code> is identically zero because the adjoint action is built homogeneous.</p>
+<p><strong>Throws and invalidates.</strong> Nothing on a <code>CartesianGrid</code> goes stale — a <code>PreparedOperator</code> has no generation stamp because its grid cannot change shape.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Guard</th>
+<th>Condition</th>
+<th>Raises</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>prepare(L, x)</code></td>
+<td><code>!islinear(L)</code></td>
+<td><code>ArgumentError</code>, naming <code>linearize(L, u0)</code></td>
+</tr>
+<tr class="even">
+<td><code>prepare(L)</code> one-argument form</td>
+<td>the operator is bound to no grid</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="odd">
+<td><code>boundary_rhs(L, x)</code></td>
+<td><code>!islinear(L)</code></td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>_require_prepared_match</code></td>
+<td><code>x</code>/<code>y</code> grid or eltype disagrees with the prepared buffers</td>
+<td><code>ArgumentError</code>, four separate checks</td>
+</tr>
+<tr class="odd">
+<td><code>mul!(::AbstractVector, ::AbstractOperator, …)</code></td>
+<td>called on a <em>raw</em> operator</td>
+<td><code>ArgumentError</code> — “would allocate scratch every call; wrap with <code>prepare</code>”</td>
+</tr>
+<tr class="even">
+<td><code>operator_diagonal(L)</code></td>
+<td>no diagonal declared for <code>L</code></td>
+<td><code>ArgumentError</code> — there is deliberately no fallback</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>PreparedForest</code> twin adds a generation stamp and one more guard; it is covered in §7, once the forest exists to explain it.</p>
+</section>
+<section id="linearize-a-nonlinear-operator-becomes-a-krylov-ready-jacobian" class="level2">
+<h2 class="anchored" data-anchor-id="linearize-a-nonlinear-operator-becomes-a-krylov-ready-jacobian">4 — <code>linearize</code>: a nonlinear operator becomes a Krylov-ready Jacobian</h2>
+<p>Nonlinear operators support <code>apply!</code> and differentiate fine, but they are not linear maps: <code>adjoint</code> and <code>prepare</code> both refuse them. <code>linearize</code> closes the gap by freezing a state <code>u₀</code> and returning the Jacobian <em>as an operator</em>, which then satisfies <code>islinear</code> and can be prepared like anything else. The example traced is <code>J = linearize(F, u0)</code> for an <code>F::Advection{…,SelfAdvection}</code>, followed by <code>apply!(y, J, v, g)</code>.</p>
+<p><em>Entry point</em> <code>linearize(F, u0[, backend]) -&gt; LinearizedOp</code>, <code>linearize!(J, u)</code> · <em>Source</em> <code>src/operators/linearize.jl</code>, <code>ext/MatrixFreeOperatorsEnzymeExt.jl</code> · <em>Tests</em> <code>test/linearize.jl</code></p>
+<pre><code>  linearize(F, u0)                 ──▶ FiniteDifferenceJVP()   (the default)
+  linearize(F, u0, EnzymeJVP())    ──▶ provided by the Enzyme extension
+    │                                   otherwise THROWS, naming `using Enzyme`
+    ▼
+  LinearizedOp(op, u0, shifted, fplus, fminus)      every buffer owned
+    │
+    ├── apply!(y, J, v, g, α, β)        TWO applies of F, central difference
+    │     ε from ‖u₀‖ and ‖v‖
+    │     y ← α·(F(u₀+εv) − F(u₀−εv)) / 2ε
+    │
+    └── adjoint(J) ──▶ THROWS           an FD JVP has no reverse mode
+
+  EnzymeLinearizedOp(op, u0, ustate, ushadow, fout, fshadow)    (extension only)
+    ├── apply!         Enzyme.Forward through apply!   — ONE apply, exact
+    └── apply_adjoint! Enzyme.Reverse through apply!   — a real transpose</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb8"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="fu">linearize</span>(F<span class="op">::</span><span class="dt">AbstractOperator</span>, u0<span class="op">::</span><span class="dt">Field</span>, <span class="op">::</span><span class="dt">FiniteDifferenceJVP</span>) <span class="op">-&gt;</span> LinearizedOp</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  u0c<span class="op">::</span><span class="dt">Field     </span><span class="op">=</span> <span class="fu">copy</span>(u0)                       <span class="co"># ALLOC 1 — the frozen state is OWNED</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  shifted<span class="op">::</span><span class="dt">Field </span><span class="op">=</span> <span class="fu">similar</span>(u0c)                   <span class="co"># ALLOC 1</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  fplus<span class="op">::</span><span class="dt">Field   </span><span class="op">=</span> <span class="fu">allocate_output</span>(F, u0c)        <span class="co"># ALLOC 1</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  fminus<span class="op">::</span><span class="dt">Field  </span><span class="op">=</span> <span class="fu">allocate_output</span>(F, u0c)        <span class="co"># ALLOC 1</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>  <span class="co"># HOLDS: every buffer is owned, so apply! allocates nothing in a Newton loop</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="fu">apply!</span>(y<span class="op">::</span><span class="dt">Field</span>, J<span class="op">::</span><span class="dt">LinearizedOp</span>, v<span class="op">::</span><span class="dt">Field</span>, g<span class="op">::</span><span class="dt">AbstractGrid</span>, α, β)</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>  T <span class="op">=</span> <span class="fu">_scalar_eltype</span>(<span class="fu">eltype</span>(J.u0.data))</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>  normv <span class="op">=</span> <span class="fu">norm</span>(v.data)</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>  ε <span class="op">=</span> <span class="fu">iszero</span>(normv) ? <span class="fu">sqrt</span>(<span class="fu">eps</span>(T)) <span class="op">:</span> <span class="fu">sqrt</span>(<span class="fu">eps</span>(T)) <span class="op">*</span> (<span class="fl">1</span> <span class="op">+</span> <span class="fu">norm</span>(J.u0.data)) <span class="op">/</span> normv</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>  J.shifted.data <span class="op">.=</span> J.u0.data <span class="op">.+</span> ε <span class="op">.*</span> v.data      <span class="co"># MUTATES J.shifted</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">apply!</span>(J.fplus,  J.op, J.shifted, g)            <span class="co"># MUTATES J.fplus</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>  J.shifted.data <span class="op">.=</span> J.u0.data <span class="op">.-</span> ε <span class="op">.*</span> v.data</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">apply!</span>(J.fminus, J.op, J.shifted, g)            <span class="co"># MUTATES J.fminus</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">interior</span>(y) <span class="op">.=</span> (α <span class="op">/</span> <span class="fl">2</span>ε) <span class="op">.*</span> (<span class="fu">interior</span>(J.fplus) <span class="op">.-</span> <span class="fu">interior</span>(J.fminus)) [<span class="op">.+</span> β <span class="op">.*</span> <span class="fu">interior</span>(y)]</span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a><span class="fu">linearize!</span>(J, u) <span class="op">=</span> (<span class="fu">copyto!</span>(J.u0.data, u.data); J)   <span class="co"># SAME — J's identity survives</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. The Jacobian is an operator, so nothing downstream changes.</strong> <code>LinearizedOp</code> declares <code>islinear = true</code>, forwards <code>allocate_output</code> and <code>allocate_input</code> to the operand, reports a <code>size</code> built from its input and output component counts, and resolves its grid from the operand or the frozen state. That is exactly enough to pass <code>prepare</code>’s gate and be handed to Krylov. It declares nothing else, so <code>isconstant</code>, <code>isselfadjoint</code>, <code>isdiagonal</code> and <code>shares_exchange</code> stay <code>false</code> and <code>operator_diagonal</code> throws — which is correct, and means a linearized operator cannot be multigrid-smoothed.</p>
+<p><strong>2. The step size is scaled to both magnitudes.</strong> <code>ε = √eps·(1 + ‖u₀‖)/‖v‖</code>, falling back to <code>√eps</code> for a zero direction. The formula is a central difference, so the product costs two applications of <code>F</code> and is accurate to roughly <code>√eps</code> — good enough to drive a Newton–Krylov inner solve, not good enough to check a gradient against. Note both norms are taken over the <em>padded</em> array.</p>
+<p><strong>3. <code>linearize!</code> refreshes the state in place.</strong> A Newton loop wants a new Jacobian each outer iteration and the same buffers; <code>linearize!</code> copies the new state over <code>J.u0.data</code> and returns the identical object, so a <code>PreparedOperator</code> built around <code>J</code> stays valid. This is safe precisely because Krylov solves are never differentiated through.</p>
+<p><strong>4. The Enzyme backend is a different struct with a real transpose.</strong> <code>EnzymeLinearizedOp</code> carries six buffers instead of five: a primal input copy <em>and</em> an input shadow, a primal output <em>and</em> an output shadow. Forward mode seeds the input shadow with <code>v</code> and differentiates the four-argument <code>apply!</code>, giving an exact JVP in one application. Reverse mode zeroes the input shadow, copies the cotangent into the output shadow and calls <code>zero_ghosts!</code> on it — upholding §2’s “only interior cotangents are inputs” contract — then runs <code>Enzyme.Reverse</code> and blends <code>interior(ushadow)</code> into <code>x̄</code>. It also declares <code>adjoint_operator</code> as the lazy <code>AdjointOp</code> wrapper, so <code>J'</code> works and routes back through that reverse pass.</p>
+<p><strong>Throws and invalidates.</strong> <code>linearize!</code> invalidates nothing. The rest:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Guard</th>
+<th>Condition</th>
+<th>Raises</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>linearize(F, u0, ::AbstractJVPBackend)</code></td>
+<td><code>EnzymeJVP()</code> without the extension loaded</td>
+<td><code>ArgumentError</code> — “run <code>using Enzyme</code> first”</td>
+</tr>
+<tr class="even">
+<td><code>adjoint_operator(::LinearizedOp)</code></td>
+<td>any call</td>
+<td><code>ArgumentError</code> — FD has no reverse mode; differentiate the operator instead</td>
+</tr>
+<tr class="odd">
+<td><code>apply_adjoint!(…, ::LinearizedOp, …)</code></td>
+<td>any call</td>
+<td><code>ArgumentError</code> — no adjoint action declared</td>
+</tr>
+<tr class="even">
+<td><code>adjoint(F)</code> on the nonlinear <code>F</code> itself</td>
+<td><code>!islinear(F)</code></td>
+<td><code>ArgumentError</code>, pointing at <code>linearize</code></td>
+</tr>
+<tr class="odd">
+<td><code>prepare(F)</code> on the nonlinear <code>F</code> itself</td>
+<td><code>!islinear(F)</code></td>
+<td><code>ArgumentError</code>, pointing at <code>linearize</code></td>
+</tr>
+</tbody>
+</table>
+<p>Note which gate fires for <code>adjoint(J)</code> on a finite-difference Jacobian: <code>J</code> <em>passes</em> the <code>islinear</code> check, so the message is the specific one about reverse mode, not the generic nonlinear one.</p>
+</section>
+<section id="forest-topology-keys-the-leaf-vector-and-the-generation-counter" class="level2">
+<h2 class="anchored" data-anchor-id="forest-topology-keys-the-leaf-vector-and-the-generation-counter">5 — Forest topology: keys, the leaf vector, and the generation counter</h2>
+<p>Why the package refines whole blocks rather than cells, and why 2:1 balance is the rule everything rests on, is in <a href="../pages/amr.html">AMR</a>. This section is the data structure: what a leaf <em>is</em>, what orders the leaf vector, and what exactly the generation counter counts. The example traced is <code>refine!(bf, x -&gt; x[1] &lt; 0.3)</code> on a <code>bf::BlockForest{2,Float64,…}</code> built over a 2×2 root tiling.</p>
+<p><em>Entry point</em> <a href="../pages/api.html"><code>refine!</code></a>, <a href="../pages/api.html"><code>coarsen!</code></a>, <a href="../pages/api.html"><code>balance!</code></a> · <em>Source</em> <code>src/topology.jl</code>, <code>src/BlockForest.jl</code> · <em>Tests</em> <code>test/topology.jl</code>, <code>test/blockforest.jl</code></p>
+<pre><code>  refine!(bf::BlockForest, predicate)          predicate takes a leaf CENTRE
+    │                                          (regrid!'s takes a Field — §8)
+    ▼
+  refine!(forest::Forest, key -&gt; …)
+    │
+    ├──▶ keys = Set(forest.leaves)
+    │      marked leaf below maxlevel:  delete!(keys, key); push! its 2ᴺ children
+    │      marked leaf AT maxlevel:     silently ignored
+    │
+    ├──▶ _set_leaves!(forest, keys)      the ONE commit point
+    │      │
+    │      ├─ sort by Morton code of the key's finest-level coords
+    │      ├─ sorted == forest.leaves ?  ─yes─▶ return.  NO generation bump.
+    │      ├─ empty!/append! forest.leaves,  empty!/rebuild forest.index
+    │      ├─ forest.uniform[] = all leaves share a level
+    │      └─ forest.generation[] += 1          # STALE: every field, every PreparedForest
+    │
+    └──▶ balance!(forest)                fixpoint; may commit several MORE times</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb10"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> LeafKey{N}                  <span class="co"># isbits. Geometry is NEVER stored.</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>    level<span class="op">::</span><span class="dt">Int</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>    coords<span class="op">::</span><span class="dt">NTuple{N,Int}</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="fu">parent_key</span>(k)  <span class="op">-&gt;</span> <span class="fu">LeafKey</span>(k.level <span class="op">-</span> <span class="fl">1</span>, k.coords <span class="op">.&gt;&gt;</span> <span class="fl">1</span>)</span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="fu">children</span>(k)    <span class="op">-&gt;</span> <span class="dt">Vector</span>{LeafKey{N}}     <span class="co"># ALLOC 1, length 2ᴺ, coords .&lt;&lt; 1 .+ offsets</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> Forest{N}</span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>    nroot<span class="op">::</span><span class="dt">NTuple{N,Int}</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>    periodic<span class="op">::</span><span class="dt">NTuple{N,Bool}</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>    maxlevel<span class="op">::</span><span class="dt">Int</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>    leaves<span class="op">::</span><span class="dt">Vector{LeafKey{N}}           </span><span class="co"># Morton-ordered; storage order of every field</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>    index<span class="op">::</span><span class="dt">Dict{LeafKey{N},Int}          </span><span class="co"># key -&gt; position in `leaves`; the exact inverse</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>    uniform<span class="op">::</span><span class="dt">Base.RefValue{Bool}</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>    generation<span class="op">::</span><span class="dt">Base.RefValue{Int}</span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> BlockForest{N,T,BC<span class="op">&lt;:</span><span class="dt">Tuple</span>,Dev} <span class="op">&lt;:</span><span class="dt"> AbstractGrid{N}</span></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>    forest<span class="op">::</span><span class="dt">Forest{N}</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>    extent<span class="op">::</span><span class="dt">NTuple{N,Tuple{T,T}}</span></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>    spacing0<span class="op">::</span><span class="dt">NTuple{N,T}                </span><span class="co"># ROOT-level spacing; per-leaf is spacing0 / 2^ℓ</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>    blocksize<span class="op">::</span><span class="dt">NTuple{N,Int}</span></span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>    halo<span class="op">::</span><span class="dt">NTuple{N,Int}</span></span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>    bc<span class="op">::</span><span class="dt">BC                               </span><span class="co"># PHYSICAL domain BCs — leaves carry Interface</span></span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>    device<span class="op">::</span><span class="dt">Dev</span></span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a>    schedule<span class="op">::</span><span class="dt">Base.RefValue{…}           </span><span class="co"># per-generation exchange plan cache (§7)</span></span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a>    schedule_device<span class="op">::</span><span class="dt">Base.RefValue{…}</span></span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a><span class="fu">leaf_grid</span>(bf, i) <span class="op">-&gt;</span> CartesianGrid{N,T,<span class="op">…</span>,<span class="dt">Nothing</span>}</span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>  <span class="co"># every leaf is ONE concrete isbits grid type, bc = Interface on all faces,</span></span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a>  <span class="co"># geometry recomputed from level — never stored per leaf</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. A key is a level and integer coordinates, and nothing else.</strong> No extent, no spacing, no parent pointer. <code>parent_key</code> is a right shift, <code>children</code> is a left shift plus the <code>2ᴺ</code> offsets, and every physical coordinate is recomputed from <code>spacing0 / 2^level</code>. That is what keeps <code>LeafKey</code> <code>isbits</code> and lets the whole topology live in a <code>Vector</code> and a <code>Dict</code> with no pointer chasing.</p>
+<p><strong>2. <code>forest.index</code> is the inverse of <code>forest.leaves</code>, and it is the addressing scheme.</strong> <code>BlockField.blocks[i]</code> and <code>PackedBlockField.data[…, i]</code> are indexed by that same position <code>i</code>, so the map from key to storage slot <em>is</em> <code>forest.index</code>. Lookup is a raw <code>getindex</code>, so a key that is not a leaf raises <code>KeyError</code> rather than a domain error. The ordering is the Morton code of the key’s coordinates projected to <code>maxlevel</code>, which is why refining one block renumbers its neighbours — and why §8’s transfer must key by <code>LeafKey</code> rather than by integer position.</p>
+<p><strong>3. <code>_set_leaves!</code> is the only function that writes either container, and the only one that bumps the generation.</strong> It sorts a fresh key vector by Morton code, compares it to the current leaves, and <strong>returns early if they are identical</strong> — no bump, no index rebuild. Otherwise it empties and refills both containers in place, refreshes <code>uniform</code>, and increments <code>generation</code>. The early return is what makes §8’s “nothing changed, so the same field objects come back and prepared operators stay valid” exact rather than approximate.</p>
+<p><strong>4. <code>refine!</code> and <code>coarsen!</code> are set edits; <code>balance!</code> is a fixpoint.</strong> <code>refine!</code> swaps each marked leaf for its children, ignoring marks already at <code>maxlevel</code>. <code>coarsen!</code> groups leaves by parent and collapses a family only when all <code>2ᴺ</code> siblings are present <em>and</em> all are marked — an incomplete or partly marked family is untouched, and level-0 leaves are skipped. <code>balance!</code> then loops until no face violates 2:1: for each leaf, dimension and side it finds the face neighbour (wrapping when that dimension is periodic), resolves which leaf actually covers that region, and refines the cover if it is two or more levels coarser. Each pass is its own <code>_set_leaves!</code> commit, so <strong>a single <code>refine!</code> call can bump the generation several times</strong> — code that snapshots a generation must compare, not count.</p>
+<p><strong>5. Every leaf is one concrete grid type, and that is a performance decision.</strong> <code>leaf_grid</code> builds a <code>CartesianGrid</code> through the unchecked inner constructor with <code>Interface()</code> on all <code>2N</code> faces and a local range of <code>1:blocksize[d]</code>. Per leaf geometry is derived from the level, never stored. Because the type is identical for every leaf and <code>isbits</code>, the per-leaf sweep in §7 is type-stable and rebuilding the grid inside the loop is free. It also means per-leaf BC sweeps are no-ops — physical boundaries live on the forest and are applied by a separate face pass.</p>
+<p><strong>Throws and invalidates.</strong> Every commit that changes the leaf set invalidates every <code>BlockField</code> and every <code>PreparedForest</code> built on the old set; both carry a stamp and throw <code>ArgumentError</code> on next use (§6, §7).</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Guard</th>
+<th>Condition</th>
+<th>Raises</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>Forest</code> constructor</td>
+<td>the root tiling and <code>maxlevel</code> exceed 64-bit Morton capacity</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>BlockForest</code> constructor</td>
+<td><code>blocksize &lt; 1</code>, base size not divisible by it, or <code>maxlevel &lt; 0</code></td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="odd">
+<td><code>BlockForest</code> constructor</td>
+<td>a face BC that is not <code>Periodic</code>/<code>Dirichlet</code>/<code>Neumann</code> — this is what rejects a user-supplied <code>Interface</code></td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>leaf_index(forest, key)</code></td>
+<td>the key is not a current leaf</td>
+<td><code>KeyError</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="block-field-layouts-one-contract-two-storages" class="level2">
+<h2 class="anchored" data-anchor-id="block-field-layouts-one-contract-two-storages">6 — Block field layouts: one contract, two storages</h2>
+<p>A field on a forest has to be two things at once: a list of per-leaf padded arrays, which is what the reference CPU path and every regrid want, and one contiguous buffer with leaves on a trailing dimension, which is what a single GPU kernel launch wants. Both satisfy the same contract, and which one you have is settled at compile time. The example traced is <code>up = pack(u)</code> for a <code>u::BlockField{Center,Interpolated,Matrix{Float64},…}</code>.</p>
+<p><em>Entry point</em> <a href="../pages/api.html"><code>pack</code></a>, <a href="../pages/api.html"><code>unpack</code></a>, <a href="../pages/api.html"><code>with_transfer</code></a> · <em>Source</em> <code>src/blockfield.jl</code>, <code>src/packedfield.jl</code> · <em>Tests</em> <code>test/blockfield.jl</code>, <code>test/packedfield.jl</code>, <code>test/forest_packed.jl</code></p>
+<pre><code>  AbstractBlockField                    everything layout-agnostic is written
+    │                                   ONCE against this: set!, zero_ghosts!,
+    ├── BlockField                      flatten, block(), the five forest sweeps
+    │     blocks::Vector{A}    ── _storage ──▶ Vector of padded arrays
+    │                          ── _layout  ──▶ BlocksLayout()      singleton
+    │
+    └── PackedBlockField
+          data::A             ── _storage ──▶ one (blocksize.+2h…, nleaves) array
+          levels::V                            device-resident per-leaf level
+                              ── _layout  ──▶ PackedLayout()       singleton
+
+  the ONLY two functions that know the difference:
+    _leaf_array(store, ::BlocksLayout, i)        = store[i]
+    _leaf_array(store, ::PackedLayout,  i)       = view(store, :, …, i)
+    _leaf_view(store, ::BlocksLayout, i, ranges) = view(store[i], ranges...)
+    _leaf_view(store, ::PackedLayout,  i, ranges) = view(store, ranges..., i)</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb12"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> BlockField{L,P<span class="op">&lt;:</span><span class="dt">RegridTransferPolicy</span>,A<span class="op">&lt;:</span><span class="dt">AbstractArray</span>,G<span class="op">&lt;:</span><span class="dt">BlockForest</span>}</span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>        <span class="op">&lt;:</span><span class="dt"> AbstractBlockField</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>    blocks<span class="op">::</span><span class="dt">Vector{A}</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    grid<span class="op">::</span><span class="dt">G</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    generation<span class="op">::</span><span class="dt">Int          </span><span class="co"># stamped from grid.forest.generation[] at construction</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> PackedBlockField{L,P<span class="op">&lt;:</span><span class="dt">RegridTransferPolicy</span>,A,V<span class="op">&lt;:</span><span class="dt">AbstractVector{Int}</span>,</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>                        G<span class="op">&lt;:</span><span class="dt">BlockForest</span>} <span class="op">&lt;:</span><span class="dt"> AbstractBlockField</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>    data<span class="op">::</span><span class="dt">A                  </span><span class="co"># leaves on the TRAILING dimension, Morton order</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>    levels<span class="op">::</span><span class="dt">V                </span><span class="co"># so a kernel can recompute spacing without the Forest</span></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>    grid<span class="op">::</span><span class="dt">G</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>    generation<span class="op">::</span><span class="dt">Int</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a><span class="fu">pack</span>(f<span class="op">::</span><span class="dt">BlockField{L,P}</span>) <span class="op">-&gt;</span> PackedBlockField{L,P}</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">_require_current</span>(f)                                   <span class="co"># THROWS ArgumentError if stale</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>  data   <span class="op">=</span> <span class="fu">similar</span>(<span class="fu">first</span>(f.blocks), <span class="fu">eltype</span>(f), (psize<span class="op">...</span>, <span class="fu">nleaves</span>(bf)))   <span class="co"># ALLOC 1</span></span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>  levels <span class="op">=</span> <span class="fu">_leaf_levels</span>(bf)                             <span class="co"># ALLOC 1, host Vector -&gt; device</span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> i <span class="kw">in</span> <span class="fl">1</span><span class="op">:</span><span class="fu">nleaves</span>(bf)</span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>      <span class="fu">_block_array</span>(p, i) <span class="op">.=</span> f.blocks[i]                 <span class="co"># PADDED storage verbatim —</span></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>  <span class="cf">end</span>                                                   <span class="co"># ghosts copied, not recomputed</span></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>  <span class="co"># HOLDS: L (location) and P (transfer policy) round-trip through pack/unpack</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. The layout is not a field, it is the type.</strong> There is no <code>layout::Symbol</code> anywhere. The information is carried two ways, both resolved at compile time: the concrete struct identity, and a zero-size tag value whose <em>type</em> travels through dispatch. That is a deliberate constraint, and the decisive reason is Enzyme: from Julia 1.12 a custom-rule argument may not mix GC-tracked pointers with inline floats, and a <code>BlockField</code> does exactly that through its embedded <code>BlockForest</code>. So the differentiated seams (§7) take <em>raw storage plus a singleton tag</em>, and a runtime layout flag would force the field struct back into the rule signature.</p>
+<p><strong>2. Three more things fall out of the same choice.</strong> The tag being a singleton means <code>_leaf_array</code> and <code>_leaf_view</code> each resolve to one concrete <code>SubArray</code> type, so the descriptor loops in §7 stay dispatch-free and allocation-free. Layout selection for the GPU kernel sweeps is a method table rather than a branch — <code>_forest_sweep!</code> has a <code>PackedBlockField</code> method per operator, falling back to the per-leaf path otherwise. And <code>Adapt.adapt_structure</code> rebuilds the same parameterised type, so the layout survives device adaptation because it <em>is</em> the type.</p>
+<p><strong>3. <code>pack</code> copies padded storage verbatim, ghosts included.</strong> That is not laziness: a <code>Diffusion</code> coefficient field has its ghosts filled at construction by <code>fill_coefficient_ghosts!</code>, and copying the padded array means <code>prepare</code> can normalise a coefficient’s layout without re-running an exchange. <code>unpack</code> is the mirror. The location parameter <code>L</code> and the transfer policy <code>P</code> survive both directions — a policy silently reset by a round trip would conserve on one regrid and not the next.</p>
+<p><strong>4. The transfer policy is a type parameter for the same reason.</strong> <a href="../pages/api.html"><code>Interpolated</code></a>, <a href="../pages/api.html"><code>Conservative</code></a> and <a href="../pages/api.html"><code>SlopeLimited</code></a> are empty singletons, and <code>RegridTransferPolicy</code> is a closed <code>Union</code> of the three rather than an abstract type. §8 resolves the policy once per field from <code>P</code> and dispatches the transfer kernel on it. <code>with_transfer</code> rebuilds the wrapper around the <em>same</em> storage and the <em>same</em> generation stamp, copying nothing.</p>
+<p><strong>5. One rule for contributors, and it is the one that bites.</strong> <strong>Never index block storage outside <code>_leaf_array</code> / <code>_leaf_view</code>.</strong> The two layouts produce <code>SubArray</code>s over parents of different rank; every descriptor sweep in <code>src/transfer.jl</code> and the coarse–fine rewrite in <code>src/operators/diffusion.jl</code> are written so that only those two functions know it. Reaching into <code>f.blocks[i]</code> or <code>f.data[…, i]</code> directly compiles, runs, and silently breaks the other layout.</p>
+<p><strong>Throws and invalidates.</strong> <code>_require_current(f)</code> compares <code>f.generation</code> against <code>f.grid.forest.generation[]</code> and throws <code>ArgumentError</code> — “allocated before the forest was regridded … allocate a fresh field on the current forest” — on any mismatch. It is called from <code>block</code>, from <code>pack</code> and <code>unpack</code>, from the packed flat transfers, and from all five forest sweeps, so there is no path that reads stale storage without passing a guard.</p>
+</section>
+<section id="forest-apply-one-exchange-one-bc-pass-then-ordinary-stencils" class="level2">
+<h2 class="anchored" data-anchor-id="forest-apply-one-exchange-one-bc-pass-then-ordinary-stencils">7 — Forest <code>apply!</code>: one exchange, one BC pass, then ordinary stencils</h2>
+<p>Operators barely change on a forest, and <a href="../pages/amr.html">AMR</a> says why. This section is the machinery that makes it true: a precomputed descriptor table, rebuilt only when the generation changes, that turns every inter-block ghost fill into a flat loop with no topology queries in it. The example traced is <code>mul!(y, P, x)</code> for a <code>P::PreparedForest</code> wrapping <code>laplacian(bf) + scaling(σ)</code> on a non-uniform forest.</p>
+<p><em>Entry point</em> <a href="../pages/api.html"><code>halo_update!</code></a>, <code>apply_bc!</code>, <code>prepare(L, ::AbstractBlockField) -&gt; PreparedForest</code> · <em>Source</em> <code>src/schedule.jl</code>, <code>src/transfer.jl</code>, <code>src/transfer_kernels.jl</code>, <code>src/operators/forest.jl</code>, <code>src/operators/forest_packed.jl</code> · <em>Tests</em> <code>test/exchange_schedule.jl</code>, <code>test/exchange_kernels.jl</code>, <code>test/forest_parity.jl</code>, <code>test/forest_prepare.jl</code></p>
+<pre><code>  apply!(y, L, x, bf, α, β)
+    │
+    ├─ shares_exchange(L) ? ──yes──▶ ONE exchange, then sweep both operands
+    │                                 (Added/Scaled recurse BEHIND the fills)
+    ▼
+  ┌──────────────────────────────────────────────────┐
+  │ halo_update!(x, bf)                              │  ONCE, whole forest
+  │   _exchange_schedule(bf)   generation match?     │
+  │     └─ miss ─▶ rebuild, cache in bf.schedule[]   │
+  │   _exchange_storage!(_storage(x), _layout(x), s) │  ◀── the Enzyme seam
+  │     1. copies    same-level face slabs           │
+  │     2. interp    coarse ─▶ fine   (quadratic)    │  order is HARD:
+  │     3. restrict  fine ─▶ coarse  (flux match)    │  restrict READS interp's output
+  └──────────────────────────────────────────────────┘
+    │
+  ┌──────────────────────────────────────────────────┐
+  │ apply_bc!(x, bf)                                 │  ONCE, whole forest
+  │   _bc_storage!(store, layout, bc, bcfaces, h, n) │  ◀── the Enzyme seam
+  │     per-(dim, side) leaf-index lists, dims 1:N   │  reuses the SINGLE-GRID
+  └──────────────────────────────────────────────────┘  _fill_ghost! primitives
+    │
+    ├───────────────┬───────────────┐
+    ▼               ▼               ▼
+  per leaf:       per leaf:       per leaf:       ← the EXISTING single-grid
+  stencil         stencil         stencil           apply! from §1, unchanged</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> ExchangeSchedule{N,T}</span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>    copies<span class="op">::</span><span class="dt">Vector{CopyDescriptor{N}}      </span><span class="co"># src/dst leaf + src/dst index ranges</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>    interp<span class="op">::</span><span class="dt">Vector{GhostFill{N,T}}         </span><span class="co"># dst + Vector{SlabTerm} (block, ranges, weight)</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    restrict<span class="op">::</span><span class="dt">Vector{GhostFill{N,T}}</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>    cfflux<span class="op">::</span><span class="dt">Vector{CFFluxDescriptor{N}}    </span><span class="co"># isbits: Diffusion's coarse–fine rewrite</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>    bcfaces<span class="op">::</span><span class="dt">NTuple{N,NTuple{2,Vector{Int}}}   </span><span class="co"># leaf indices touching each physical face</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>    generation<span class="op">::</span><span class="dt">Int                        </span><span class="co"># -1 sentinel: the first fetch always builds</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a><span class="fu">prepare</span>(L, x<span class="op">::</span><span class="dt">AbstractBlockField</span>) <span class="op">-&gt;</span> PreparedForest</span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">islinear</span>(L) <span class="op">||</span> <span class="fu">throw</span>(<span class="fu">ArgumentError</span>(<span class="op">...</span>))</span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>  xpad, ypad  <span class="op">=</span> <span class="fu">similar</span>(x) <span class="op">|&gt;</span> zero_ghosts!, <span class="fu">allocate_output</span>(L, x)   <span class="co"># ALLOC 2</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>  op          <span class="op">=</span> <span class="fu">_prepare_tree</span>(L, x)         <span class="co"># also packs coefficient layouts to match x</span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">_exchange_schedule</span>(x.grid)                <span class="co"># ALLOC — warms the per-generation plan</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>  <span class="fu">PreparedForest</span>(op, x.grid, xpad, ypad,</span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>                 <span class="fu">similar</span>(x),                <span class="co"># ALLOC — adjscratch: the accumulating</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>                 x.grid.forest.generation[])<span class="co">#         adjoint sweep's buffer</span></span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a><span class="fu">mul!</span>(y<span class="op">::</span><span class="dt">AbstractVector</span>, P<span class="op">::</span><span class="dt">PreparedForest</span>, x<span class="op">::</span><span class="dt">AbstractVector</span>, α, β)</span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">_require_prepared_current</span>(P)              <span class="co"># THROWS ArgumentError if the forest moved</span></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">flat_to_interior!</span>(P.xpad, x); <span class="fu">_forest_capply!</span>(<span class="op">...</span>); <span class="fu">interior_to_flat!</span>(y, P.ypad, α, β)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. The schedule is a cache keyed on the generation, and it never throws on a miss.</strong> <code>_exchange_schedule(bf)</code> compares the stored plan’s generation against the live one and rebuilds on mismatch, writing back into the forest’s <code>Ref</code>. A fresh forest holds a sentinel plan stamped <code>-1</code>, which can never match, so the first fetch always builds. <code>prepare</code> warms it eagerly so the first <code>mul!</code> in a Krylov loop is not the one paying for construction. There is a second, lazily built device twin, flattened into <code>isbits</code> rows plus a CSR-style term array, for the packed GPU path.</p>
+<p><strong>2. Building the schedule is one pass over (leaf, dimension, side).</strong> Each face falls into exactly one of four cases: no neighbour, so push this leaf’s index onto the physical-BC face list; a same-level leaf, so emit one <code>CopyDescriptor</code> over the face slabs; a coarser covering leaf, so emit coarse→fine <code>GhostFill</code>s; or no covering leaf at all, meaning finer children, so emit fine→coarse <code>GhostFill</code>s and the matching <code>CFFluxDescriptor</code>s. The invariant that makes the adjoint simple is that <strong>each ghost region is the destination of exactly one descriptor across all three vectors</strong> — so the transpose is a plain scatter-add followed by a zero, with no double counting to reason about.</p>
+<p><strong>3. The two coarse–fine fills are different maps, and the order between them is not negotiable.</strong> Coarse→fine is a quadratic Martin–Cartwright interpolation: normal weights from a three-point Lagrange fit at the child’s quarter-cell offset, tangentially tensored with per-parity classes evaluated at <code>ξ = ±1/4</code>. Every term reads block <em>interiors</em> only, so it is order-independent and never touches a BC ghost. Fine→coarse is flux matching, not volume averaging — a plain <code>2ᴺ</code> average leaves an O(1) truncation error at the interface and was rejected — and it <strong>reads the fine children’s interpolation-filled ghosts</strong>. That is why <code>interp</code> must run before <code>restrict</code>, always.</p>
+<p><strong>4. The physical BC pass reuses the single-grid primitives verbatim.</strong> It walks the per-face leaf-index lists and calls the same <code>_fill_ghost!</code>, <code>_source_low</code>, <code>_source_high</code> and <code>_bc_sign</code> helpers §1 uses, in the same ascending dimension order. That is what keeps layer indexing, corner order and mirror signs bitwise identical to a single grid — which is what makes the parity test in <code>test/forest_parity.jl</code> meaningful. Periodic dimensions have empty face lists; their wrap is the exchange’s business.</p>
+<p><strong>5. Every forward sweep has a declared transpose, and they are paired by construction.</strong></p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Forward</th>
+<th>Transpose</th>
+<th>Shape of the transpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>_exchange_storage!</code></td>
+<td><code>_exchange_storage_adjoint!</code></td>
+<td>phases reversed: restrict, interp, copies</td>
+</tr>
+<tr class="even">
+<td><code>_run_copies!</code></td>
+<td><code>_run_copies_adjoint!</code></td>
+<td>descriptors reversed; <code>src += ghost</code>, then zero the ghost</td>
+</tr>
+<tr class="odd">
+<td><code>_run_fills!</code></td>
+<td><code>_run_fills_adjoint!</code></td>
+<td>fills reversed; every term gets <code>term += weight · dst</code>, then zero</td>
+</tr>
+<tr class="even">
+<td><code>_bc_storage!</code></td>
+<td><code>_bc_storage_adjoint!</code></td>
+<td>recurses first, so dimensions run <code>N:1</code> against the fill’s <code>1:N</code></td>
+</tr>
+<tr class="odd">
+<td><code>_cf_flux_rewrite!</code></td>
+<td><code>_cf_flux_rewrite_adjoint!</code></td>
+<td>descriptors reversed, conjugated coefficient averages</td>
+</tr>
+</tbody>
+</table>
+<p>The full forest adjoint is then: per-leaf transpose gathers leaving cotangents in ghosts, then <code>fold_bc!</code> over the face lists, then <code>halo_update_adjoint!</code> folding interface ghosts into neighbours’ interiors — §2’s single-grid order, lifted whole. Two shortcuts precede it: a self-adjoint operator on a <em>uniform</em> forest reuses the forward sweep, and a diagonal operator skips the fold entirely, because a pointwise transpose must not leak <code>x̄</code>’s ghost scratch into interiors. The adjoint exchange stays on host descriptor loops on every backend — its scatter-adds collide on shared source cells, so a kernel would need atomics and stop being bitwise reproducible.</p>
+<p><strong>6. <code>shares_exchange</code> is what turns two sweeps into one.</strong> An operator declares it when its forest action is one stencil sweep over an already-exchanged input: it reads <code>x</code>’s interiors and ghosts, writes only <code>y</code>’s interior, and never writes into <code>x</code>. When an <code>Added</code> reports it, <code>apply!</code> runs a single <code>halo_update!</code> and <code>apply_bc!</code> and then recurses into a <code>_forest_sweep!</code> combinator method <em>behind</em> the fills, so both operands sweep the one exchanged input. Those combinator sweep methods are reachable only through that gate — an ungated operand could rewrite <code>x</code>’s ghosts under its sibling. <code>Diffusion</code> declares it conditionally, <code>true</code> only on a uniform forest, because the coarse–fine flux rewrite writes into <code>x</code>’s ghosts and so violates the contract the moment the forest refines. A forgotten declaration costs a redundant exchange; it never costs correctness.</p>
+<p><strong>7. The differentiated seams are shaped by an Enzyme constraint, not by taste.</strong> <code>_exchange_storage!</code> and <code>_bc_storage!</code> take raw storage, a singleton layout tag, and <code>isbits</code>-or-<code>Const</code> descriptors — never a field, never a grid. <a href="../pages/autodiff.html">Automatic Differentiation</a> covers why they get custom rules at all and why those rules cannot swallow a parameter gradient. What matters here is the argument <em>shape</em>: <code>_bc_storage!</code> receives the grid already shredded into its BC tuple, face lists, halo and block size, because passing <code>g</code> would put a GC-pointer-and-inline-float mixture into a rule signature. Keeping the seam at this level rather than at <code>halo_update!</code> is also what lets one rule serve both layouts. <code>CFFluxDescriptor</code> was made fully <code>isbits</code> for the opposite reason — it <em>must</em> be taped, because coefficient gradients flow through it.</p>
+<p><strong>Throws and invalidates.</strong> A regrid invalidates a <code>PreparedForest</code>; a stale one throws on <code>mul!</code> and on <code>apply!</code>, the two public entries.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Guard</th>
+<th>Condition</th>
+<th>Raises</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>_require_prepared_current(P)</code></td>
+<td><code>P.generation != P.grid.forest.generation[]</code></td>
+<td><code>ArgumentError</code> — re-run <code>prepare</code></td>
+</tr>
+<tr class="even">
+<td><code>_require_current(f)</code></td>
+<td>field stamp mismatch, checked in all five sweeps</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="odd">
+<td><code>_throw_unbalanced(K)</code></td>
+<td>schedule build meets a face violating 2:1</td>
+<td><code>ArgumentError</code> — run <code>balance!</code></td>
+</tr>
+<tr class="even">
+<td><code>_validate_coarse_fine(bf)</code></td>
+<td>non-uniform forest with a halo other than 1, or a block size too small or odd</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="odd">
+<td><code>diffusion(g, κ)</code></td>
+<td>built directly on a grid with <code>Interface</code> faces</td>
+<td><code>ArgumentError</code> — build on the whole forest with a <code>BlockField</code> coefficient</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="regrid-a-topology-edit-then-data-motion-keyed-by-identity" class="level2">
+<h2 class="anchored" data-anchor-id="regrid-a-topology-edit-then-data-motion-keyed-by-identity">8 — <code>regrid!</code>: a topology edit, then data motion keyed by identity</h2>
+<p>When to regrid, how to choose an indicator, and why a conserved field wants <code>Conservative</code> rather than the default are in <a href="../pages/amr.html">AMR</a>. This section is the sequence: what is snapshotted before the topology moves, why the transfer is keyed by <code>LeafKey</code> and never by position, and exactly which objects come out alive. The example traced is <code>η, u = regrid!(η, u; refine = b -&gt; maximum(interior(b)) &gt; τ)</code>.</p>
+<p><em>Entry point</em> <a href="../pages/api.html"><code>regrid!</code></a> · <em>Source</em> <code>src/amr.jl</code> · <em>Tests</em> <code>test/amr_driver.jl</code>, <code>test/forest_amr.jl</code></p>
+<pre><code>  regrid!(u, more...; refine, coarsen)
+    │
+    ├──▶ _regrid_marks       each leaf handed to the predicate as an ordinary Field
+    │                         (a VIEW of the block — no copy)
+    │
+    ├──▶ gen0      = forest.generation[]          snapshot BEFORE mutating
+    ├──▶ old_index = copy(forest.index)           _set_leaves! empties it in place
+    ├──▶ old_blocks = f.blocks                    by REFERENCE — topology edits
+    │                                              never touch field storage
+    ├──▶ _regrid_topology!   ONE combined split+collapse commit, then balance!
+    │
+    ├──▶ generation unchanged? ──yes──▶ return the SAME field objects.
+    │                                    prepared operators stay valid. DONE.
+    ▼ no
+  ┌───────────────────────────────────────────────────────────────┐
+  │ per field:  _fresh_field   -&gt; zeroed BlockField on the NEW    │
+  │                               leaf set, policy P preserved    │
+  │             _transfer!     -&gt; per new leaf, look up old_index │
+  │                unchanged leaf ─▶ copy the interior            │
+  │                new child      ─▶ prolong from the old PARENT  │
+  │                coarsened leaf ─▶ 2⁻ᴺ mean of the old CHILDREN │
+  └───────────────────────────────────────────────────────────────┘
+    │
+    └──▶ ghosts left ZERO (scratch, refilled by §7 on the next apply)
+         every old field and every PreparedForest now throws (§6, §7)</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb16"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">regrid!</span>(u<span class="op">::</span><span class="dt">BlockField</span>, more<span class="op">::</span><span class="dt">BlockField...</span>; refine, coarsen <span class="op">=</span> <span class="fu">Returns</span>(<span class="cn">false</span>))</span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  bf<span class="op">::</span><span class="dt">BlockForest{N}  </span><span class="op">=</span> u.grid</span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  forest<span class="op">::</span><span class="dt">Forest{N}   </span><span class="op">=</span> bf.forest</span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">_require_current</span>(u); <span class="cf">for</span> f <span class="kw">in</span> more; f.grid <span class="op">===</span> bf <span class="op">||</span> THROW; <span class="fu">_require_current</span>(f); <span class="cf">end</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">all</span>(iseven, bf.blocksize) <span class="op">||</span> THROW               <span class="co"># _transfer_average! halves n</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>  refine_marks, coarsen_marks <span class="op">=</span> <span class="fu">_regrid_marks</span>(u, bf, refine, coarsen)</span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>                                      <span class="co"># -&gt; Set{LeafKey{N}} x 2, DISJOINT by construction:</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>                                      <span class="co">#    refine wins, level-0 is never coarsen-marked</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>  gen0                <span class="op">=</span> forest.generation[]</span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>  old_index           <span class="op">=</span> <span class="fu">copy</span>(forest.index)         <span class="co"># ALLOC 1 — Dict{LeafKey{N},Int}</span></span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>  old_blocks          <span class="op">=</span> <span class="fu">map</span>(f <span class="op">-&gt;</span> f.blocks, fields) <span class="co"># by reference, no copy</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">_regrid_topology!</span>(forest, refine_marks, coarsen_marks)</span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>                                      <span class="co"># MUTATES forest: splits, collapses complete</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>                                      <span class="co"># families, ONE _set_leaves!, then balance!</span></span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>  forest.generation[] <span class="op">==</span> gen0 <span class="op">&amp;&amp;</span> <span class="cf">return</span> <span class="fu">isempty</span>(more) ? u <span class="op">:</span> fields     <span class="co"># SAME</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>  out <span class="op">=</span> <span class="fu">map</span>(fields, old_blocks) <span class="cf">do</span> f, blocks</span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>      <span class="fu">_transfer!</span>(<span class="fu">_fresh_field</span>(f, bf), blocks, old_index, bf)           <span class="co"># ALLOC per leaf</span></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>  <span class="cf">end</span></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>  <span class="co"># STALE: every field and every PreparedForest built on the old leaf set</span></span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="fu">isempty</span>(more) ? out[<span class="fl">1</span>] <span class="op">:</span> out</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. The predicates see a <code>Field</code>, not a coordinate.</strong> <code>_regrid_marks</code> builds <code>block(u, i, leaf_grid(bf, i))</code> per leaf — an ordinary <code>Field</code> sharing the block’s storage, no copy — so a criterion is written as a reduction like <code>b -&gt; maximum(abs, interior(b)) &gt; τ</code>. This is the one place where a forest predicate differs from <code>refine!</code>’s, which takes a block centre. The two mark sets are disjoint without a check: a refine-marked leaf is never offered to <code>coarsen</code>, and level-0 leaves are never coarsen-marked at all.</p>
+<p><strong>2. Three things are snapshotted, for three different reasons.</strong> <code>gen0</code> is the comparison that detects a no-op. <code>old_index</code> must be a <em>copy</em> because <code>_set_leaves!</code> empties the live dictionary in place. <code>old_blocks</code> is captured by reference and needs no copy at all, because a topology edit never touches field storage — the arrays outlive the leaf vector that used to name them.</p>
+<p><strong>3. The topology edit is one commit, not two.</strong> <code>_regrid_topology!</code> splits refine-marked leaves and collapses complete coarsen-marked families in a single pass into one key set, then does one <code>_set_leaves!</code>, then <code>balance!</code>. Calling <code>refine!</code> and <code>coarsen!</code> in sequence would work but would commit — and bump the generation — two or three times for no reason. Because refine-marked siblings are never coarsen-marked, the “all <code>2ᴺ</code> siblings present and marked” count test already implements the refine-wins rule; there is no explicit conflict resolution anywhere.</p>
+<p><strong>4. The early return is exact, and it is the convergence signal.</strong> If the marks changed nothing, <code>_set_leaves!</code>’s identity check declined to bump the generation, and <code>regrid!</code> hands back the <strong>same objects</strong> — <code>===</code>, not merely equal. So a prepared operator built before the call is still valid, and an adaptive loop can use “<code>regrid!</code> returned what I gave it” as its stopping test.</p>
+<p><strong>5. The transfer is keyed by <code>LeafKey</code>, and that is the whole design.</strong> Storage positions are Morton indices into a vector that was just re-sorted, so they mean nothing across the edit. For each <em>new</em> leaf <code>K</code>, <code>_transfer!</code> asks <code>old_index</code> three questions in order: was <code>K</code> itself a leaf before (copy its interior); was <code>parent_key(K)</code> a leaf before (prolong from the parent into <code>K</code>’s octant); are all of <code>children(K)</code> old leaves (average them in). Interiors only — old ghosts are never read, and the new field’s ghosts stay zero until §7’s next exchange. The transfer policy is read once per field from its type parameter, so the per-leaf loop dispatches on a singleton rather than branching.</p>
+<p><strong>6. The three kernels, and which weights each uses.</strong> Copy is a view-to-view assignment over the interior box. Prolong under the default <code>Interpolated</code> is per-dimension linear interpolation with weights <code>(3/4, 1/4)</code>, flipping to a one-sided <code>(5/4, −1/4)</code> extrapolation where the quarter-weight tap would fall outside the parent’s interior; it is exact on linear data but not mean-preserving. Prolong under <code>Conservative</code> or <code>SlopeLimited</code> is instead a cell-conservative reconstruction <code>u_child = u_parent + Σ_d ξ_d·σ_d</code> with <code>ξ_d = ∓1/4</code>, and the reason it conserves is that <strong>all <code>2ᴺ</code> children share one slope per parent cell per dimension</strong>, so their mean telescopes back to the parent exactly. The two differ only in the slope: a centred difference for <code>Conservative</code>, a minmod limiter for <code>SlopeLimited</code> — which also injects rather than reconstructs on every parent-block-face cell. Coarsening is always the <code>2⁻ᴺ</code> arithmetic mean of the children, regardless of policy.</p>
+<p><strong>Throws and invalidates.</strong> Everything built on the old leaf set is now stale and throws through the §6 and §7 guards. <code>regrid!</code> itself:</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Guard</th>
+<th>Condition</th>
+<th>Raises</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>field/forest check</td>
+<td>a field in <code>more</code> is on a different <code>BlockForest</code></td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>_require_current</code></td>
+<td>any input field is already stale</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="odd">
+<td>block-size check</td>
+<td>an odd block size in any dimension</td>
+<td><code>ArgumentError</code> — the <code>2⁻ᴺ</code> mean halves it</td>
+</tr>
+<tr class="even">
+<td>layout check</td>
+<td>any argument is a <code>PackedBlockField</code></td>
+<td><code>ArgumentError</code> — unpack, regrid, re-pack</td>
+</tr>
+<tr class="odd">
+<td><code>_transfer!</code> fallthrough</td>
+<td>a new leaf has no old leaf within one level</td>
+<td><code>ErrorException</code> — a bug assert, not a user error</td>
+</tr>
+</tbody>
+</table>
+<p>Because a real regrid invalidates every field on the old leaf set, anything needed afterwards must ride the same call. Compute indicator fields <em>before</em> regridding and pass them first, which is why the traced example puts <code>η</code> ahead of <code>u</code>.</p>
+</section>
+<section id="multigrid-a-tuple-of-levels-and-one-recursive-v-cycle" class="level2">
+<h2 class="anchored" data-anchor-id="multigrid-a-tuple-of-levels-and-one-recursive-v-cycle">9 — Multigrid: a tuple of levels, and one recursive V-cycle</h2>
+<p>Why multigrid breaks the link between grid size and iteration count, and how the transfer pair and the smoothers fall out of machinery that already exists, is in <a href="../pages/multigrid.html">Geometric Multigrid</a>. This section is the hierarchy’s representation and the cycle’s control flow. The example traced solves <span class="math inline">\(-\Delta u = f\)</span> on a 256×256 grid with homogeneous Dirichlet boundaries. The minus sign makes the operator positive definite, as CG requires; both the prepared operator and its multigrid preconditioner are built from that same <code>L</code>.</p>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb17"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="im">using</span> <span class="bu">MatrixFreeOperators</span>, <span class="bu">Krylov</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>g <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">256</span>, <span class="fl">256</span>))  <span class="co"># homogeneous Dirichlet by default</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>L <span class="op">=</span> <span class="fu">-laplacian</span>(g)</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a>P <span class="op">=</span> <span class="fu">prepare</span>(L)</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>M <span class="op">=</span> <span class="fu">MultigridPreconditioner</span>(L)</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>b <span class="op">=</span> <span class="fu">flatten</span>(<span class="fu">set!</span>(<span class="fu">scalar_field</span>(g), x <span class="op">-&gt;</span> <span class="fl">2</span>π<span class="op">^</span><span class="fl">2</span> <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>])))</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>u, stats <span class="op">=</span> Krylov.<span class="fu">cg</span>(P, b; M)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><em>Entry point</em> <a href="../pages/api.html"><code>MultigridPreconditioner</code></a>, <code>mul!(z, M, r)</code> · <em>Source</em> <code>src/multigrid.jl</code>, <code>src/operators/restriction.jl</code>, <code>src/operators/prolongation.jl</code> · <em>Tests</em> <code>test/multigrid.jl</code></p>
+<pre><code>  MultigridPreconditioner(L)
+    │
+    ├──▶ _mg_grids(g, :auto)        coarsen while even, &gt; 64 cells, &lt; 10 levels
+    │
+    ├──▶ _build_levels              per level, recursively:
+    │      A = _prepare_tree(L, proto)      the buffer-hoisted tree from §3
+    │      R, P = restriction(…), prolongation(…)
+    │      x, b, r, t = four scalar_fields
+    │      smoother state from operator_diagonal(L)
+    │      then recurse on _rediscretize(L, coarser)   ← NOT a Galerkin RAP
+    │
+    └──▶ _build_coarsest            materialise column by column, lu(), keep the
+                                     factorization and a flat scratch vector
+
+  mul!(z, M, r)                     Krylov's preconditioner convention: z ≈ L⁻¹r
+    ├─ flat_to_interior!(top.b, r)
+    ├─ _vcycle!(M.levels)           Tuple recursion — fully specialised per level
+    └─ interior_to_flat!(z, top.x, α, β)
+
+  _vcycle!((lvl, rest...))          _vcycle!((coarsest,))
+    smooth FROM ZERO                  interior_to_flat! -&gt; ldiv!(fact, bflat)
+    r ← b − A·x                                        -&gt; flat_to_interior!
+    next.b ← R·r
+    _vcycle!(rest)
+    x ← x + P·next.x                (α=true, β=true — prolongate and ACCUMULATE)
+    smooth again</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb19"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> MGLevel{O,RO<span class="op">&lt;:</span><span class="dt">Restriction</span>,PO<span class="op">&lt;:</span><span class="dt">Prolongation</span>,G<span class="op">&lt;:</span><span class="dt">CartesianGrid</span>,F<span class="op">&lt;:</span><span class="dt">Field</span>,S}</span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>    A<span class="op">::</span><span class="dt">O          </span><span class="co"># _prepare_tree'd rediscretised operator — NOT a PreparedOperator</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>    R<span class="op">::</span><span class="dt">RO</span>; P<span class="op">::</span><span class="dt">PO  </span><span class="co"># this level -&gt; coarser, coarser -&gt; this level</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>    g<span class="op">::</span><span class="dt">G</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>    x<span class="op">::</span><span class="dt">F</span>; b<span class="op">::</span><span class="dt">F</span>; r<span class="op">::</span><span class="dt">F</span>; t<span class="op">::</span><span class="dt">F      </span><span class="co"># correction, RHS, residual, spare — all preallocated</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>    smoother<span class="op">::</span><span class="dt">S</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> MultigridPreconditioner{Lv<span class="op">&lt;:</span><span class="dt">Tuple</span>}</span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>    levels<span class="op">::</span><span class="dt">Lv    </span><span class="co"># (MGLevel, MGLevel, …, MGCoarsest) — a TUPLE, not a Vector</span></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a><span class="kw">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. The hierarchy is a <code>Tuple</code> on purpose.</strong> <code>_vcycle!</code> recurses with <code>first</code>/<code>Base.tail</code>, so with a tuple every level is a distinct type and the whole cycle specialises into straight-line code with no dynamic dispatch and no allocation. A <code>Vector{MGLevel}</code> would make the recursion type-unstable at every step, in the hottest loop the preconditioner has.</p>
+<p><strong>2. <code>Restriction</code> and <code>Prolongation</code> are a declared adjoint pair, not two independent stencils.</strong> <code>Prolongation</code> is per-dimension linear interpolation on the cell-centred 2:1 pair, weights <code>(3/4, 1/4)</code>. <code>Restriction</code>’s <em>forward action</em> literally is the scaled transpose gather <code>2⁻ᴺ·Pᵀ</code> — the same kernel, called from the other side — so <code>⟨Px, y⟩ = ⟨x, Pᵀy⟩</code> holds to machine precision by construction rather than by agreement. Their declared adjoints return each other, scaled: <code>Rᵀ = 2⁻ᴺ·P</code> and <code>Pᵀ = 2ᴺ·R</code>. Note <code>Restriction</code>’s forward path runs no prologue: the gather engine from §2 zeroes its input’s ghosts first, so only fine interior values contribute and <code>boundary_rhs(R, ·)</code> is identically zero.</p>
+<p><strong>3. Coarse operators are rediscretised, not assembled.</strong> <code>_rediscretize</code> walks the tree and rebuilds each leaf on the coarse grid — <code>Laplacian(gc)</code>, <code>Diffusion</code> with an averaged coefficient, <code>ScalingOp</code> with an averaged coefficient, structural recursion through <code>Scaled</code>/<code>Added</code>/<code>Composed</code> — and throws on anything it does not know. Coefficient averaging uses a plain <code>2ᴺ</code>-child arithmetic mean, <strong>deliberately not</strong> <code>Restriction</code>: full weighting folds Dirichlet’s <code>−1</code> mirror through the boundary, which is right for a residual and wrong for a material coefficient at a wall.</p>
+<p><strong>4. Smoothers are built from the operator’s own diagonal.</strong> <code>operator_diagonal</code> returns a <code>Number</code> where the diagonal is uniform and a <code>Field</code> otherwise, with the boundary mirror fills’ contribution included, and throws where no diagonal is declared — there is no generic fallback, so an operator without one errors rather than smoothing with a wrong diagonal. <code>Jacobi</code> stores <code>ω</code>, a sweep count and the inverted diagonal. <code>Chebyshev</code> additionally runs ten power iterations on <code>D⁻¹A</code> at setup, seeded with a checkerboard, to bracket the spectrum; the two scratch fields that costs are discarded afterwards.</p>
+<p><strong>5. The default Jacobi smoother skips a separate zeroing pass.</strong> The pre-smooth runs “from zero”: its first sweep <em>writes</em> <code>x</code> rather than updating it, which both skips a residual evaluation and removes the need for a separate zeroing pass. Chebyshev’s from-zero path explicitly clears <code>x</code> before its recurrence. The coarse correction comes back through <code>apply!(lvl.x, lvl.P, nxt.x, lvl.g, true, true)</code> — prolongate and accumulate, using §1’s <code>β ≠ 0</code> form.</p>
+<p>Pre- and post-smoothing use the same fixed operator, making the cycle symmetric for symmetric <code>L</code>. Symmetry alone does not establish CG compatibility: <a href="https://jso.dev/Krylov.jl/stable/solvers/spd/">Krylov’s CG contract</a> requires both the system and preconditioner to be positive definite. The Dirichlet <span class="math inline">\(-\Delta\)</span> example with the default damped Jacobi smoother satisfies those conditions; <code>test/multigrid.jl</code> checks the preconditioner’s symmetry and positive eigenvalues on a small grid.</p>
+<p><strong>6. Everything is preallocated at construction; <code>mul!</code> allocates nothing.</strong> The construction cost includes the coarsest level’s dense <code>Matrix</code> and its <code>lu</code> factorization — the only place in the package where a matrix is assembled, and only ever at a level small enough that <code>levels=:auto</code> stopped coarsening. The standalone <code>MultigridSolver</code> wraps a real <code>PreparedOperator</code> plus two flat vectors; its <code>solve</code> allocates only the returned iterate, and on exhausting <code>maxiter</code> it warns and returns the current iterate rather than throwing.</p>
+<p><strong>Throws and invalidates.</strong> Nothing here goes stale; the hierarchy is immutable once built.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Guard</th>
+<th>Condition</th>
+<th>Raises</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>MultigridPreconditioner(L)</code></td>
+<td><code>!islinear(L)</code></td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>MultigridPreconditioner(L)</code></td>
+<td>the grid is a <code>BlockForest</code></td>
+<td><code>ArgumentError</code> — forest multigrid is not supported</td>
+</tr>
+<tr class="odd">
+<td><code>MultigridPreconditioner(L)</code></td>
+<td><code>cycle</code> other than <code>:V</code></td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>_mg_grids</code></td>
+<td><code>:auto</code> found nothing coarsenable, or <code>levels &lt; 2</code></td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="odd">
+<td><code>_build_coarsest</code></td>
+<td>the coarse operator is singular — an all-Neumann or all-periodic Poisson has a constant nullspace</td>
+<td><code>ArgumentError</code> — add a Dirichlet face or a zeroth-order term</td>
+</tr>
+<tr class="even">
+<td><code>_rediscretize</code></td>
+<td>an unsupported leaf</td>
+<td><code>ArgumentError</code>, listing the supported set</td>
+</tr>
+<tr class="odd">
+<td><code>_validate_transfer</code></td>
+<td>grids not 2:1, extents differing, <code>Interface</code> faces, mismatched BC kinds, different devices</td>
+<td>five separate <code>ArgumentError</code>s</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="distributed-slabs-and-one-exchange-in-the-middle-of-the-tree" class="level2">
+<h2 class="anchored" data-anchor-id="distributed-slabs-and-one-exchange-in-the-middle-of-the-tree">10 — Distributed: slabs, and one exchange in the middle of the tree</h2>
+<p>What a partition model is, why a cut face is a boundary condition, and why the list of distributable operators is deliberately short are in <a href="../pages/distributed.html">Distributed Multi-GPU Solves</a>. This section is where the guards run, how a global operator becomes a per-slab one, and why the walk over the tree exists at all. The example traced is <code>P = prepare_distributed(laplacian(g) - scaling(σ), 4)</code>.</p>
+<p><em>Entry point</em> <code>partition_grid</code>, <a href="../pages/api.html"><code>prepare_distributed</code></a>, <a href="../pages/api.html"><code>local_grids</code></a> · <em>Source</em> <code>src/partitioning.jl</code>, <code>src/distributed.jl</code>, <code>ext/MatrixFreeOperatorsMDLAExt.jl</code> · <em>Tests</em> <code>test/partitioning.jl</code>, <code>test/multigpu/</code></p>
+<pre><code>  prepare_distributed(L0, nparts)
+    │
+    ├──▶ L = _push_adjoints(L0)         normalise AdjointOp DOWN to leaves FIRST,
+    │                                   so the guards only ever see leaf adjoints
+    ├──▶ _check_distributable(L)        ◀── on the GLOBAL tree
+    ├──▶ _check_one_grid(L, g)          ◀── on the GLOBAL tree
+    │      both MUST run here: after localisation a ScalingOp reports the SLAB
+    │      grid while its Laplacian sibling still reports the global one, so a
+    │      re-check of a localised tree would reject a valid operator
+    │
+    ├──▶ partition_grid(g, nparts)  -&gt; Vector{CartesianGrid}
+    │
+    ├──▶ per partition:  prepare(adapt(CuArray, _slab_op(Lh, locals[d])), …)
+    │                     ◀── localisation happens HERE, after the guards
+    │
+    └──▶ _dist_tree(…)              a DistNode mirror of the prepared tree
+
+  mul!(y, P, x, α, β)
+    ├──▶ _root_scatter!                 fill every slab's Interface ghosts
+    ├──▶ _dist_capply!(ypads, tree, xpads, ctx, true, false)
+    │      DistComposed ─▶ apply b, THEN _dist_scatter!, THEN apply a
+    │                      the exchange fires in the MIDDLE of the tree
+    └──▶ interior_to_flat! per device   α and β applied at the flat boundary,
+                                        never across a collective</code></pre>
+<div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb21"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">partition_grid</span>(g<span class="op">::</span><span class="dt">CartesianGrid{N,T}</span>, nparts) <span class="op">-&gt;</span> <span class="dt">Vector</span>{CartesianGrid{N}}</span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># A slab is a plain CartesianGrid. Per slab:</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  extent      <span class="op">=</span> g.extent            <span class="co"># the GLOBAL extent, verbatim</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>  spacing     <span class="op">=</span> g.spacing           <span class="co"># copied, never recomputed from the slab span</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>  size        <span class="op">=</span> <span class="fu">length</span>(zr) <span class="kw">in</span> dim N, <span class="kw">global</span> elsewhere</span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>  bc[N]       <span class="op">=</span> (p <span class="op">&gt;</span> <span class="fl">1</span> <span class="op">||</span> periodic ? <span class="fu">Interface</span>() <span class="op">:</span> bc_global[N][<span class="fl">1</span>], <span class="op">…</span>)</span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a>  local_range <span class="op">=</span> <span class="fu">ntuple</span>(d <span class="op">-&gt;</span> d <span class="op">==</span> N ? zr <span class="op">:</span> g.local_range[d], <span class="fu">Val</span>(N))</span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a>  topology    <span class="op">=</span> <span class="cn">nothing</span></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a>  <span class="co"># HOLDS: extent describes the DOMAIN, local_range describes OWNERSHIP.</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a>  <span class="co">#        cell_center evaluates at the GLOBAL cell index:</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>  <span class="co">#          z = first(local_range[d]) - 1 + I[d] - halo[d]</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">#          extent[d][1] + (z - 0.5) * spacing[d]</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a><span class="fu">_slab_op</span>(L, lg)                     <span class="co"># localisation: only coefficient-bearing leaves move</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>  ScalingOp{<span class="op">&lt;:</span><span class="dt">Field</span>} <span class="op">-&gt;</span> <span class="fu">ScalingOp</span>(<span class="fu">_slab_field</span>(S.coeff, lg))</span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>  Diffusion          <span class="op">-&gt;</span> <span class="fu">Diffusion</span>(lg, <span class="fu">_slab_field</span>(D.κ, lg), D.avg)   <span class="co"># INNER constructor</span></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>  Added<span class="op">/</span>Scaled<span class="op">/</span>Composed<span class="op">/</span>AdjointOp <span class="op">-&gt;</span> structural recursion</span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a>  anything else      <span class="op">-&gt;</span> SAME object, every partition                 <span class="co"># narrows DistLeaf.ops</span></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a><span class="fu">_slab_field</span>(f<span class="op">::</span><span class="dt">Field{L}</span>, lg) <span class="op">-&gt;</span> Field{L}</span>
+<span id="cb21-21"><a href="#cb21-21" aria-hidden="true" tabindex="-1"></a>  win <span class="op">=</span> one PADDED window per dim, offset by the slab<span class="op">'</span>s local_range</span>
+<span id="cb21-22"><a href="#cb21-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">Field</span><span class="dt">{L}</span>(<span class="fu">copy</span>(<span class="fu">view</span>(f.data, win<span class="op">...</span>)), lg)      <span class="co"># ALLOC 1 — a RESTRICTION, never a</span></span>
+<span id="cb21-23"><a href="#cb21-23" aria-hidden="true" tabindex="-1"></a>                                                <span class="co"># re-evaluation, so no coordinate drift</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<p><strong>1. A slab keeps the global extent, and that is not an oversight.</strong> Extent describes the domain; <code>local_range</code> describes ownership; <code>cell_center</code> reconstructs a global cell index from the two and evaluates there. Rewriting a slab’s extent to describe its own span would round twice — once for the slab origin and once for the cell offset — and drift by an ulp, which would make a coordinate-assembled right-hand side depend on how many partitions you happened to use. The same reasoning is why <code>spacing</code> is copied rather than recomputed.</p>
+<p><strong>2. A cut face is an <code>Interface</code>, and <code>halo_update!</code> stays a no-op.</strong> Each partition’s cut-dimension faces are marked <code>Interface()</code>, which §1’s BC sweep skips and §2’s fold skips. Filling them is the driver’s job, not the grid’s: the exchange stages a neighbour’s planes into the prepared input buffer between applies. Under a periodic cut <em>both</em> cut faces are <code>Interface</code> on <em>every</em> partition, and a two-partition periodic split therefore needs at least <code>2h</code> planes per slab rather than <code>h</code>.</p>
+<p><strong>3. The guards live in core and run once, on the global tree.</strong> <code>_distributable</code> is a whitelist predicate whose <code>AbstractOperator</code> fallback is <code>false</code>, so an operator that was never considered is refused rather than silently mishandled. <code>_check_one_grid</code> covers what a per-operator predicate structurally cannot: a mismatched <em>pair</em>. Both run before <code>_slab_op</code>, and that ordering is the point — after localisation the tree is deliberately inconsistent, with localised leaves reporting slab grids and grid-free leaves reporting the global one. Both guards live in <code>src/distributed.jl</code> rather than the extension so they are tested on CI, which has no GPU.</p>
+<p><strong>4. <code>_push_adjoints</code> runs before the guards, for the same reason it runs inside <code>prepare</code> (§3).</strong> It folds <code>AdjointOp</code> down to leaves, so <code>_distributable</code> only ever has to reason about leaf-level adjoints, and the composition structure a distributed adjoint needs its reduction inside is explicit in the tree.</p>
+<p><strong>5. The distributed tree exists because of one node type.</strong> <code>DistLeaf</code>, <code>DistAdded</code> and <code>DistScaled</code> are bookkeeping; <code>DistComposed</code> is the reason for the walk. A composition’s intermediate lives on each slab with unfilled <code>Interface</code> ghosts, so the exchange has to fire <em>between</em> the two factors — mid-tree, not at the boundary. <code>_reads_ghosts</code> decides whether that exchange is needed at all, and it must gate the forward scatter and the adjoint reduce <em>together</em>, or the adjoint identity breaks. <code>DistAdjoint</code> carries its own input copy, and that is not an optimisation: §2’s gather opens with <code>zero_ghosts!</code> on its input, so sharing the enclosing segment’s field would destroy exchanged ghosts a sibling under the same <code>Added</code> still needs — making the result depend on term order, silently.</p>
+<p><strong>6. Two shortcuts that hold elsewhere are deliberately not taken here.</strong> The distributed adjoint walk skips the <code>isselfadjoint</code> and <code>isdiagonal</code> fast paths, because <code>_selfadjoint_grid</code> reports <code>true</code> for any <code>CartesianGrid</code> — including a slab whose cut faces are <code>Interface</code>, where the claim is false. And <code>_dist_boundary_rhs!</code> calls <code>_apply_raw!</code> rather than <code>apply!</code>, the same reason as §3: the prologue would overwrite the inhomogeneous ghost offsets. Finally, <code>local_grids</code> returns <em>host</em> grids on purpose — a field allocated on a device grid would land on whichever device happened to be current, and <a href="../pages/api.html"><code>assemble_rhs</code></a> would then read it from a different one.</p>
+<p><strong>Throws and invalidates.</strong> Nothing goes stale; every refusal is up front.</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 33%">
+<col style="width: 33%">
+<col style="width: 33%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Guard</th>
+<th>Condition</th>
+<th>Raises</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>partition_grid</code></td>
+<td>the grid is already distributed, <code>nparts &lt; 1</code>, or a slab is thinner than the halo</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>_check_distributable</code></td>
+<td>any operator outside the whitelist, or a complex / already-distributed coefficient</td>
+<td><code>ArgumentError</code>, naming the culprit and why</td>
+</tr>
+<tr class="odd">
+<td><code>_check_one_grid</code></td>
+<td>a grid-bearing operator is on a different grid from the one being partitioned</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>prepare_distributed</code></td>
+<td>the grid is not a <code>CartesianGrid</code>, or <code>nparts</code> exceeds the available devices</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="odd">
+<td><code>_node_exchange</code></td>
+<td>a non-scalar intermediate — a rank changer would need its own partition spec</td>
+<td><code>ArgumentError</code></td>
+</tr>
+<tr class="even">
+<td><code>assemble_rhs</code></td>
+<td>wrong number of source fields, or one sized against the wrong slab</td>
+<td><code>ArgumentError</code></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="rules-for-changing-this-code" class="level2">
+<h2 class="anchored" data-anchor-id="rules-for-changing-this-code">Rules for changing this code</h2>
+<p>Each of these is an obligation the type system cannot enforce, paired with the test that catches you if you skip it.</p>
+<ol type="1">
+<li><p><strong>A new leaf owes four checks, and its adjoint owes the boundary.</strong> Action against an analytic solution, the adjoint identity <code>⟨Lx,y⟩ = ⟨x,Lᵀy⟩</code>, composition laws, and AD gradients against finite differences — for the field <em>and</em> for operator parameters. Boundary conditions break self-adjointness even for the Laplacian, so the adjoint must be declared including its boundary contribution; do not infer one. <code>test/test_utils.jl</code> has <code>fd_gradient</code> and <code>materialize</code>, which densifies a prepared operator on a small grid so structure can be checked exactly. Caught by the per-operator file, e.g.&nbsp;<code>test/laplacian.jl</code>, <code>test/diffusion.jl</code>.</p></li>
+<li><p><strong>A new wrapper must preserve the traits its interface exposes.</strong> The lazy combinators declare all five traits, including explicit <code>false</code> declarations where propagation is unsafe. The internal <code>PreparedComposed</code> and <code>PreparedAdjoint</code> nodes declare the four algebraic traits and use the inherited <code>shares_exchange = false</code> default. The solver wrappers <code>PreparedOperator</code> and <code>PreparedForest</code> forward only the four algebraic traits; they have no <code>AbstractOperator</code> fallback and expose no <code>shares_exchange</code> method. Forgetting <code>islinear</code> on an internal node hides a linear tree from consumers; forgetting a method on a solver wrapper raises <code>MethodError</code>. Check <code>test/algebra.jl</code>, <code>test/operators_abstract.jl</code> and <code>test/prepare_linalg.jl</code> when changing these declarations.</p></li>
+<li><p><strong>A new forest-level sweep owes a declared transpose and an <code>isbits</code> descriptor.</strong> The transpose is what keeps the adjoint identity exact on a forest; the descriptor shape is what keeps the Enzyme seam viable. If the sweep must be differentiated through rather than ruled, its descriptor has to be fully <code>isbits</code> — see <code>CFFluxDescriptor</code>, which carries no <code>Vector</code> for exactly that reason. Caught by <code>test/exchange_schedule.jl</code>, <code>test/exchange_kernels.jl</code>, <code>test/enzyme_rules.jl</code>.</p></li>
+<li><p><strong>Anything that reads ghosts owes a <code>shares_exchange</code> declaration, and it gates forward and adjoint together.</strong> Declaring it when the operator writes into its input, or into an intermediate needing its own exchange, is silently wrong rather than merely slow. Caught by <code>test/forest_parity.jl</code> and <code>test/forest_diffusion.jl</code>.</p></li>
+<li><p><strong>Never index block storage outside <code>_leaf_array</code> / <code>_leaf_view</code>.</strong> Reaching into <code>f.blocks[i]</code> or <code>f.data[…, i]</code> compiles, runs, passes on the layout you tested, and breaks the other one. Caught by <code>test/forest_packed.jl</code> — but only if the new code path has a packed test.</p></li>
+<li><p><strong>An Enzyme rule body must not allocate.</strong> A <code>Dict</code> lookup and a closure in an augmented-primal body segfaulted on Linux x86_64 while passing on macOS/aarch64. Enzyme behaves differently across platforms generally: a green local run is not evidence about CI, so push and read the matrix. Caught by <code>test/enzyme_rules.jl</code>, on CI.</p></li>
+<li><p><strong>Measure every allocation claim under <code>--check-bounds=yes</code>.</strong> <code>Pkg.test</code> and therefore CI always pass it, and it blocks the SROA that elides a <code>Ref</code> or a <code>view</code> escaping a broadcast body — the same code measures 0 B without the flag and hundreds of bytes with it. A CI-only allocation failure is this before it is anything exotic. Related: a stencil reading <strong>two</strong> arrays must unroll dimensions by recursion over <code>Val(D)</code>, not <code>ntuple(Val(N))</code> — with one array the closure inlines, with a coefficient array it stops, the broadcast loses vectorisation, and a 256² sweep goes from 33 µs to 260 µs with identical numerics. See <code>_diff_axes</code> in <code>src/operators/diffusion.jl</code>.</p></li>
+<li><p><strong><code>prepare</code> is stateful and single-threaded.</strong> Call it once per concurrent solve, not once globally. And note that a green suite does not mean the GPU paths ran: <code>test/device_gpu.jl</code> is gated behind <code>MFO_TEST_GPU=true</code> and an available CUDA.jl.</p></li>
+</ol>
+<p>One more, about this page. If you change a call sequence described here, update the section that describes it. The only thing this page is worth is being true.</p>
+
+
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="../pages/distributed.html" class="pagination-link" aria-label="Distributed Multi-GPU Solves">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Distributed Multi-GPU Solves</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="../pages/api.html" class="pagination-link" aria-label="API">
+        <span class="nav-page-text"><span class="chapter-title">API</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+      &nbsp;
+    </div>   
+    <div class="nav-footer-center">
+<p>Built on 2026-09-11 (PR #101)</p>
+</div>
+    <div class="nav-footer-right">
+      &nbsp;
+    </div>
+  </div>
+</footer>
+<script>
+(function() {
+    // Injected per-version by .github/workflows/Docs.yml at deploy time.
+    // Local preview: placeholders aren't substituted; fall back to sensible defaults.
+    var CURRENT_VERSION = "pr-101";
+    var BASE_PATH = "/MatrixFreeOperators.jl/";
+    if (CURRENT_VERSION.indexOf("__") === 0) {
+        CURRENT_VERSION = "dev";
+        BASE_PATH = "/";
+    }
+
+    function buildDropdown(versions) {
+        var navbar = document.querySelector('.navbar-nav.navbar-nav-scroll.ms-auto');
+        if (!navbar) return;
+
+        var li = document.createElement('li');
+        li.className = 'nav-item dropdown';
+        li.innerHTML =
+            '<a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">' +
+                CURRENT_VERSION +
+            '</a>' +
+            '<ul class="dropdown-menu dropdown-menu-end"></ul>';
+
+        var menu = li.querySelector('.dropdown-menu');
+
+        ['stable', 'dev'].forEach(function(v) {
+            var a = document.createElement('a');
+            a.className = 'dropdown-item' + (v === CURRENT_VERSION ? ' active' : '');
+            a.href = BASE_PATH + v + '/';
+            a.textContent = v;
+            var item = document.createElement('li');
+            item.appendChild(a);
+            menu.appendChild(item);
+        });
+
+        if (versions && versions.length > 0) {
+            var divider = document.createElement('li');
+            divider.innerHTML = '<hr class="dropdown-divider">';
+            menu.appendChild(divider);
+
+            versions.forEach(function(v) {
+                var a = document.createElement('a');
+                a.className = 'dropdown-item' + (v === CURRENT_VERSION ? ' active' : '');
+                a.href = BASE_PATH + v + '/';
+                a.textContent = v;
+                var item = document.createElement('li');
+                item.appendChild(a);
+                menu.appendChild(item);
+            });
+        }
+
+        navbar.prepend(li);
+
+        if (versions && versions.length > 0 && CURRENT_VERSION !== 'stable' && CURRENT_VERSION !== 'dev') {
+            var latest = versions[0];
+            if (CURRENT_VERSION !== latest) {
+                var banner = document.createElement('div');
+                banner.className = 'alert alert-warning text-center mb-0 rounded-0';
+                banner.setAttribute('role', 'alert');
+                banner.innerHTML = 'You are viewing docs for <strong>' + CURRENT_VERSION + '</strong>. ' +
+                    'The latest stable release is <a href="' + BASE_PATH + 'stable/" class="alert-link">' + latest + '</a>.';
+                document.body.prepend(banner);
+            }
+        }
+    }
+
+    fetch(BASE_PATH + 'versions.json')
+        .then(function(res) { return res.ok ? res.json() : []; })
+        .catch(function() { return []; })
+        .then(buildDropdown);
+
+    var titleLink = document.querySelector('a.navbar-brand:not(.navbar-brand-logo)');
+    if (titleLink) {
+        titleLink.href = BASE_PATH + CURRENT_VERSION + '/';
+    }
+
+    var starLink = document.querySelector('a.nav-link[href*="/stargazers"]');
+    if (starLink) {
+        var match = starLink.href.match(/github\.com\/([^/]+\/[^/]+)\/stargazers/);
+        if (match) {
+            var img = document.createElement('img');
+            img.src = 'https://img.shields.io/github/stars/' + match[1] + '?style=social';
+            img.alt = 'GitHub stars';
+            img.style.verticalAlign = 'middle';
+            starLink.replaceChildren(img);
+        }
+    }
+})();
+</script>
+
+
+
+
+</body></html>
