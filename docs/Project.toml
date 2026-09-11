@@ -8,3 +8,6 @@ LocalCoverage = "5f6e1e16-694c-5876-87ef-16b5274f298e"
 MatrixFreeOperators = "bf251007-91fc-422b-8727-f8d5215c1c76"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[sources]
+MatrixFreeOperators = {path = ".."}
