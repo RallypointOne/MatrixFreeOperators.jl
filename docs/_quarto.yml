@@ -35,6 +35,7 @@ book:
         - pages/benchmark.qmd
         - pages/multigrid.qmd
         - pages/distributed.qmd
+        - pages/internals.qmd
     - part: "API"
       chapters:
         - pages/api.qmd

@@ -1,0 +1,1387 @@
+---
+title: "Internals"
+toc: true
+toc-depth: 2
+---
+
+This page is for someone opening `src/` for the first time. It walks the main
+operations of the package — applying an operator, taking an adjoint, crossing
+into a Krylov solver, editing a forest, moving field data across a regrid — and
+for each one gives the entry point, the call sequence, and **the concrete type
+of everything that exists at each step**.
+
+It is deliberately the only page written this way. [API](api.qmd) is generated
+from docstrings and has the signatures. `DESIGN.md` is the record of *decisions
+and rationale* — why the package is shaped like this, what was rejected, what is
+deferred. The sibling pages ([AMR](amr.qmd), [Geometric
+Multigrid](multigrid.qmd), [Distributed Multi-GPU Solves](distributed.qmd),
+[Automatic Differentiation](autodiff.qmd)) tell the user-facing story of each
+subsystem: what it means and when to reach for it. This page has call sequences
+and types, and nothing else.
+
+## How to read this page
+
+Every section has the same five parts: a lede naming the one concrete example it
+traces, a metadata line pointing at the entry point and the source and test
+files, a **call diagram** (who calls whom), a **type trace** (what object exists
+at each step), then step commentary and a closing paragraph on what the
+operation throws and what it invalidates.
+
+The call diagram and the type trace carry different information on purpose. The
+diagram is the control flow; the trace is the data. Read the diagram to learn
+the shape, the trace to learn the types.
+
+No line numbers appear anywhere on this page — they rot faster than anything
+else, and a symbol name plus the *Source* line is enough to `grep`. Each
+exported symbol is linked to the API page once, on its first mention;
+everything else is in bare backticks. Where this page and the tests disagree,
+the tests are right and this page is a bug.
+
+## Pseudocode notation
+
+| Mark | Meaning |
+|---|---|
+| `name::ConcreteType = …` | a binding, with its concrete type named — never elided to an abstract one |
+| `f(x) -> T` | returns a freshly built `T` |
+| `f!(x)` | mutates `x` in place (Julia's own convention; no extra mark) |
+| `# ALLOC` | allocates, naming what and how many |
+| `# MUTATES x` | mutates in place where the name does not end in `!` |
+| `# SAME` | hands back the object it was given — identity preserved, callers' references stay valid |
+| `# THROWS T` | a guard, and the exception type it raises |
+| `# HOLDS:` | the invariant that is true once this step returns |
+| `# STALE:` | what this step invalidates |
+
+## Vocabulary
+
+Six terms recur in every section. They are defined once, here.
+
+**The two index spaces.** Every field's storage is *halo-padded*: its array has
+`padded_size(g)` entries, of which `local_size(g)` are owned cells and the rest
+are ghosts. `interior(g)` returns the `CartesianIndices` of the owned cells *in
+padded coordinates*, and `interior(f)` returns the matching `SubArray`. So a
+stencil at an owned cell on the low face reads `I - δ`, which is a ghost. Every
+operator body indexes the padded array and writes only the interior.
+
+**Ghost cells are scratch.** They are filled by `halo_update!` and
+[`apply_bc!`](api.qmd) at the top of each `apply!`, so any `apply!` may clobber
+its *input's* ghosts — that is in the contract, not a bug. Fields the package
+hands you ship with zeroed ghosts (`allocate_output` calls `zero_ghosts!`), and
+a nonzero ghost cotangent arriving at an adjoint is a bug upstream.
+
+**Interior-only flat vectors.** The Krylov boundary is a flat `AbstractVector`
+spanning owned degrees of freedom only. [`flatten`](api.qmd),
+`flat_to_interior!` and `interior_to_flat!` cross it. Ghost cells are never
+solver unknowns, and the flat side cannot address one: the length comes from
+`local_size`, and every copy goes through an `interior` view.
+
+**The `apply!` prologue.** Each stencil leaf is two pieces: `apply!` fills
+ghosts (`halo_update!` then `apply_bc!`) and then calls `_apply_raw!`, the
+ghost-trusting kernel. The split exists because some callers must *not* re-run
+the prologue — `boundary_rhs` plants inhomogeneous ghost offsets that
+`apply_bc!` would immediately overwrite, and the distributed driver stages
+exchanged ghosts from its neighbours the same way. Those callers reach past
+`apply!` to `_apply_raw!`.
+
+**Traits are declared, never assumed.** [`islinear`](api.qmd),
+[`isconstant`](api.qmd), [`isselfadjoint`](api.qmd), [`isdiagonal`](api.qmd)
+and [`shares_exchange`](api.qmd) all default to `false`. Leaves opt in;
+combinators propagate explicitly. The same rule governs adjoints: there is no
+generic `apply!` and no generic `apply_adjoint!`, so an operator that forgot to
+declare one produces a `MethodError` or an `ArgumentError`. A forgotten
+declaration must degrade to an error, never to a wrong number. This single idea
+answers most "why is there no fallback here?" questions below.
+
+**Generations and staleness.** A `Forest` carries a `generation` counter. Every
+[`BlockField`](api.qmd) and [`PreparedForest`](api.qmd) stamps the generation it
+was built against, and `_require_current` compares the stamp on use. Editing the
+topology bumps the counter, so "invalidated" here always means *throws on next
+use*, never *silently reads wrong-shaped storage*.
+
+## Where the code lives
+
+| File | Owns | Section |
+|---|---|---|
+| **Foundation** | | |
+| `src/Grids.jl` | `AbstractGrid`, `CartesianGrid`, `interior`, `coarsen`, the `halo_update!` seam | §1 |
+| `src/boundaries.jl` | `AbstractBC` and its four leaves, `apply_bc!`, `fold_bc!`, the ghost fill/fold primitives | §1, §2 |
+| `src/Fields.jl` | `AbstractField`, `Field`, the transfer-policy singletons, the flat-vector boundary | §1, §3 |
+| **Operator algebra** | | |
+| `src/operators/abstract.jl` | `AbstractOperator`, the five traits, `AdjointOp`, the adjoint gather engine | §1, §2 |
+| `src/operators/algebra.jl` | `Scaled`, `Added`, `Composed` and their trait and adjoint propagation | §2 |
+| `src/operators/laplacian.jl`, `derivative.jl`, `gradient.jl`, `divergence.jl`, `scaling.jl`, `diffusion.jl`, `advection.jl` | one leaf each: the struct, `_apply_raw!`, the declared adjoint, the trait declarations | §1 |
+| `src/operators/diagonal.jl` | `operator_diagonal` per leaf and its combinator rules | §9 |
+| `src/operators/linearize.jl` | `LinearizedOp`, the JVP backend tags | §4 |
+| **Solver boundary** | | |
+| `src/linalg.jl` | `prepare`, `PreparedOperator`, `PreparedForest`, the tree rewrite, flat `mul!`, `boundary_rhs` | §3 |
+| **Forest** | | |
+| `src/topology.jl` | `LeafKey`, `Forest`, Morton ordering, `refine!`/`coarsen!`/`balance!` | §5 |
+| `src/BlockForest.jl` | `BlockForest`, per-leaf geometry, `leaf_grid` | §5 |
+| `src/blockfield.jl`, `src/packedfield.jl` | `BlockField`, `PackedBlockField`, the layout tags, `pack`/`unpack` | §6 |
+| `src/schedule.jl` | the exchange descriptor structs and their device twins | §7 |
+| `src/transfer.jl`, `src/transfer_kernels.jl` | schedule construction, the forest halo and BC sweeps, their transposes | §7 |
+| `src/operators/forest.jl`, `forest_packed.jl` | per-leaf and packed-kernel forest sweeps | §7 |
+| `src/amr.jl` | `regrid!` and the three transfer kernels | §8 |
+| **Solvers and partitioning** | | |
+| `src/multigrid.jl`, `src/operators/restriction.jl`, `prolongation.jl` | the transfer pair, the level hierarchy, the V-cycle | §9 |
+| `src/partitioning.jl`, `src/distributed.jl` | slab partitioning, the distributability guards, the distributed tree | §10 |
+| **Extensions** | | |
+| `ext/` | Enzyme rules, the MDLA multi-GPU backend, Reactant. The core depends on none of them | §7, §10 |
+
+## 1 — `apply!`: fill the ghosts, then sweep the stencil
+
+Everything else in the package composes this one operation. The example traced
+here is `laplacian(g) * u` where `g::CartesianGrid{2,Float64,…}` carries
+homogeneous Dirichlet faces and `u::Field{Center,Matrix{Float64},…}`.
+
+*Entry point* `apply(L, x) -> Field`, `apply!(y, L, x, g, α, β) -> y` ·
+*Source* `src/operators/abstract.jl`, `src/Grids.jl`, `src/boundaries.jl`,
+`src/operators/laplacian.jl` · *Tests* `test/operators_abstract.jl`,
+`test/laplacian.jl`, `test/boundaries.jl`
+
+```
+  L * x   or   L(x)
+    │
+    ▼
+  ┌──────────────────────────────────────────────┐
+  │ apply(L, x)                                  │  the allocating entry:
+  │   y = allocate_output(L, x)                  │  similar(x) + zero_ghosts!
+  └──────────────────────────────────────────────┘
+    │
+    ▼
+  ┌──────────────────────────────────────────────┐
+  │ apply!(y, L, x, g)  ->  (…, α=true, β=false) │  the in-place 6-arg form
+  └──────────────────────────────────────────────┘
+    │
+    ├──▶ halo_update!(x, g)      no-op on a CartesianGrid (forest: §7)
+    │
+    ├──▶ apply_bc!(x)            homogeneous ghost fill, dims 1:N
+    │
+    └──▶ _apply_raw!(y, L, x, g, α, β)
+           interior(y) .= α .* stencil.(x.data, interior(g)) [.+ β .* interior(y)]
+```
+
+```julia
+apply(L::Laplacian, x::Field)
+  y::Field{Center,Matrix{Float64},CartesianGrid{2,…}} = allocate_output(L, x)   # ALLOC 1
+       similar(x) -> Field(similar(x.data), x.grid); zero_ghosts!(y)
+  apply!(y, L, x, x.grid)
+    apply!(y, L, x, g, true, false)                        # α=true, β=false
+      halo_update!(x, g)                        # SAME — identity on a CartesianGrid
+      apply_bc!(x)                              # MUTATES x.data ghost layers
+        _apply_bc_dims!(x.data, g, Val(1), g.bc)  #   dims ascend 1:N
+          _fill_ghost!(data, Val(D), ghost, bc, source)
+                                    #   ghost .= _bc_sign(bc) .* source; Periodic +1 wrap,
+                                    #   Dirichlet -1 mirror, Neumann +1 mirror,
+                                    #   Interface skipped entirely
+      # HOLDS: every ghost x needs now carries its homogeneous value
+      _apply_raw!(y, L, x, g, true, false)
+        inv_h2::NTuple{2,Float64} = _inv_spacing2(g)       # stack, no heap
+        interior(y) .= _lap_at.(Ref(x.data), interior(g), Ref(inv_h2))
+                                                           # MUTATES interior(y) only
+  # HOLDS: y's own ghosts untouched; x's interior untouched
+  return y
+```
+
+**1. The allocating entry is a thin shell.** `L * x` and `L(x)` both land on
+`apply`, which calls `allocate_output` and then the in-place form.
+`allocate_output` is where tensor rank is decided: the default is `similar(x)`,
+`Gradient` returns `similar(x, SVector{N,T})`, and `Divergence` returns
+`similar(x, T)` — each throwing an `ArgumentError` if handed the wrong input
+rank. Operators carry no rank parameter; the *element type* carries it.
+
+**2. `halo_update!` is a seam, not a function.** On any
+[`AbstractGrid`](api.qmd) it is `halo_update!(x, ::AbstractGrid) = x` — a
+literal identity. The package has exactly one overload, for `BlockForest`
+(§7). Even a [`partition_grid`](api.qmd) slab, whose cut faces are marked
+`Interface`, takes the identity: the distributed driver stages a neighbour's
+planes into the prepared input buffer instead of calling through here (§10).
+The seam exists so operator bodies are written once and distributed and AMR
+change only what the grid *is* and what this function *does*.
+
+**3. `apply_bc!` fills only the homogeneous part.** It walks dimensions in
+ascending order `1:N` on a shrinking BC tuple, and for each halo layer writes
+`ghost = sign · source`: `+1` and a wrapped source for `Periodic`, `-1` and a
+mirrored source for `Dirichlet`, `+1` and a mirrored source for `Neumann`, and
+nothing at all for `Interface`. Ascending order is what makes corner ghosts
+consistent ghost-of-ghost values. Because only the homogeneous part is applied,
+`islinear(L)` really does imply `L(0) = 0`; inhomogeneous boundary data enters
+the system separately, through `boundary_rhs` (§3).
+
+**4. The leaf body is an array-level broadcast.** `_lap_at` reads `x.data` — the
+*whole padded array* — at `interior(g)`, so the `I ± δ` taps at a face cell land
+on the ghosts step 3 just wrote. It writes through `interior(y)`, a `SubArray`,
+so `y`'s ghosts are never touched and the `β ≠ 0` accumulating form is safe.
+There is no device branch and no kernel: the same broadcast runs on a `Matrix`
+and on a `CuArray`, and Enzyme differentiates it without a rule.
+KernelAbstractions `@kernel` is the per-operator escape hatch, not the default.
+
+**5. Combinators are the same shape.** `Scaled` folds its factor into `α` and
+costs nothing. `Added` runs both operands, the second with `β = true` so it
+accumulates. `Composed` allocates an intermediate, applies `b` into it, then
+applies `a` — passing `tmp.grid` rather than `g`, because a transfer chain
+changes grid between factors. On a single grid `Added` therefore runs the
+prologue twice over the same `x`; collapsing that to one exchange is a forest
+optimisation (§7), where it is worth something.
+
+**Throws and invalidates.** Nothing here invalidates state. There is **no
+generic six-argument `apply!`** — every leaf and every combinator declares its
+own, so an operator that forgot is a `MethodError` at the call site rather than
+a silently wrong sweep. `Field`'s inner constructor throws `DimensionMismatch`
+unless `size(data) == padded_size(grid)`. `allocate_output` for
+[`Gradient`](api.qmd) throws `ArgumentError` on a non-`Number` element type and
+for [`Divergence`](api.qmd) on a non-`SVector` one.
+
+## 2 — Adjoints: a gather, then `fold_bc!`
+
+`apply_bc!` is a linear map from interior cells to the padded array. Call it
+`P`, and call the stencil sweep `S`; then a leaf's forward action on the
+interior is `S·P`, and its exact transpose is `Pᵀ·Sᵀ`. `fold_bc!` **is** `Pᵀ`.
+That identity is the whole of this section. The example traced is
+`apply_adjoint!(x̄, L, ȳ, g)` for the same Dirichlet Laplacian as §1.
+
+*Entry point* `adjoint(L) -> AbstractOperator`, `apply_adjoint!(x̄, L, ȳ, g, α, β)` ·
+*Source* `src/operators/abstract.jl`, `src/operators/algebra.jl`,
+`src/boundaries.jl` · *Tests* `test/algebra.jl`, `test/operators_abstract.jl`,
+`test/boundaries.jl`
+
+```
+  L'                              apply_adjoint!(x̄, L, ȳ, g, α, β)
+    │                               │
+    ▼                               ▼
+  islinear(L)? ──no──▶ THROW      ┌─────────────────────────────────────┐
+    │ yes                         │ adjoint_gather!(x̄, ȳ, gather, α, β) │
+    ▼                             └─────────────────────────────────────┘
+  adjoint_operator(L)               │
+    │                               ├──▶ zero_ghosts!(ȳ)   only interior
+    ├─ leaf with a closed form ──▶  │                       cotangents are inputs
+    │    e.g. self-adjoint -> L     │
+    │         Restriction -> 2⁻ᴺ·P  ├──▶ x̄.data .= gather.(ȳ.data, …)
+    │                               │      sweeps the WHOLE padded array,
+    └─ otherwise ──▶ AdjointOp(L)   │      so cotangents land in ghosts
+                                    │
+                                    └──▶ fold_bc!(x̄)      Pᵀ: scatter each ghost
+                                           back into its mirror source,
+                                           dims descend N:1, then zero it
+```
+
+```julia
+adjoint(L::AbstractOperator)
+  islinear(L) || throw(ArgumentError(...))       # THROWS ArgumentError — nonlinear
+  adjoint_operator(L)                            # the gate-free internal hook
+    -> L                 if the leaf is its own transpose  (isselfadjoint)
+    -> Scaled(...)       if a closed form exists  (Restriction -> 2⁻ᴺ·Prolongation)
+    -> AdjointOp(L)      otherwise               # ALLOC 1, lazy wrapper
+
+apply_adjoint!(x̄::Field, L::Laplacian, ȳ::Field, g::CartesianGrid, α, β)
+  adjoint_gather!(x̄, ȳ, gather, α, β)
+    zero_ghosts!(ȳ)                              # MUTATES ȳ ghosts -> 0
+    # HOLDS: only interior cotangents enter, matching the flat Krylov boundary
+    if iszero(β)
+      x̄.data .= gather.(Ref(ȳ.data), CartesianIndices(x̄.data))   # MUTATES all of x̄
+      fold_bc!(x̄)
+      isone(α) || (x̄.data .*= α)
+    else
+      zero_bc_ghosts!(x̄)                         # this call's ghosts only; Interface
+                                                 # slabs kept — a sibling under the
+                                                 # same Added still needs them
+      x̄.data .= α .* gather.(…) .+ β .* x̄.data
+      fold_bc!(x̄)
+    end
+  # HOLDS: ⟨Lx, y⟩ = ⟨x, Lᵀy⟩ exactly, boundary contributions included
+```
+
+**1. The gate and the hook are two different functions.** `Base.adjoint` checks `islinear` and refuses nonlinear operators with a message pointing at [`linearize`](api.qmd) (§4). `adjoint_operator` is the internal hook that skips the check; leaves override it when a cheaper closed form exists, and it is what every combinator recursion calls. [`AdjointOp`](api.qmd) is the lazy fallback: it forwards `islinear`, `isconstant`, `isselfadjoint` and `isdiagonal` to its operand. It explicitly declares `shares_exchange = false`: the forest adjoint needs a gather and a cross-block fold, which sharing a forward exchange would bypass. It swaps `allocate_output` with `allocate_input`, is its own involution, and swaps the two actions, so `apply!(y, AdjointOp(L), x, …)` *is* `apply_adjoint!(y, L, x, …)`.
+
+**2. The gather sweeps the padded array, on purpose.** A forward stencil reads
+ghosts, so its transpose must *write* them. `adjoint_gather!` therefore runs
+over `CartesianIndices(x̄.data)`, not over the interior, using a bounds-masked
+read that returns zero outside the array. Cotangents pile up in ghost cells, and
+the next step is what turns them back into interior contributions.
+
+**3. `fold_bc!` is the transpose of `apply_bc!`, structurally.** Where
+`_fill_ghost!` gathers `ghost = sign · source`, `_fold_ghost!` scatters
+`source += sign · ghost` and then zeroes the ghost. And where the fill recurses
+*after* doing its work, giving ascending dimensions `1:N`, the fold recurses
+*first*, giving descending `N:1` — necessary because corner ghosts are
+ghost-of-ghost values, so the fills compose and the transpose must reverse the
+composition. `Interface` faces are skipped on both sides: those ghosts belong to
+the forest exchange (§7) or the distributed reduction (§10), never to this pair.
+The trailing `fill!(dst, 0)` leaves the array in exactly the state the forest
+adjoint exchange requires as its precondition.
+
+**4. The accumulating branch is the subtle one.** With `β ≠ 0` the running total
+in `x̄` already contains folded contributions from earlier terms. Handing that to
+`fold_bc!` again would double-count them, so `zero_bc_ghosts!` clears exactly
+the cells the fold touches — and deliberately *not* the `Interface` slabs, which
+carry neighbour-owned cotangents a sibling operator under the same `Added` still
+has to accumulate.
+
+**5. Trait propagation is written out, never inherited.** Each combinator
+declares all five; nothing falls through to a default it did not earn.
+
+| | `Scaled` | `Added` | `Composed` | `AdjointOp` |
+|---|---|---|---|---|
+| `islinear` | operand | both | both | operand |
+| `isconstant` | operand | both | both | operand |
+| `isdiagonal` | operand | both | both | operand |
+| `isselfadjoint` | operand **and** `isreal(α)` | both | **always `false`** | operand |
+| `shares_exchange` | operand | both | **always `false`** | **always `false`** |
+| `adjoint_operator` | `Scaled(opᵀ, conj α)` | `Added(aᵀ, bᵀ)` | `Composed(bᵀ, aᵀ)` — order flips | the operand |
+
+The hard `false`s encode limits on propagation. `isselfadjoint(::Composed)` cannot be `true` from its factors: `(AB)ᵀ = BᵀAᵀ`, which equals `AB` only when they commute, and nothing here can check that. `shares_exchange(::Composed)` is `false` because `b(x)` is a fresh intermediate that needs its own exchange before `a` reads it; `AdjointOp` needs the separate adjoint fold described above. `isselfadjoint` is also grid-aware rather than fixed: it asks `_uniform_grid(L.grid)`, which for a `BlockForest` reads a live `Ref` — so the moment a regrid makes the forest non-uniform, the Laplacian stops claiming self-adjointness.
+
+**Throws and invalidates.** `adjoint(L)` on a nonlinear `L` throws
+`ArgumentError` naming `linearize` as the alternative. `apply_adjoint!` has a
+six-argument fallback that throws `ArgumentError("no adjoint action declared for
+…")` — the mirror of §1's missing generic `apply!`, and for the same reason. The
+`Scaled`/`Added`/`Composed` size query throws `ArgumentError` when a composition
+is bound to no grid at all.
+
+## 3 — The solver boundary: `prepare`, and flat `mul!`
+
+Krylov wants `mul!(y::AbstractVector, A, x::AbstractVector)` with no allocation
+per iteration. Operators want fields with ghosts. [`prepare`](api.qmd) is the
+seam: it walks the tree once, allocates every buffer the tree will ever need,
+and returns an object whose only job is to be that `mul!`. The example traced is
+`P = prepare(scaling(σ) - laplacian(g), scalar_field(g))` followed by
+`Krylov.cg(P, flatten(f))`.
+
+*Entry point* `prepare(L, x) -> PreparedOperator`, `mul!(y, P, x, α, β)` ·
+*Source* `src/linalg.jl`, `src/Fields.jl` · *Tests* `test/prepare_linalg.jl`,
+`test/fields.jl`
+
+```
+  prepare(L, x)                         mul!(y::Vector, P, x::Vector, α, β)
+    │                                     │
+    ├──▶ islinear(L)? ──no──▶ THROW       ├──▶ flat_to_interior!(P.xpad, x)
+    │                                     │      reshape, no copy; ghosts LEFT ALONE
+    ├──▶ xpad = similar(x)                │      (the distributed path stages
+    │      zero_ghosts!(xpad)             │       neighbour ghosts here — §10)
+    │                                     │
+    ├──▶ ypad = allocate_output(L, x)     ├──▶ apply!(P.ypad, P.op, P.xpad, P.grid)
+    │                                     │      ALWAYS α=true, β=false
+    └──▶ op = _prepare_tree(L, x)         │
+           │                              └──▶ interior_to_flat!(y, P.ypad, α, β)
+           ├─ Composed  ─▶ PreparedComposed(a, b, tmp)      the caller's α and β
+           ├─ AdjointOp ─▶ _push_adjoints, then              are fused into the
+           │                PreparedAdjoint(op, scratch)     copy-OUT broadcast
+           ├─ ScalingOp{BlockField} on a packed prototype
+           │                ─▶ ScalingOp(pack(coeff))
+           └─ leaves, Added, Scaled ─▶ structural / unchanged
+```
+
+```julia
+prepare(L::AbstractOperator, x::Field) -> PreparedOperator
+  islinear(L) || throw(ArgumentError(...))              # THROWS ArgumentError
+  xpad::Field = similar(x); zero_ghosts!(xpad)          # ALLOC 1
+  ypad::Field = allocate_output(L, x)                   # ALLOC 1 (maybe another eltype)
+  op = _prepare_tree(L, x)                              # ALLOC 1 per Composed / AdjointOp
+  PreparedOperator(op, x.grid, xpad, ypad)              # 4 fields, NOT an AbstractOperator
+
+_prepare_tree(L::Composed, x)
+  PreparedComposed(_prepare_tree(L.a, …), _prepare_tree(L.b, x),
+                   allocate_output(L.b, x))             # tmp bound once, reused forever
+_prepare_tree(L::AdjointOp, x)
+  pushed = _push_adjoints(L)                            # (A*B)ᵀ  ->  Composed(Bᵀ, Aᵀ)
+  pushed isa AdjointOp || return _prepare_tree(pushed, x)
+  op = _prepare_tree(pushed.op, x)                      # normalise the leaf's coefficient layout
+  scratch = allocate_output(pushed, x)                  # adjoint OUTPUT shape, not x's shape
+  return PreparedAdjoint(op, scratch)
+
+mul!(y::AbstractVector, P::PreparedOperator, x::AbstractVector, α, β)
+  flat_to_interior!(P.xpad, x)     # MUTATES interior(P.xpad); NO zero_ghosts! here
+  apply!(P.ypad, P.op, P.xpad, P.grid)                  # α=true, β=false — not the caller's
+  interior_to_flat!(y, P.ypad, α, β)                    # vi .= α .* interior .+ β .* vi
+  # HOLDS: zero allocation in steady state
+```
+
+**1. A prepared operator is not an operator.** `PreparedOperator` and `PreparedForest` are deliberately *not* `AbstractOperator` subtypes: they are the solver boundary, so they cannot re-enter `+`, `*`, `adjoint` or `apply`. They do implement the small interface Krylov consumes — `size` as `(output DOFs, input DOFs)`, so rank changers report an honestly rectangular shape, and `eltype` unwrapping `SVector{M,T}` to `T`. Four traits are forwarded to the wrapped tree explicitly: `islinear`, `isconstant`, `isselfadjoint` and `isdiagonal`. Neither wrapper exposes `shares_exchange`; that trait is queried on nodes inside the tree. Calling it on a prepared solver wrapper raises `MethodError`, because there is no `AbstractOperator` supertype to supply the default.
+
+**2. The tree rewrite hoists every per-call allocation.** Unprepared, `Composed` allocates its intermediate on every apply. `_prepare_tree` replaces it with `PreparedComposed`, which carries that intermediate as a field — and `PreparedComposed` *is* an `AbstractOperator`, so it re-enters ordinary `apply!` dispatch and the sweep code below it needs no changes. `PreparedAdjoint` does the same for a surviving leaf adjoint's scratch. Both explicitly declare `islinear`, `isconstant`, `isselfadjoint` and `isdiagonal`, while `shares_exchange` uses the `AbstractOperator` default of `false`. `PreparedAdjoint` additionally declares `adjoint_operator(L) = L.op`, without which the generic forest adjoint walk would wrap it in another `AdjointOp` whose apply is this node's transpose again, recursing forever.
+
+**3. `_push_adjoints` runs before any buffer is bound.** It rewrites
+`AdjointOp(A*B)` into `Composed(Bᵀ, Aᵀ)`, with a fixed-point guard so a leaf
+with no cheaper adjoint does not recurse. The reason is distributed:
+`PreparedComposed` carries one intermediate shaped for the *forward* pass, and a
+distributed adjoint walk would run `aᵀ` then `bᵀ` with no reduction between
+them, dropping the intermediate's `Interface` cotangents. Normalising the tree
+so the composition is explicit puts the reduction back where it belongs (§10).
+
+**4. The flat boundary is interior-only by construction, not by assertion.**
+The flat length is derived from `local_size`, `flat_to_interior!` reshapes the
+caller's vector without copying and broadcasts into an `interior` view, and
+`interior_to_flat!` is the exact mirror. There is no index arithmetic that could
+reach a ghost. `flatten` is the one allocating member of the family — it
+materialises a copy of the interior, reinterpreting `SVector{M,T}` to
+component-fastest scalars for a vector field.
+
+**5. Two comments in `mul!` are load-bearing.** The operator is applied with
+`α = true, β = false` always; the caller's `α` and `β` are fused into the
+copy-out broadcast instead. And there is deliberately no `zero_ghosts!` on the
+way in: the distributed path stages exchanged `Interface` ghosts into `P.xpad`
+between applies, and zeroing would discard them. When `β = 0` the output vector
+is never *read*, only written, so solvers may hand in an uninitialised buffer.
+
+**6. `boundary_rhs` is the affine lift, and it reaches past the prologue.**
+`apply!` enforces homogeneous boundaries, so `L` is linear and inhomogeneous
+data has to enter the right-hand side: solve `L·u = f − b` where `b` is this
+lift. It builds a zeroed field, fills *inhomogeneous* ghosts into it — Dirichlet
+ghost `2·value`, Neumann layer `k` ghost `(2k−1)·Δ·flux`, periodic and
+`Interface` left at zero — and then calls `_apply_raw!` rather than `apply!`,
+because the prologue would overwrite exactly the offsets it just planted. It
+recurses through the combinators on the algebra: `Added` sums the two lifts,
+`Scaled` scales, `Composed` uses `a(b(x) + c_b) + c_a`, and `AdjointOp` is
+identically zero because the adjoint action is built homogeneous.
+
+**Throws and invalidates.** Nothing on a `CartesianGrid` goes stale — a
+`PreparedOperator` has no generation stamp because its grid cannot change shape.
+
+| Guard | Condition | Raises |
+|---|---|---|
+| `prepare(L, x)` | `!islinear(L)` | `ArgumentError`, naming `linearize(L, u0)` |
+| `prepare(L)` one-argument form | the operator is bound to no grid | `ArgumentError` |
+| `boundary_rhs(L, x)` | `!islinear(L)` | `ArgumentError` |
+| `_require_prepared_match` | `x`/`y` grid or eltype disagrees with the prepared buffers | `ArgumentError`, four separate checks |
+| `mul!(::AbstractVector, ::AbstractOperator, …)` | called on a *raw* operator | `ArgumentError` — "would allocate scratch every call; wrap with `prepare`" |
+| `operator_diagonal(L)` | no diagonal declared for `L` | `ArgumentError` — there is deliberately no fallback |
+
+The `PreparedForest` twin adds a generation stamp and one more guard; it is
+covered in §7, once the forest exists to explain it.
+
+## 4 — `linearize`: a nonlinear operator becomes a Krylov-ready Jacobian
+
+Nonlinear operators support `apply!` and differentiate fine, but they are not
+linear maps: `adjoint` and `prepare` both refuse them. `linearize`
+closes the gap by freezing a state `u₀` and returning the Jacobian *as an
+operator*, which then satisfies `islinear` and can be prepared like anything
+else. The example traced is `J = linearize(F, u0)` for an
+`F::Advection{…,SelfAdvection}`, followed by `apply!(y, J, v, g)`.
+
+*Entry point* `linearize(F, u0[, backend]) -> LinearizedOp`, `linearize!(J, u)` ·
+*Source* `src/operators/linearize.jl`, `ext/MatrixFreeOperatorsEnzymeExt.jl` ·
+*Tests* `test/linearize.jl`
+
+```
+  linearize(F, u0)                 ──▶ FiniteDifferenceJVP()   (the default)
+  linearize(F, u0, EnzymeJVP())    ──▶ provided by the Enzyme extension
+    │                                   otherwise THROWS, naming `using Enzyme`
+    ▼
+  LinearizedOp(op, u0, shifted, fplus, fminus)      every buffer owned
+    │
+    ├── apply!(y, J, v, g, α, β)        TWO applies of F, central difference
+    │     ε from ‖u₀‖ and ‖v‖
+    │     y ← α·(F(u₀+εv) − F(u₀−εv)) / 2ε
+    │
+    └── adjoint(J) ──▶ THROWS           an FD JVP has no reverse mode
+
+  EnzymeLinearizedOp(op, u0, ustate, ushadow, fout, fshadow)    (extension only)
+    ├── apply!         Enzyme.Forward through apply!   — ONE apply, exact
+    └── apply_adjoint! Enzyme.Reverse through apply!   — a real transpose
+```
+
+```julia
+linearize(F::AbstractOperator, u0::Field, ::FiniteDifferenceJVP) -> LinearizedOp
+  u0c::Field     = copy(u0)                       # ALLOC 1 — the frozen state is OWNED
+  shifted::Field = similar(u0c)                   # ALLOC 1
+  fplus::Field   = allocate_output(F, u0c)        # ALLOC 1
+  fminus::Field  = allocate_output(F, u0c)        # ALLOC 1
+  # HOLDS: every buffer is owned, so apply! allocates nothing in a Newton loop
+
+apply!(y::Field, J::LinearizedOp, v::Field, g::AbstractGrid, α, β)
+  T = _scalar_eltype(eltype(J.u0.data))
+  normv = norm(v.data)
+  ε = iszero(normv) ? sqrt(eps(T)) : sqrt(eps(T)) * (1 + norm(J.u0.data)) / normv
+  J.shifted.data .= J.u0.data .+ ε .* v.data      # MUTATES J.shifted
+  apply!(J.fplus,  J.op, J.shifted, g)            # MUTATES J.fplus
+  J.shifted.data .= J.u0.data .- ε .* v.data
+  apply!(J.fminus, J.op, J.shifted, g)            # MUTATES J.fminus
+  interior(y) .= (α / 2ε) .* (interior(J.fplus) .- interior(J.fminus)) [.+ β .* interior(y)]
+
+linearize!(J, u) = (copyto!(J.u0.data, u.data); J)   # SAME — J's identity survives
+```
+
+**1. The Jacobian is an operator, so nothing downstream changes.**
+`LinearizedOp` declares `islinear = true`, forwards `allocate_output` and
+`allocate_input` to the operand, reports a `size` built from its input and
+output component counts, and resolves its grid from the operand or the frozen
+state. That is exactly enough to pass `prepare`'s gate and be handed to Krylov.
+It declares nothing else, so `isconstant`, `isselfadjoint`, `isdiagonal` and
+`shares_exchange` stay `false` and `operator_diagonal` throws — which is
+correct, and means a linearized operator cannot be multigrid-smoothed.
+
+**2. The step size is scaled to both magnitudes.** `ε = √eps·(1 + ‖u₀‖)/‖v‖`,
+falling back to `√eps` for a zero direction. The formula is a central
+difference, so the product costs two applications of `F` and is accurate to
+roughly `√eps` — good enough to drive a Newton–Krylov inner solve, not good
+enough to check a gradient against. Note both norms are taken over the *padded*
+array.
+
+**3. `linearize!` refreshes the state in place.** A Newton loop wants a new
+Jacobian each outer iteration and the same buffers; `linearize!` copies the new
+state over `J.u0.data` and returns the identical object, so a `PreparedOperator`
+built around `J` stays valid. This is safe precisely because Krylov solves are
+never differentiated through.
+
+**4. The Enzyme backend is a different struct with a real transpose.**
+`EnzymeLinearizedOp` carries six buffers instead of five: a primal input copy
+*and* an input shadow, a primal output *and* an output shadow. Forward mode
+seeds the input shadow with `v` and differentiates the four-argument `apply!`,
+giving an exact JVP in one application. Reverse mode zeroes the input shadow,
+copies the cotangent into the output shadow and calls `zero_ghosts!` on it —
+upholding §2's "only interior cotangents are inputs" contract — then runs
+`Enzyme.Reverse` and blends `interior(ushadow)` into `x̄`. It also declares
+`adjoint_operator` as the lazy `AdjointOp` wrapper, so `J'` works and routes
+back through that reverse pass.
+
+**Throws and invalidates.** `linearize!` invalidates nothing. The rest:
+
+| Guard | Condition | Raises |
+|---|---|---|
+| `linearize(F, u0, ::AbstractJVPBackend)` | `EnzymeJVP()` without the extension loaded | `ArgumentError` — "run `using Enzyme` first" |
+| `adjoint_operator(::LinearizedOp)` | any call | `ArgumentError` — FD has no reverse mode; differentiate the operator instead |
+| `apply_adjoint!(…, ::LinearizedOp, …)` | any call | `ArgumentError` — no adjoint action declared |
+| `adjoint(F)` on the nonlinear `F` itself | `!islinear(F)` | `ArgumentError`, pointing at `linearize` |
+| `prepare(F)` on the nonlinear `F` itself | `!islinear(F)` | `ArgumentError`, pointing at `linearize` |
+
+Note which gate fires for `adjoint(J)` on a finite-difference Jacobian: `J`
+*passes* the `islinear` check, so the message is the specific one about reverse
+mode, not the generic nonlinear one.
+
+## 5 — Forest topology: keys, the leaf vector, and the generation counter
+
+Why the package refines whole blocks rather than cells, and why 2:1 balance is
+the rule everything rests on, is in [AMR](amr.qmd). This section is the data
+structure: what a leaf *is*, what orders the leaf vector, and what exactly the
+generation counter counts. The example traced is
+`refine!(bf, x -> x[1] < 0.3)` on a `bf::BlockForest{2,Float64,…}` built over a
+2×2 root tiling.
+
+*Entry point* [`refine!`](api.qmd), [`coarsen!`](api.qmd),
+[`balance!`](api.qmd) · *Source* `src/topology.jl`, `src/BlockForest.jl` ·
+*Tests* `test/topology.jl`, `test/blockforest.jl`
+
+```
+  refine!(bf::BlockForest, predicate)          predicate takes a leaf CENTRE
+    │                                          (regrid!'s takes a Field — §8)
+    ▼
+  refine!(forest::Forest, key -> …)
+    │
+    ├──▶ keys = Set(forest.leaves)
+    │      marked leaf below maxlevel:  delete!(keys, key); push! its 2ᴺ children
+    │      marked leaf AT maxlevel:     silently ignored
+    │
+    ├──▶ _set_leaves!(forest, keys)      the ONE commit point
+    │      │
+    │      ├─ sort by Morton code of the key's finest-level coords
+    │      ├─ sorted == forest.leaves ?  ─yes─▶ return.  NO generation bump.
+    │      ├─ empty!/append! forest.leaves,  empty!/rebuild forest.index
+    │      ├─ forest.uniform[] = all leaves share a level
+    │      └─ forest.generation[] += 1          # STALE: every field, every PreparedForest
+    │
+    └──▶ balance!(forest)                fixpoint; may commit several MORE times
+```
+
+```julia
+struct LeafKey{N}                  # isbits. Geometry is NEVER stored.
+    level::Int
+    coords::NTuple{N,Int}
+end
+parent_key(k)  -> LeafKey(k.level - 1, k.coords .>> 1)
+children(k)    -> Vector{LeafKey{N}}     # ALLOC 1, length 2ᴺ, coords .<< 1 .+ offsets
+
+struct Forest{N}
+    nroot::NTuple{N,Int}
+    periodic::NTuple{N,Bool}
+    maxlevel::Int
+    leaves::Vector{LeafKey{N}}           # Morton-ordered; storage order of every field
+    index::Dict{LeafKey{N},Int}          # key -> position in `leaves`; the exact inverse
+    uniform::Base.RefValue{Bool}
+    generation::Base.RefValue{Int}
+end
+
+struct BlockForest{N,T,BC<:Tuple,Dev} <: AbstractGrid{N}
+    forest::Forest{N}
+    extent::NTuple{N,Tuple{T,T}}
+    spacing0::NTuple{N,T}                # ROOT-level spacing; per-leaf is spacing0 / 2^ℓ
+    blocksize::NTuple{N,Int}
+    halo::NTuple{N,Int}
+    bc::BC                               # PHYSICAL domain BCs — leaves carry Interface
+    device::Dev
+    schedule::Base.RefValue{…}           # per-generation exchange plan cache (§7)
+    schedule_device::Base.RefValue{…}
+end
+
+leaf_grid(bf, i) -> CartesianGrid{N,T,…,Nothing}
+  # every leaf is ONE concrete isbits grid type, bc = Interface on all faces,
+  # geometry recomputed from level — never stored per leaf
+```
+
+**1. A key is a level and integer coordinates, and nothing else.** No extent, no
+spacing, no parent pointer. `parent_key` is a right shift, `children` is a left
+shift plus the `2ᴺ` offsets, and every physical coordinate is recomputed from
+`spacing0 / 2^level`. That is what keeps `LeafKey` `isbits` and lets the whole
+topology live in a `Vector` and a `Dict` with no pointer chasing.
+
+**2. `forest.index` is the inverse of `forest.leaves`, and it is the addressing
+scheme.** `BlockField.blocks[i]` and `PackedBlockField.data[…, i]` are indexed
+by that same position `i`, so the map from key to storage slot *is*
+`forest.index`. Lookup is a raw `getindex`, so a key that is not a leaf raises
+`KeyError` rather than a domain error. The ordering is the Morton code of the
+key's coordinates projected to `maxlevel`, which is why refining one block
+renumbers its neighbours — and why §8's transfer must key by `LeafKey` rather
+than by integer position.
+
+**3. `_set_leaves!` is the only function that writes either container, and the
+only one that bumps the generation.** It sorts a fresh key vector by Morton
+code, compares it to the current leaves, and **returns early if they are
+identical** — no bump, no index rebuild. Otherwise it empties and refills both
+containers in place, refreshes `uniform`, and increments `generation`. The early
+return is what makes §8's "nothing changed, so the same field objects come back
+and prepared operators stay valid" exact rather than approximate.
+
+**4. `refine!` and `coarsen!` are set edits; `balance!` is a fixpoint.**
+`refine!` swaps each marked leaf for its children, ignoring marks already at
+`maxlevel`. `coarsen!` groups leaves by parent and collapses a family only when
+all `2ᴺ` siblings are present *and* all are marked — an incomplete or partly
+marked family is untouched, and level-0 leaves are skipped. `balance!` then
+loops until no face violates 2:1: for each leaf, dimension and side it finds the
+face neighbour (wrapping when that dimension is periodic), resolves which leaf
+actually covers that region, and refines the cover if it is two or more levels
+coarser. Each pass is its own `_set_leaves!` commit, so **a single `refine!`
+call can bump the generation several times** — code that snapshots a generation
+must compare, not count.
+
+**5. Every leaf is one concrete grid type, and that is a performance decision.**
+`leaf_grid` builds a `CartesianGrid` through the unchecked inner constructor
+with `Interface()` on all `2N` faces and a local range of `1:blocksize[d]`. Per
+leaf geometry is derived from the level, never stored. Because the type is
+identical for every leaf and `isbits`, the per-leaf sweep in §7 is type-stable
+and rebuilding the grid inside the loop is free. It also means per-leaf BC
+sweeps are no-ops — physical boundaries live on the forest and are applied by a
+separate face pass.
+
+**Throws and invalidates.** Every commit that changes the leaf set invalidates
+every `BlockField` and every `PreparedForest` built on the old set; both carry a
+stamp and throw `ArgumentError` on next use (§6, §7).
+
+| Guard | Condition | Raises |
+|---|---|---|
+| `Forest` constructor | the root tiling and `maxlevel` exceed 64-bit Morton capacity | `ArgumentError` |
+| `BlockForest` constructor | `blocksize < 1`, base size not divisible by it, or `maxlevel < 0` | `ArgumentError` |
+| `BlockForest` constructor | a face BC that is not `Periodic`/`Dirichlet`/`Neumann` — this is what rejects a user-supplied `Interface` | `ArgumentError` |
+| `leaf_index(forest, key)` | the key is not a current leaf | `KeyError` |
+
+## 6 — Block field layouts: one contract, two storages
+
+A field on a forest has to be two things at once: a list of per-leaf padded
+arrays, which is what the reference CPU path and every regrid want, and one
+contiguous buffer with leaves on a trailing dimension, which is what a single
+GPU kernel launch wants. Both satisfy the same contract, and which one you have
+is settled at compile time. The example traced is
+`up = pack(u)` for a `u::BlockField{Center,Interpolated,Matrix{Float64},…}`.
+
+*Entry point* [`pack`](api.qmd), [`unpack`](api.qmd),
+[`with_transfer`](api.qmd) · *Source* `src/blockfield.jl`, `src/packedfield.jl` ·
+*Tests* `test/blockfield.jl`, `test/packedfield.jl`, `test/forest_packed.jl`
+
+```
+  AbstractBlockField                    everything layout-agnostic is written
+    │                                   ONCE against this: set!, zero_ghosts!,
+    ├── BlockField                      flatten, block(), the five forest sweeps
+    │     blocks::Vector{A}    ── _storage ──▶ Vector of padded arrays
+    │                          ── _layout  ──▶ BlocksLayout()      singleton
+    │
+    └── PackedBlockField
+          data::A             ── _storage ──▶ one (blocksize.+2h…, nleaves) array
+          levels::V                            device-resident per-leaf level
+                              ── _layout  ──▶ PackedLayout()       singleton
+
+  the ONLY two functions that know the difference:
+    _leaf_array(store, ::BlocksLayout, i)        = store[i]
+    _leaf_array(store, ::PackedLayout,  i)       = view(store, :, …, i)
+    _leaf_view(store, ::BlocksLayout, i, ranges) = view(store[i], ranges...)
+    _leaf_view(store, ::PackedLayout,  i, ranges) = view(store, ranges..., i)
+```
+
+```julia
+struct BlockField{L,P<:RegridTransferPolicy,A<:AbstractArray,G<:BlockForest}
+        <: AbstractBlockField
+    blocks::Vector{A}
+    grid::G
+    generation::Int          # stamped from grid.forest.generation[] at construction
+end
+
+struct PackedBlockField{L,P<:RegridTransferPolicy,A,V<:AbstractVector{Int},
+                        G<:BlockForest} <: AbstractBlockField
+    data::A                  # leaves on the TRAILING dimension, Morton order
+    levels::V                # so a kernel can recompute spacing without the Forest
+    grid::G
+    generation::Int
+end
+
+pack(f::BlockField{L,P}) -> PackedBlockField{L,P}
+  _require_current(f)                                   # THROWS ArgumentError if stale
+  data   = similar(first(f.blocks), eltype(f), (psize..., nleaves(bf)))   # ALLOC 1
+  levels = _leaf_levels(bf)                             # ALLOC 1, host Vector -> device
+  for i in 1:nleaves(bf)
+      _block_array(p, i) .= f.blocks[i]                 # PADDED storage verbatim —
+  end                                                   # ghosts copied, not recomputed
+  # HOLDS: L (location) and P (transfer policy) round-trip through pack/unpack
+```
+
+**1. The layout is not a field, it is the type.** There is no `layout::Symbol`
+anywhere. The information is carried two ways, both resolved at compile time:
+the concrete struct identity, and a zero-size tag value whose *type* travels
+through dispatch. That is a deliberate constraint, and the decisive reason is
+Enzyme: from Julia 1.12 a custom-rule argument may not mix GC-tracked pointers
+with inline floats, and a `BlockField` does exactly that through its embedded
+`BlockForest`. So the differentiated seams (§7) take *raw storage plus a
+singleton tag*, and a runtime layout flag would force the field struct back into
+the rule signature.
+
+**2. Three more things fall out of the same choice.** The tag being a singleton
+means `_leaf_array` and `_leaf_view` each resolve to one concrete `SubArray`
+type, so the descriptor loops in §7 stay dispatch-free and allocation-free.
+Layout selection for the GPU kernel sweeps is a method table rather than a
+branch — `_forest_sweep!` has a `PackedBlockField` method per operator, falling
+back to the per-leaf path otherwise. And `Adapt.adapt_structure` rebuilds the
+same parameterised type, so the layout survives device adaptation because it
+*is* the type.
+
+**3. `pack` copies padded storage verbatim, ghosts included.** That is not
+laziness: a `Diffusion` coefficient field has its ghosts filled at construction
+by `fill_coefficient_ghosts!`, and copying the padded array means `prepare` can
+normalise a coefficient's layout without re-running an exchange. `unpack` is the
+mirror. The location parameter `L` and the transfer policy `P` survive both
+directions — a policy silently reset by a round trip would conserve on one
+regrid and not the next.
+
+**4. The transfer policy is a type parameter for the same reason.**
+[`Interpolated`](api.qmd), [`Conservative`](api.qmd) and
+[`SlopeLimited`](api.qmd) are empty singletons, and `RegridTransferPolicy` is a
+closed `Union` of the three rather than an abstract type. §8 resolves the policy
+once per field from `P` and dispatches the transfer kernel on it.
+`with_transfer` rebuilds the wrapper around the *same* storage and
+the *same* generation stamp, copying nothing.
+
+**5. One rule for contributors, and it is the one that bites.** **Never index
+block storage outside `_leaf_array` / `_leaf_view`.** The two layouts produce
+`SubArray`s over parents of different rank; every descriptor sweep in
+`src/transfer.jl` and the coarse–fine rewrite in `src/operators/diffusion.jl`
+are written so that only those two functions know it. Reaching into `f.blocks[i]`
+or `f.data[…, i]` directly compiles, runs, and silently breaks the other layout.
+
+**Throws and invalidates.** `_require_current(f)` compares `f.generation`
+against `f.grid.forest.generation[]` and throws `ArgumentError` — "allocated
+before the forest was regridded … allocate a fresh field on the current forest"
+— on any mismatch. It is called from `block`, from `pack` and `unpack`, from the
+packed flat transfers, and from all five forest sweeps, so there is no path that
+reads stale storage without passing a guard.
+
+## 7 — Forest `apply!`: one exchange, one BC pass, then ordinary stencils
+
+Operators barely change on a forest, and [AMR](amr.qmd) says why. This section
+is the machinery that makes it true: a precomputed descriptor table, rebuilt
+only when the generation changes, that turns every inter-block ghost fill into a
+flat loop with no topology queries in it. The example traced is
+`mul!(y, P, x)` for a `P::PreparedForest` wrapping `laplacian(bf) + scaling(σ)`
+on a non-uniform forest.
+
+*Entry point* [`halo_update!`](api.qmd), `apply_bc!`,
+`prepare(L, ::AbstractBlockField) -> PreparedForest` ·
+*Source* `src/schedule.jl`, `src/transfer.jl`, `src/transfer_kernels.jl`,
+`src/operators/forest.jl`, `src/operators/forest_packed.jl` ·
+*Tests* `test/exchange_schedule.jl`, `test/exchange_kernels.jl`,
+`test/forest_parity.jl`, `test/forest_prepare.jl`
+
+```
+  apply!(y, L, x, bf, α, β)
+    │
+    ├─ shares_exchange(L) ? ──yes──▶ ONE exchange, then sweep both operands
+    │                                 (Added/Scaled recurse BEHIND the fills)
+    ▼
+  ┌──────────────────────────────────────────────────┐
+  │ halo_update!(x, bf)                              │  ONCE, whole forest
+  │   _exchange_schedule(bf)   generation match?     │
+  │     └─ miss ─▶ rebuild, cache in bf.schedule[]   │
+  │   _exchange_storage!(_storage(x), _layout(x), s) │  ◀── the Enzyme seam
+  │     1. copies    same-level face slabs           │
+  │     2. interp    coarse ─▶ fine   (quadratic)    │  order is HARD:
+  │     3. restrict  fine ─▶ coarse  (flux match)    │  restrict READS interp's output
+  └──────────────────────────────────────────────────┘
+    │
+  ┌──────────────────────────────────────────────────┐
+  │ apply_bc!(x, bf)                                 │  ONCE, whole forest
+  │   _bc_storage!(store, layout, bc, bcfaces, h, n) │  ◀── the Enzyme seam
+  │     per-(dim, side) leaf-index lists, dims 1:N   │  reuses the SINGLE-GRID
+  └──────────────────────────────────────────────────┘  _fill_ghost! primitives
+    │
+    ├───────────────┬───────────────┐
+    ▼               ▼               ▼
+  per leaf:       per leaf:       per leaf:       ← the EXISTING single-grid
+  stencil         stencil         stencil           apply! from §1, unchanged
+```
+
+```julia
+struct ExchangeSchedule{N,T}
+    copies::Vector{CopyDescriptor{N}}      # src/dst leaf + src/dst index ranges
+    interp::Vector{GhostFill{N,T}}         # dst + Vector{SlabTerm} (block, ranges, weight)
+    restrict::Vector{GhostFill{N,T}}
+    cfflux::Vector{CFFluxDescriptor{N}}    # isbits: Diffusion's coarse–fine rewrite
+    bcfaces::NTuple{N,NTuple{2,Vector{Int}}}   # leaf indices touching each physical face
+    generation::Int                        # -1 sentinel: the first fetch always builds
+end
+
+prepare(L, x::AbstractBlockField) -> PreparedForest
+  islinear(L) || throw(ArgumentError(...))
+  xpad, ypad  = similar(x) |> zero_ghosts!, allocate_output(L, x)   # ALLOC 2
+  op          = _prepare_tree(L, x)         # also packs coefficient layouts to match x
+  _exchange_schedule(x.grid)                # ALLOC — warms the per-generation plan
+  PreparedForest(op, x.grid, xpad, ypad,
+                 similar(x),                # ALLOC — adjscratch: the accumulating
+                 x.grid.forest.generation[])#         adjoint sweep's buffer
+
+mul!(y::AbstractVector, P::PreparedForest, x::AbstractVector, α, β)
+  _require_prepared_current(P)              # THROWS ArgumentError if the forest moved
+  flat_to_interior!(P.xpad, x); _forest_capply!(...); interior_to_flat!(y, P.ypad, α, β)
+```
+
+**1. The schedule is a cache keyed on the generation, and it never throws on a
+miss.** `_exchange_schedule(bf)` compares the stored plan's generation against
+the live one and rebuilds on mismatch, writing back into the forest's `Ref`. A
+fresh forest holds a sentinel plan stamped `-1`, which can never match, so the
+first fetch always builds. `prepare` warms it eagerly so the first `mul!` in a
+Krylov loop is not the one paying for construction. There is a second, lazily
+built device twin, flattened into `isbits` rows plus a CSR-style term array, for
+the packed GPU path.
+
+**2. Building the schedule is one pass over (leaf, dimension, side).** Each face
+falls into exactly one of four cases: no neighbour, so push this leaf's index
+onto the physical-BC face list; a same-level leaf, so emit one `CopyDescriptor`
+over the face slabs; a coarser covering leaf, so emit coarse→fine
+`GhostFill`s; or no covering leaf at all, meaning finer children, so emit
+fine→coarse `GhostFill`s and the matching `CFFluxDescriptor`s. The invariant
+that makes the adjoint simple is that **each ghost region is the destination of
+exactly one descriptor across all three vectors** — so the transpose is a plain
+scatter-add followed by a zero, with no double counting to reason about.
+
+**3. The two coarse–fine fills are different maps, and the order between them is
+not negotiable.** Coarse→fine is a quadratic Martin–Cartwright interpolation:
+normal weights from a three-point Lagrange fit at the child's quarter-cell
+offset, tangentially tensored with per-parity classes evaluated at `ξ = ±1/4`.
+Every term reads block *interiors* only, so it is order-independent and never
+touches a BC ghost. Fine→coarse is flux matching, not volume averaging — a plain
+`2ᴺ` average leaves an O(1) truncation error at the interface and was rejected —
+and it **reads the fine children's interpolation-filled ghosts**. That is why
+`interp` must run before `restrict`, always.
+
+**4. The physical BC pass reuses the single-grid primitives verbatim.** It walks
+the per-face leaf-index lists and calls the same `_fill_ghost!`, `_source_low`,
+`_source_high` and `_bc_sign` helpers §1 uses, in the same ascending dimension
+order. That is what keeps layer indexing, corner order and mirror signs bitwise
+identical to a single grid — which is what makes the parity test in
+`test/forest_parity.jl` meaningful. Periodic dimensions have empty face lists;
+their wrap is the exchange's business.
+
+**5. Every forward sweep has a declared transpose, and they are paired by
+construction.**
+
+| Forward | Transpose | Shape of the transpose |
+|---|---|---|
+| `_exchange_storage!` | `_exchange_storage_adjoint!` | phases reversed: restrict, interp, copies |
+| `_run_copies!` | `_run_copies_adjoint!` | descriptors reversed; `src += ghost`, then zero the ghost |
+| `_run_fills!` | `_run_fills_adjoint!` | fills reversed; every term gets `term += weight · dst`, then zero |
+| `_bc_storage!` | `_bc_storage_adjoint!` | recurses first, so dimensions run `N:1` against the fill's `1:N` |
+| `_cf_flux_rewrite!` | `_cf_flux_rewrite_adjoint!` | descriptors reversed, conjugated coefficient averages |
+
+The full forest adjoint is then: per-leaf transpose gathers leaving cotangents
+in ghosts, then `fold_bc!` over the face lists, then
+`halo_update_adjoint!` folding interface ghosts into neighbours' interiors —
+§2's single-grid order, lifted whole. Two shortcuts precede it: a self-adjoint
+operator on a *uniform* forest reuses the forward sweep, and a diagonal operator
+skips the fold entirely, because a pointwise transpose must not leak `x̄`'s ghost
+scratch into interiors. The adjoint exchange stays on host descriptor loops on
+every backend — its scatter-adds collide on shared source cells, so a kernel
+would need atomics and stop being bitwise reproducible.
+
+**6. `shares_exchange` is what turns two sweeps into one.** An operator declares
+it when its forest action is one stencil sweep over an already-exchanged input:
+it reads `x`'s interiors and ghosts, writes only `y`'s interior, and never
+writes into `x`. When an `Added` reports it, `apply!` runs a single
+`halo_update!` and `apply_bc!` and then recurses into a `_forest_sweep!`
+combinator method *behind* the fills, so both operands sweep the one exchanged
+input. Those combinator sweep methods are reachable only through that gate — an
+ungated operand could rewrite `x`'s ghosts under its sibling. `Diffusion`
+declares it conditionally, `true` only on a uniform forest, because the
+coarse–fine flux rewrite writes into `x`'s ghosts and so violates the contract
+the moment the forest refines. A forgotten declaration costs a redundant
+exchange; it never costs correctness.
+
+**7. The differentiated seams are shaped by an Enzyme constraint, not by
+taste.** `_exchange_storage!` and `_bc_storage!` take raw storage, a singleton
+layout tag, and `isbits`-or-`Const` descriptors — never a field, never a grid.
+[Automatic Differentiation](autodiff.qmd) covers why they get custom rules at
+all and why those rules cannot swallow a parameter gradient. What matters here
+is the argument *shape*: `_bc_storage!` receives the grid already shredded into
+its BC tuple, face lists, halo and block size, because passing `g` would put a
+GC-pointer-and-inline-float mixture into a rule signature. Keeping the seam at
+this level rather than at `halo_update!` is also what lets one rule serve both
+layouts. `CFFluxDescriptor` was made fully `isbits` for the opposite reason — it
+*must* be taped, because coefficient gradients flow through it.
+
+**Throws and invalidates.** A regrid invalidates a `PreparedForest`; a stale one
+throws on `mul!` and on `apply!`, the two public entries.
+
+| Guard | Condition | Raises |
+|---|---|---|
+| `_require_prepared_current(P)` | `P.generation != P.grid.forest.generation[]` | `ArgumentError` — re-run `prepare` |
+| `_require_current(f)` | field stamp mismatch, checked in all five sweeps | `ArgumentError` |
+| `_throw_unbalanced(K)` | schedule build meets a face violating 2:1 | `ArgumentError` — run `balance!` |
+| `_validate_coarse_fine(bf)` | non-uniform forest with a halo other than 1, or a block size too small or odd | `ArgumentError` |
+| `diffusion(g, κ)` | built directly on a grid with `Interface` faces | `ArgumentError` — build on the whole forest with a `BlockField` coefficient |
+
+## 8 — `regrid!`: a topology edit, then data motion keyed by identity
+
+When to regrid, how to choose an indicator, and why a conserved field wants
+`Conservative` rather than the default are in [AMR](amr.qmd). This section is
+the sequence: what is snapshotted before the topology moves, why the transfer is
+keyed by `LeafKey` and never by position, and exactly which objects come out
+alive. The example traced is
+`η, u = regrid!(η, u; refine = b -> maximum(interior(b)) > τ)`.
+
+*Entry point* [`regrid!`](api.qmd) · *Source* `src/amr.jl` · *Tests*
+`test/amr_driver.jl`, `test/forest_amr.jl`
+
+```
+  regrid!(u, more...; refine, coarsen)
+    │
+    ├──▶ _regrid_marks       each leaf handed to the predicate as an ordinary Field
+    │                         (a VIEW of the block — no copy)
+    │
+    ├──▶ gen0      = forest.generation[]          snapshot BEFORE mutating
+    ├──▶ old_index = copy(forest.index)           _set_leaves! empties it in place
+    ├──▶ old_blocks = f.blocks                    by REFERENCE — topology edits
+    │                                              never touch field storage
+    ├──▶ _regrid_topology!   ONE combined split+collapse commit, then balance!
+    │
+    ├──▶ generation unchanged? ──yes──▶ return the SAME field objects.
+    │                                    prepared operators stay valid. DONE.
+    ▼ no
+  ┌───────────────────────────────────────────────────────────────┐
+  │ per field:  _fresh_field   -> zeroed BlockField on the NEW    │
+  │                               leaf set, policy P preserved    │
+  │             _transfer!     -> per new leaf, look up old_index │
+  │                unchanged leaf ─▶ copy the interior            │
+  │                new child      ─▶ prolong from the old PARENT  │
+  │                coarsened leaf ─▶ 2⁻ᴺ mean of the old CHILDREN │
+  └───────────────────────────────────────────────────────────────┘
+    │
+    └──▶ ghosts left ZERO (scratch, refilled by §7 on the next apply)
+         every old field and every PreparedForest now throws (§6, §7)
+```
+
+```julia
+regrid!(u::BlockField, more::BlockField...; refine, coarsen = Returns(false))
+  bf::BlockForest{N}  = u.grid
+  forest::Forest{N}   = bf.forest
+  _require_current(u); for f in more; f.grid === bf || THROW; _require_current(f); end
+  all(iseven, bf.blocksize) || THROW               # _transfer_average! halves n
+  refine_marks, coarsen_marks = _regrid_marks(u, bf, refine, coarsen)
+                                      # -> Set{LeafKey{N}} x 2, DISJOINT by construction:
+                                      #    refine wins, level-0 is never coarsen-marked
+  gen0                = forest.generation[]
+  old_index           = copy(forest.index)         # ALLOC 1 — Dict{LeafKey{N},Int}
+  old_blocks          = map(f -> f.blocks, fields) # by reference, no copy
+  _regrid_topology!(forest, refine_marks, coarsen_marks)
+                                      # MUTATES forest: splits, collapses complete
+                                      # families, ONE _set_leaves!, then balance!
+  forest.generation[] == gen0 && return isempty(more) ? u : fields     # SAME
+  out = map(fields, old_blocks) do f, blocks
+      _transfer!(_fresh_field(f, bf), blocks, old_index, bf)           # ALLOC per leaf
+  end
+  # STALE: every field and every PreparedForest built on the old leaf set
+  return isempty(more) ? out[1] : out
+```
+
+**1. The predicates see a `Field`, not a coordinate.** `_regrid_marks` builds
+`block(u, i, leaf_grid(bf, i))` per leaf — an ordinary `Field` sharing the
+block's storage, no copy — so a criterion is written as a reduction like
+`b -> maximum(abs, interior(b)) > τ`. This is the one place where a forest
+predicate differs from `refine!`'s, which takes a block centre. The
+two mark sets are disjoint without a check: a refine-marked leaf is never
+offered to `coarsen`, and level-0 leaves are never coarsen-marked at all.
+
+**2. Three things are snapshotted, for three different reasons.** `gen0` is the
+comparison that detects a no-op. `old_index` must be a *copy* because
+`_set_leaves!` empties the live dictionary in place. `old_blocks` is captured by
+reference and needs no copy at all, because a topology edit never touches field
+storage — the arrays outlive the leaf vector that used to name them.
+
+**3. The topology edit is one commit, not two.** `_regrid_topology!` splits
+refine-marked leaves and collapses complete coarsen-marked families in a single
+pass into one key set, then does one `_set_leaves!`, then `balance!`. Calling
+`refine!` and `coarsen!` in sequence would work but would commit — and bump the
+generation — two or three times for no reason. Because refine-marked siblings
+are never coarsen-marked, the "all `2ᴺ` siblings present and marked" count test
+already implements the refine-wins rule; there is no explicit conflict
+resolution anywhere.
+
+**4. The early return is exact, and it is the convergence signal.** If the marks
+changed nothing, `_set_leaves!`'s identity check declined to bump the
+generation, and `regrid!` hands back the **same objects** — `===`, not merely
+equal. So a prepared operator built before the call is still valid, and an
+adaptive loop can use "`regrid!` returned what I gave it" as its stopping test.
+
+**5. The transfer is keyed by `LeafKey`, and that is the whole design.** Storage
+positions are Morton indices into a vector that was just re-sorted, so they mean
+nothing across the edit. For each *new* leaf `K`, `_transfer!` asks `old_index`
+three questions in order: was `K` itself a leaf before (copy its interior); was
+`parent_key(K)` a leaf before (prolong from the parent into `K`'s octant); are
+all of `children(K)` old leaves (average them in). Interiors only — old ghosts
+are never read, and the new field's ghosts stay zero until §7's next exchange.
+The transfer policy is read once per field from its type parameter, so the
+per-leaf loop dispatches on a singleton rather than branching.
+
+**6. The three kernels, and which weights each uses.** Copy is a view-to-view
+assignment over the interior box. Prolong under the default
+`Interpolated` is per-dimension linear interpolation with weights
+`(3/4, 1/4)`, flipping to a one-sided `(5/4, −1/4)` extrapolation where the
+quarter-weight tap would fall outside the parent's interior; it is exact on
+linear data but not mean-preserving. Prolong under
+`Conservative` or `SlopeLimited` is instead a
+cell-conservative reconstruction `u_child = u_parent + Σ_d ξ_d·σ_d` with
+`ξ_d = ∓1/4`, and the reason it conserves is that **all `2ᴺ` children share one
+slope per parent cell per dimension**, so their mean telescopes back to the
+parent exactly. The two differ only in the slope: a centred difference for
+`Conservative`, a minmod limiter for `SlopeLimited` — which also injects rather
+than reconstructs on every parent-block-face cell. Coarsening is always the
+`2⁻ᴺ` arithmetic mean of the children, regardless of policy.
+
+**Throws and invalidates.** Everything built on the old leaf set is now stale
+and throws through the §6 and §7 guards. `regrid!` itself:
+
+| Guard | Condition | Raises |
+|---|---|---|
+| field/forest check | a field in `more` is on a different `BlockForest` | `ArgumentError` |
+| `_require_current` | any input field is already stale | `ArgumentError` |
+| block-size check | an odd block size in any dimension | `ArgumentError` — the `2⁻ᴺ` mean halves it |
+| layout check | any argument is a `PackedBlockField` | `ArgumentError` — unpack, regrid, re-pack |
+| `_transfer!` fallthrough | a new leaf has no old leaf within one level | `ErrorException` — a bug assert, not a user error |
+
+Because a real regrid invalidates every field on the old leaf set, anything
+needed afterwards must ride the same call. Compute indicator fields *before*
+regridding and pass them first, which is why the traced example puts `η` ahead
+of `u`.
+
+## 9 — Multigrid: a tuple of levels, and one recursive V-cycle
+
+Why multigrid breaks the link between grid size and iteration count, and how the transfer pair and the smoothers fall out of machinery that already exists, is in [Geometric Multigrid](multigrid.qmd). This section is the hierarchy's representation and the cycle's control flow. The example traced solves $-\Delta u = f$ on a 256×256 grid with homogeneous Dirichlet boundaries. The minus sign makes the operator positive definite, as CG requires; both the prepared operator and its multigrid preconditioner are built from that same `L`.
+
+```julia
+using MatrixFreeOperators, Krylov
+
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))  # homogeneous Dirichlet by default
+L = -laplacian(g)
+P = prepare(L)
+M = MultigridPreconditioner(L)
+b = flatten(set!(scalar_field(g), x -> 2π^2 * sinpi(x[1]) * sinpi(x[2])))
+u, stats = Krylov.cg(P, b; M)
+```
+
+*Entry point* [`MultigridPreconditioner`](api.qmd), `mul!(z, M, r)` ·
+*Source* `src/multigrid.jl`, `src/operators/restriction.jl`,
+`src/operators/prolongation.jl` · *Tests* `test/multigrid.jl`
+
+```
+  MultigridPreconditioner(L)
+    │
+    ├──▶ _mg_grids(g, :auto)        coarsen while even, > 64 cells, < 10 levels
+    │
+    ├──▶ _build_levels              per level, recursively:
+    │      A = _prepare_tree(L, proto)      the buffer-hoisted tree from §3
+    │      R, P = restriction(…), prolongation(…)
+    │      x, b, r, t = four scalar_fields
+    │      smoother state from operator_diagonal(L)
+    │      then recurse on _rediscretize(L, coarser)   ← NOT a Galerkin RAP
+    │
+    └──▶ _build_coarsest            materialise column by column, lu(), keep the
+                                     factorization and a flat scratch vector
+
+  mul!(z, M, r)                     Krylov's preconditioner convention: z ≈ L⁻¹r
+    ├─ flat_to_interior!(top.b, r)
+    ├─ _vcycle!(M.levels)           Tuple recursion — fully specialised per level
+    └─ interior_to_flat!(z, top.x, α, β)
+
+  _vcycle!((lvl, rest...))          _vcycle!((coarsest,))
+    smooth FROM ZERO                  interior_to_flat! -> ldiv!(fact, bflat)
+    r ← b − A·x                                        -> flat_to_interior!
+    next.b ← R·r
+    _vcycle!(rest)
+    x ← x + P·next.x                (α=true, β=true — prolongate and ACCUMULATE)
+    smooth again
+```
+
+```julia
+struct MGLevel{O,RO<:Restriction,PO<:Prolongation,G<:CartesianGrid,F<:Field,S}
+    A::O          # _prepare_tree'd rediscretised operator — NOT a PreparedOperator
+    R::RO; P::PO  # this level -> coarser, coarser -> this level
+    g::G
+    x::F; b::F; r::F; t::F      # correction, RHS, residual, spare — all preallocated
+    smoother::S
+end
+struct MultigridPreconditioner{Lv<:Tuple}
+    levels::Lv    # (MGLevel, MGLevel, …, MGCoarsest) — a TUPLE, not a Vector
+end
+```
+
+**1. The hierarchy is a `Tuple` on purpose.** `_vcycle!` recurses with
+`first`/`Base.tail`, so with a tuple every level is a distinct type and the
+whole cycle specialises into straight-line code with no dynamic dispatch and no
+allocation. A `Vector{MGLevel}` would make the recursion type-unstable at every
+step, in the hottest loop the preconditioner has.
+
+**2. `Restriction` and `Prolongation` are a declared adjoint pair, not two
+independent stencils.** `Prolongation` is per-dimension linear interpolation on
+the cell-centred 2:1 pair, weights `(3/4, 1/4)`. `Restriction`'s *forward
+action* literally is the scaled transpose gather `2⁻ᴺ·Pᵀ` — the same kernel,
+called from the other side — so `⟨Px, y⟩ = ⟨x, Pᵀy⟩` holds to machine precision
+by construction rather than by agreement. Their declared adjoints return each
+other, scaled: `Rᵀ = 2⁻ᴺ·P` and `Pᵀ = 2ᴺ·R`. Note `Restriction`'s forward path
+runs no prologue: the gather engine from §2 zeroes its input's ghosts first, so
+only fine interior values contribute and `boundary_rhs(R, ·)` is identically
+zero.
+
+**3. Coarse operators are rediscretised, not assembled.** `_rediscretize` walks
+the tree and rebuilds each leaf on the coarse grid — `Laplacian(gc)`,
+`Diffusion` with an averaged coefficient, `ScalingOp` with an averaged
+coefficient, structural recursion through `Scaled`/`Added`/`Composed` — and
+throws on anything it does not know. Coefficient averaging uses a plain
+`2ᴺ`-child arithmetic mean, **deliberately not** `Restriction`: full weighting
+folds Dirichlet's `−1` mirror through the boundary, which is right for a
+residual and wrong for a material coefficient at a wall.
+
+**4. Smoothers are built from the operator's own diagonal.**
+`operator_diagonal` returns a `Number` where the diagonal is uniform and a
+`Field` otherwise, with the boundary mirror fills' contribution included, and
+throws where no diagonal is declared — there is no generic fallback, so an
+operator without one errors rather than smoothing with a wrong diagonal.
+`Jacobi` stores `ω`, a sweep count and the inverted diagonal. `Chebyshev`
+additionally runs ten power iterations on `D⁻¹A` at setup, seeded with a
+checkerboard, to bracket the spectrum; the two scratch fields that costs are
+discarded afterwards.
+
+**5. The default Jacobi smoother skips a separate zeroing pass.** The pre-smooth runs "from zero": its first sweep *writes* `x` rather than updating it, which both skips a residual evaluation and removes the need for a separate zeroing pass. Chebyshev's from-zero path explicitly clears `x` before its recurrence. The coarse correction comes back through `apply!(lvl.x, lvl.P, nxt.x, lvl.g, true, true)` — prolongate and accumulate, using §1's `β ≠ 0` form.
+
+Pre- and post-smoothing use the same fixed operator, making the cycle symmetric for symmetric `L`. Symmetry alone does not establish CG compatibility: [Krylov's CG contract](https://jso.dev/Krylov.jl/stable/solvers/spd/) requires both the system and preconditioner to be positive definite. The Dirichlet $-\Delta$ example with the default damped Jacobi smoother satisfies those conditions; `test/multigrid.jl` checks the preconditioner's symmetry and positive eigenvalues on a small grid.
+
+**6. Everything is preallocated at construction; `mul!` allocates nothing.** The
+construction cost includes the coarsest level's dense `Matrix` and its `lu`
+factorization — the only place in the package where a matrix is assembled, and
+only ever at a level small enough that `levels=:auto` stopped coarsening. The
+standalone `MultigridSolver` wraps a real `PreparedOperator` plus two flat
+vectors; its `solve` allocates only the returned iterate, and on exhausting
+`maxiter` it warns and returns the current iterate rather than throwing.
+
+**Throws and invalidates.** Nothing here goes stale; the hierarchy is immutable
+once built.
+
+| Guard | Condition | Raises |
+|---|---|---|
+| `MultigridPreconditioner(L)` | `!islinear(L)` | `ArgumentError` |
+| `MultigridPreconditioner(L)` | the grid is a `BlockForest` | `ArgumentError` — forest multigrid is not supported |
+| `MultigridPreconditioner(L)` | `cycle` other than `:V` | `ArgumentError` |
+| `_mg_grids` | `:auto` found nothing coarsenable, or `levels < 2` | `ArgumentError` |
+| `_build_coarsest` | the coarse operator is singular — an all-Neumann or all-periodic Poisson has a constant nullspace | `ArgumentError` — add a Dirichlet face or a zeroth-order term |
+| `_rediscretize` | an unsupported leaf | `ArgumentError`, listing the supported set |
+| `_validate_transfer` | grids not 2:1, extents differing, `Interface` faces, mismatched BC kinds, different devices | five separate `ArgumentError`s |
+
+## 10 — Distributed: slabs, and one exchange in the middle of the tree
+
+What a partition model is, why a cut face is a boundary condition, and why the
+list of distributable operators is deliberately short are in [Distributed
+Multi-GPU Solves](distributed.qmd). This section is where the guards run, how a
+global operator becomes a per-slab one, and why the walk over the tree exists at
+all. The example traced is
+`P = prepare_distributed(laplacian(g) - scaling(σ), 4)`.
+
+*Entry point* `partition_grid`, [`prepare_distributed`](api.qmd),
+[`local_grids`](api.qmd) · *Source* `src/partitioning.jl`, `src/distributed.jl`,
+`ext/MatrixFreeOperatorsMDLAExt.jl` · *Tests* `test/partitioning.jl`,
+`test/multigpu/`
+
+```
+  prepare_distributed(L0, nparts)
+    │
+    ├──▶ L = _push_adjoints(L0)         normalise AdjointOp DOWN to leaves FIRST,
+    │                                   so the guards only ever see leaf adjoints
+    ├──▶ _check_distributable(L)        ◀── on the GLOBAL tree
+    ├──▶ _check_one_grid(L, g)          ◀── on the GLOBAL tree
+    │      both MUST run here: after localisation a ScalingOp reports the SLAB
+    │      grid while its Laplacian sibling still reports the global one, so a
+    │      re-check of a localised tree would reject a valid operator
+    │
+    ├──▶ partition_grid(g, nparts)  -> Vector{CartesianGrid}
+    │
+    ├──▶ per partition:  prepare(adapt(CuArray, _slab_op(Lh, locals[d])), …)
+    │                     ◀── localisation happens HERE, after the guards
+    │
+    └──▶ _dist_tree(…)              a DistNode mirror of the prepared tree
+
+  mul!(y, P, x, α, β)
+    ├──▶ _root_scatter!                 fill every slab's Interface ghosts
+    ├──▶ _dist_capply!(ypads, tree, xpads, ctx, true, false)
+    │      DistComposed ─▶ apply b, THEN _dist_scatter!, THEN apply a
+    │                      the exchange fires in the MIDDLE of the tree
+    └──▶ interior_to_flat! per device   α and β applied at the flat boundary,
+                                        never across a collective
+```
+
+```julia
+partition_grid(g::CartesianGrid{N,T}, nparts) -> Vector{CartesianGrid{N}}
+  # A slab is a plain CartesianGrid. Per slab:
+  extent      = g.extent            # the GLOBAL extent, verbatim
+  spacing     = g.spacing           # copied, never recomputed from the slab span
+  size        = length(zr) in dim N, global elsewhere
+  bc[N]       = (p > 1 || periodic ? Interface() : bc_global[N][1], …)
+  local_range = ntuple(d -> d == N ? zr : g.local_range[d], Val(N))
+  topology    = nothing
+  # HOLDS: extent describes the DOMAIN, local_range describes OWNERSHIP.
+  #        cell_center evaluates at the GLOBAL cell index:
+  #          z = first(local_range[d]) - 1 + I[d] - halo[d]
+  #          extent[d][1] + (z - 0.5) * spacing[d]
+
+_slab_op(L, lg)                     # localisation: only coefficient-bearing leaves move
+  ScalingOp{<:Field} -> ScalingOp(_slab_field(S.coeff, lg))
+  Diffusion          -> Diffusion(lg, _slab_field(D.κ, lg), D.avg)   # INNER constructor
+  Added/Scaled/Composed/AdjointOp -> structural recursion
+  anything else      -> SAME object, every partition                 # narrows DistLeaf.ops
+
+_slab_field(f::Field{L}, lg) -> Field{L}
+  win = one PADDED window per dim, offset by the slab's local_range
+  Field{L}(copy(view(f.data, win...)), lg)      # ALLOC 1 — a RESTRICTION, never a
+                                                # re-evaluation, so no coordinate drift
+```
+
+**1. A slab keeps the global extent, and that is not an oversight.** Extent
+describes the domain; `local_range` describes ownership; `cell_center`
+reconstructs a global cell index from the two and evaluates there. Rewriting a
+slab's extent to describe its own span would round twice — once for the slab
+origin and once for the cell offset — and drift by an ulp, which would make a
+coordinate-assembled right-hand side depend on how many partitions you happened
+to use. The same reasoning is why `spacing` is copied rather than recomputed.
+
+**2. A cut face is an `Interface`, and `halo_update!` stays a no-op.** Each
+partition's cut-dimension faces are marked `Interface()`, which §1's BC sweep
+skips and §2's fold skips. Filling them is the driver's job, not the grid's: the
+exchange stages a neighbour's planes into the prepared input buffer between
+applies. Under a periodic cut *both* cut faces are `Interface` on *every*
+partition, and a two-partition periodic split therefore needs at least `2h`
+planes per slab rather than `h`.
+
+**3. The guards live in core and run once, on the global tree.**
+`_distributable` is a whitelist predicate whose `AbstractOperator` fallback is
+`false`, so an operator that was never considered is refused rather than
+silently mishandled. `_check_one_grid` covers what a per-operator predicate
+structurally cannot: a mismatched *pair*. Both run before `_slab_op`, and that
+ordering is the point — after localisation the tree is deliberately
+inconsistent, with localised leaves reporting slab grids and grid-free leaves
+reporting the global one. Both guards live in `src/distributed.jl` rather than
+the extension so they are tested on CI, which has no GPU.
+
+**4. `_push_adjoints` runs before the guards, for the same reason it runs inside
+`prepare` (§3).** It folds `AdjointOp` down to leaves, so `_distributable` only
+ever has to reason about leaf-level adjoints, and the composition structure a
+distributed adjoint needs its reduction inside is explicit in the tree.
+
+**5. The distributed tree exists because of one node type.** `DistLeaf`,
+`DistAdded` and `DistScaled` are bookkeeping; `DistComposed` is the reason for
+the walk. A composition's intermediate lives on each slab with unfilled
+`Interface` ghosts, so the exchange has to fire *between* the two factors —
+mid-tree, not at the boundary. `_reads_ghosts` decides whether that exchange is
+needed at all, and it must gate the forward scatter and the adjoint reduce
+*together*, or the adjoint identity breaks. `DistAdjoint` carries its own input
+copy, and that is not an optimisation: §2's gather opens with `zero_ghosts!` on
+its input, so sharing the enclosing segment's field would destroy exchanged
+ghosts a sibling under the same `Added` still needs — making the result depend
+on term order, silently.
+
+**6. Two shortcuts that hold elsewhere are deliberately not taken here.** The
+distributed adjoint walk skips the `isselfadjoint` and `isdiagonal` fast paths,
+because `_selfadjoint_grid` reports `true` for any `CartesianGrid` — including a
+slab whose cut faces are `Interface`, where the claim is false. And
+`_dist_boundary_rhs!` calls `_apply_raw!` rather than `apply!`, the same reason
+as §3: the prologue would overwrite the inhomogeneous ghost offsets. Finally,
+`local_grids` returns *host* grids on purpose — a field allocated on
+a device grid would land on whichever device happened to be current, and
+[`assemble_rhs`](api.qmd) would then read it from a different one.
+
+**Throws and invalidates.** Nothing goes stale; every refusal is up front.
+
+| Guard | Condition | Raises |
+|---|---|---|
+| `partition_grid` | the grid is already distributed, `nparts < 1`, or a slab is thinner than the halo | `ArgumentError` |
+| `_check_distributable` | any operator outside the whitelist, or a complex / already-distributed coefficient | `ArgumentError`, naming the culprit and why |
+| `_check_one_grid` | a grid-bearing operator is on a different grid from the one being partitioned | `ArgumentError` |
+| `prepare_distributed` | the grid is not a `CartesianGrid`, or `nparts` exceeds the available devices | `ArgumentError` |
+| `_node_exchange` | a non-scalar intermediate — a rank changer would need its own partition spec | `ArgumentError` |
+| `assemble_rhs` | wrong number of source fields, or one sized against the wrong slab | `ArgumentError` |
+
+## Rules for changing this code
+
+Each of these is an obligation the type system cannot enforce, paired with the
+test that catches you if you skip it.
+
+1. **A new leaf owes four checks, and its adjoint owes the boundary.** Action
+   against an analytic solution, the adjoint identity `⟨Lx,y⟩ = ⟨x,Lᵀy⟩`,
+   composition laws, and AD gradients against finite differences — for the field
+   *and* for operator parameters. Boundary conditions break self-adjointness
+   even for the Laplacian, so the adjoint must be declared including its
+   boundary contribution; do not infer one. `test/test_utils.jl` has
+   `fd_gradient` and `materialize`, which densifies a prepared operator on a
+   small grid so structure can be checked exactly. Caught by the per-operator
+   file, e.g. `test/laplacian.jl`, `test/diffusion.jl`.
+
+2. **A new wrapper must preserve the traits its interface exposes.** The lazy combinators declare all five traits, including explicit `false` declarations where propagation is unsafe. The internal `PreparedComposed` and `PreparedAdjoint` nodes declare the four algebraic traits and use the inherited `shares_exchange = false` default. The solver wrappers `PreparedOperator` and `PreparedForest` forward only the four algebraic traits; they have no `AbstractOperator` fallback and expose no `shares_exchange` method. Forgetting `islinear` on an internal node hides a linear tree from consumers; forgetting a method on a solver wrapper raises `MethodError`. Check `test/algebra.jl`, `test/operators_abstract.jl` and `test/prepare_linalg.jl` when changing these declarations.
+
+3. **A new forest-level sweep owes a declared transpose and an `isbits`
+   descriptor.** The transpose is what keeps the adjoint identity exact on a
+   forest; the descriptor shape is what keeps the Enzyme seam viable. If the
+   sweep must be differentiated through rather than ruled, its descriptor has to
+   be fully `isbits` — see `CFFluxDescriptor`, which carries no `Vector` for
+   exactly that reason. Caught by `test/exchange_schedule.jl`,
+   `test/exchange_kernels.jl`, `test/enzyme_rules.jl`.
+
+4. **Anything that reads ghosts owes a `shares_exchange` declaration, and it
+   gates forward and adjoint together.** Declaring it when the operator writes
+   into its input, or into an intermediate needing its own exchange, is silently
+   wrong rather than merely slow. Caught by `test/forest_parity.jl` and
+   `test/forest_diffusion.jl`.
+
+5. **Never index block storage outside `_leaf_array` / `_leaf_view`.** Reaching
+   into `f.blocks[i]` or `f.data[…, i]` compiles, runs, passes on the layout you
+   tested, and breaks the other one. Caught by `test/forest_packed.jl` — but
+   only if the new code path has a packed test.
+
+6. **An Enzyme rule body must not allocate.** A `Dict` lookup and a closure in
+   an augmented-primal body segfaulted on Linux x86_64 while passing on
+   macOS/aarch64. Enzyme behaves differently across platforms generally: a green
+   local run is not evidence about CI, so push and read the matrix. Caught by
+   `test/enzyme_rules.jl`, on CI.
+
+7. **Measure every allocation claim under `--check-bounds=yes`.** `Pkg.test` and
+   therefore CI always pass it, and it blocks the SROA that elides a `Ref` or a
+   `view` escaping a broadcast body — the same code measures 0 B without the
+   flag and hundreds of bytes with it. A CI-only allocation failure is this
+   before it is anything exotic. Related: a stencil reading **two** arrays must
+   unroll dimensions by recursion over `Val(D)`, not `ntuple(Val(N))` — with one
+   array the closure inlines, with a coefficient array it stops, the broadcast
+   loses vectorisation, and a 256² sweep goes from 33 µs to 260 µs with
+   identical numerics. See `_diff_axes` in `src/operators/diffusion.jl`.
+
+8. **`prepare` is stateful and single-threaded.** Call it once per concurrent
+   solve, not once globally. And note that a green suite does not mean the GPU
+   paths ran: `test/device_gpu.jl` is gated behind `MFO_TEST_GPU=true` and an
+   available CUDA.jl.
+
+One more, about this page. If you change a call sequence described here, update
+the section that describes it. The only thing this page is worth is being true.

@@ -25,7 +25,9 @@ there is no OrdinaryDiffEq.jl integration yet
 When one device is not enough,
 `prepare_distributed` partitions the grid across several GPUs without changing a
 line of operator code — see
-[Distributed Multi-GPU Solves](pages/distributed.qmd).
+[Distributed Multi-GPU Solves](pages/distributed.qmd). If you are here to change
+the package rather than use it, [Internals](pages/internals.qmd) walks each main
+operation's call sequence with the concrete types named at every step.
 
 ## Quickstart
 
