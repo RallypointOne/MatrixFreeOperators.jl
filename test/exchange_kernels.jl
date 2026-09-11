@@ -70,29 +70,32 @@
         end
         @test collect(ds.copies) == recon
 
-        # fills: per-fill records + CSR rows partition the concatenated terms
-        for (fills, devfills, terms) in (
-            (sched.interp, ds.interp, ds.interp_terms),
-            (sched.restrict, ds.restrict, ds.restrict_terms),
+        # fills: per-fill records + CSR rows partition the concatenated terms, and
+        # the device rows are the host rows verbatim (the host schedule is CSR too)
+        for (fills, hterms, devfills, terms) in (
+            (sched.interp, sched.interp_terms, ds.interp, ds.interp_terms),
+            (sched.restrict, sched.restrict_terms, ds.restrict, ds.restrict_terms),
         )
             @test length(devfills) == length(fills)
+            @test length(terms) == length(hterms)
             next = 1
             for (i, f) in enumerate(fills)
                 df = devfills[i]
+                fterms = MFO._fill_terms(hterms, f)
                 @test Int(df.dst) == f.dst_block
                 @test Int.(df.first) == first.(f.dst_ranges)
                 @test Int.(df.step) == step.(f.dst_ranges)
                 @test Int.(df.len) == length.(f.dst_ranges)
-                @test Int(df.tfirst) == next
-                @test Int(df.tlast) == next + length(f.terms) - 1
-                for (k, t) in enumerate(f.terms)
+                @test Int(df.tfirst) == next == f.tfirst
+                @test Int(df.tlast) == next + length(fterms) - 1 == f.tlast
+                for (k, t) in enumerate(fterms)
                     dt = terms[next + k - 1]
                     @test Int(dt.block) == t.block
                     @test Int.(dt.first) == first.(t.ranges)
                     @test Int.(dt.step) == step.(t.ranges)
                     @test dt.weight == t.weight
                 end
-                next += length(f.terms)
+                next += length(fterms)
             end
             @test next - 1 == length(terms)
         end

@@ -73,9 +73,96 @@
             )
             @test allunique([(r.coarse, r.gC) for r in sched.cfflux])
             # fully isbits — the shape that keeps a per-apply descriptor loop out of
-            # Enzyme's issue-#26 territory, unlike GhostFill
+            # Enzyme's issue-#26 territory
             @test isbitstype(eltype(sched.cfflux))
         end
+    end
+
+    @testset "coarse–fine fills: isbits CSR descriptors with dimension-fixed rows" begin
+        # Every fill keeps its terms as a [tfirst, tlast] row into the phase's flat
+        # term buffer — the same CSR layout the device schedule uploads — so both
+        # descriptor vectors have isbits eltypes and the schedule type is concrete
+        # from (N, T) alone. The row width is a function of N alone (interp
+        # 1 + 2·3^(N-1), restrict 1 + 2^N): the emitters loop over a tensor product
+        # of per-tangential-dim stencils, never over topology. Checked on 1D/2D/3D
+        # forests on interior, boundary-adjacent and cascaded (multi-level) faces.
+        for N in (1, 2, 3), T in (Float64,)
+            KI, KR = 1 + 2 * 3^(N - 1), 1 + 2^N
+            @test MFO._ninterp_terms(Val(N)) == KI
+            @test MFO._nrestrict_terms(Val(N)) == KR
+            @test isbitstype(MFO.GhostFill{N})
+            @test isbitstype(MFO.SlabTerm{N,T})
+            @test isconcretetype(MFO.ExchangeSchedule{N,T})
+            ext = ntuple(_ -> (zero(T), one(T)), N)
+            for bc in (
+                ntuple(_ -> (Periodic(), Periodic()), N),
+                ntuple(d -> d == 1 ? (Dirichlet(), Neumann()) : (Periodic(), Periodic()), N),
+            )
+                g = CartesianGrid(ext, ntuple(_ -> 16, N); bc=bc)
+                bf = BlockForest(g; blocksize=ntuple(_ -> 4, N), maxlevel=3)
+                @test eltype(bf.schedule) === MFO.ExchangeSchedule{N,T}
+                refine!(bf, x -> x[1] < 0.5)                  # one interface plane
+                refine!(bf, x -> x[1] < 0.25)                 # balance cascade ⇒ 3 levels
+                sched = @inferred MFO._exchange_schedule(bf)
+                @test typeof(sched) === MFO.ExchangeSchedule{N,T}
+                @test bf.schedule[] === sched
+                @test !isempty(sched.interp) && !isempty(sched.restrict)
+                for (fills, terms, K) in (
+                    (sched.interp, sched.interp_terms, KI),
+                    (sched.restrict, sched.restrict_terms, KR),
+                )
+                    @test eltype(fills) === MFO.GhostFill{N}
+                    @test eltype(terms) === MFO.SlabTerm{N,T}
+                    @test isbitstype(eltype(fills)) && isbitstype(eltype(terms))
+                    # rows are K wide, contiguous, in fill order, and partition the buffer
+                    @test length(terms) == K * length(fills)
+                    @test all(
+                        f.tfirst == (i - 1) * K + 1 && f.tlast == i * K for
+                        (i, f) in enumerate(fills)
+                    )
+                    @test all(f -> length(MFO._fill_terms(terms, f)) == K, fills)
+                    @test all(t -> t.weight isa T, terms)
+                end
+                # the fill count itself still follows topology: every fine face
+                # under a coarse neighbor is tiled by 4^(N-1) interp fills (one
+                # per tangential-class combination — 4 classes per tangential
+                # dim: two one-sided extreme columns and two centered parities),
+                # every coarse face over fine children by 2^(N-1) restriction
+                # fills (one per abutting child)
+                ninterp_faces = nrestrict_faces = 0
+                for K in bf.forest.leaves, d in 1:N, sd in (-1, 1)
+                    nbr = MFO.face_neighbor(bf.forest, K, d, sd)
+                    (nbr === nothing || MFO.is_leaf(bf.forest, nbr)) && continue
+                    if MFO.leaf_covering(bf.forest, nbr) !== nothing
+                        ninterp_faces += 1
+                    else
+                        nrestrict_faces += 1
+                    end
+                end
+                @test length(sched.interp) == ninterp_faces * 4^(N - 1)
+                @test length(sched.restrict) == nrestrict_faces * 2^(N - 1)
+                # weights are the ones the emitters declare: interpolation
+                # partitions unity (a constant field is reproduced exactly), the
+                # restriction's own-cell term is 1 and its fine terms ±2/2^(N-1)
+                iterms = [MFO._fill_terms(sched.interp_terms, f) for f in sched.interp]
+                rterms = [MFO._fill_terms(sched.restrict_terms, f) for f in sched.restrict]
+                @test all(ts -> sum(t.weight for t in ts) ≈ 1, iterms)
+                @test all(
+                    ts[1].block == f.dst_block for (ts, f) in zip(iterms, sched.interp)
+                )   # own cell
+                wf = T(2) / 2^(N - 1)
+                @test all(
+                    ts[1].weight == 1 && ts[1].block == f.dst_block for
+                    (ts, f) in zip(rterms, sched.restrict)
+                )
+                @test all(ts -> all(t -> abs(t.weight) == wf, ts[2:end]), rterms)
+                @test all(ts -> sum(t.weight for t in ts) ≈ 1, rterms)
+            end
+        end
+        # A row of the wrong width is an emitter bug and must throw, never be recorded.
+        box = (1:1:1, 2:1:3)
+        @test_throws AssertionError MFO._close_fill(1, box, 1, 2, 3)
+        @test MFO._close_fill(1, box, 4, 6, 3) === MFO.GhostFill{2}(1, box, 4, 6)
     end
 
     @testset "bcfaces: physical-face lists per (dim, side)" begin
@@ -153,6 +240,63 @@
             Hx = halo_update!(copy(x), bf)
             Htw = MFO.halo_update_adjoint!(copy(w), bf)
             @test full_dot(Hx, w) ≈ full_dot(x, Htw)
+        end
+    end
+
+    @testset "coarse–fine fills: adjoint identity and constant reproduction" begin
+        # The fills' adjoint has no device twin, so it is covered here directly:
+        # ⟨Hx,w⟩ = ⟨x,Hᵀw⟩ over full padded storage on refined 2D and 3D forests
+        # (interior + boundary-adjacent + cascaded interfaces), w's corner ghosts
+        # zeroed per the documented exactness precondition. And since every
+        # interpolation stencil partitions unity and the restriction is
+        # flux-matching, a constant field must come back constant on every
+        # coarse–fine ghost the fills own — an independent check on the weights
+        # frozen into each CSR row. Both element types: the weights are formed as
+        # T inside the emitters, so Float32 is the check that no term weight is
+        # computed in Float64 and narrowed (which would still pass a Float64-only
+        # run) — tolerances scale with eps(T).
+        rng = Random.MersenneTwister(23)
+        for N in (2, 3), T in (Float64, Float32)
+            ext = ntuple(_ -> (zero(T), one(T)), N)
+            bc = ntuple(d -> d == 1 ? (Dirichlet(), Neumann()) : (Periodic(), Periodic()), N)
+            g = CartesianGrid(ext, ntuple(_ -> 16, N); bc=bc)
+            bf = BlockForest(g; blocksize=ntuple(_ -> 4, N), maxlevel=3)
+            refine!(bf, x -> x[1] < 0.5)
+            refine!(bf, x -> x[1] < 0.25 && x[2] < 0.5)
+            sched = MFO._exchange_schedule(bf)
+            @test !isempty(sched.interp) && !isempty(sched.restrict)
+            @test eltype(sched.interp_terms) === MFO.SlabTerm{N,T}
+            h, n = bf.halo, bf.blocksize
+            is_corner(I) = count(d -> I[d] <= h[d] || I[d] > h[d] + n[d], 1:N) >= 2
+            full_dot(a, b) =
+                sum(i -> dot(vec(a.blocks[i]), vec(b.blocks[i])), 1:MFO.nleaves(a.grid))
+            x = scalar_field(bf)
+            w = scalar_field(bf)
+            @test eltype(x.blocks[1]) === T
+            for i in 1:MFO.nleaves(bf)
+                rand!(rng, x.blocks[i])
+                rand!(rng, w.blocks[i])
+                for I in CartesianIndices(w.blocks[i])
+                    is_corner(I) && (w.blocks[i][I] = 0)
+                end
+            end
+            Hx = halo_update!(copy(x), bf)
+            Htw = MFO.halo_update_adjoint!(copy(w), bf)
+            lhs, rhs = full_dot(Hx, w), full_dot(x, Htw)
+            @test lhs ≈ rhs rtol = 20 * eps(T)
+            lhs ≈ rhs || @info "adjoint identity" N T lhs rhs
+            # constant reproduction (to roundoff of the weighted sum) on every
+            # fill-owned ghost cell
+            c = set!(scalar_field(bf), _ -> T(0.75))
+            halo_update!(c, bf)
+            tol = 50 * eps(T)
+            for (phase, fills) in (("interp", sched.interp), ("restrict", sched.restrict))
+                worst = maximum(fills) do f
+                    maximum(abs, c.blocks[f.dst_block][f.dst_ranges...] .- T(0.75))
+                end
+                @test worst < tol
+                worst < tol || @info "constant not reproduced" N T phase worst
+            end
         end
     end
 

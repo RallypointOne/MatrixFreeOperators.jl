@@ -418,8 +418,8 @@ wrap any `AbstractOperator` exposing `mul!`/`size`/`eltype`.)
   by the existing generation guards on both the prepared and un-prepared paths.
   The exchange itself is kernelized for packed fields on GPU backends: the
   per-generation schedule flattens into a device-resident descriptor SoA
-  (`_DeviceSchedule` — copies bucketed by normal dim, the nested
-  `GhostFill.terms` CSR-flattened per phase, bcfaces as device leaf lists,
+  (`_DeviceSchedule` — copies bucketed by normal dim, the per-phase `GhostFill`
+  fill/term CSR pairs narrowed to `Int32`, bcfaces as device leaf lists,
   cached keyed on generation and backend), executed as a constant number of
   launches whose arithmetic is bit-identical to the host loops except
   copy-phase corner ghosts (last dim wins; no axis-aligned stencil reads them).
@@ -808,8 +808,23 @@ pre-built.
     volume average leaves O(1) interface truncation ⇒ 1st-order solutions, rejected).
     Forward sweep: copies → interp → restrict (restriction reads interp-filled fine
     ghosts); the adjoint runs phases and descriptors in exact reverse order, making it
-    the exact transpose by construction. The restriction's conservation guarantee is
-    for *unweighted* differences: a variable-coefficient flux weights each side of a
+    the exact transpose by construction. Every descriptor is **isbits** (#42):
+    each phase keeps its terms CSR-style in one flat `Vector{SlabTerm}` and a
+    `GhostFill{N}` is its dst box plus a `[tfirst, tlast]` row — the layout the
+    device schedule uploads, so host sweeps and kernels walk the same data. This
+    is a structural/AD-robustness change, not a measured speedup: the CPU sweeps
+    are bit-identical to, and within noise of, the former nested-`Vector` shape
+    (the broadcasts dominate; the pointer chase never showed). A fill's term
+    count is a function of `N` alone (interpolation `1 + 2·3^(N−1)`, restriction
+    `1 + 2^N` — fixed by the emitters' tensor-product loops, never by topology),
+    which the emitters assert. Carrying the row inside the fill as an `NTuple`
+    was the first shape tried and is isbits too, but it makes a 3D interpolation
+    fill a 1752-byte record against 96, and it measures the same as CSR on the
+    host sweeps (both within run-to-run noise on refined 2D 256²/32² and 3D
+    32³/8³ forests) — so the choice was made on the smaller record and on the
+    host walking the same flat buffers the batched device gather consumes, not
+    on a timing. The restriction's conservation guarantee is for *unweighted*
+    differences: a variable-coefficient flux weights each side of a
     coarse–fine face by an independently formed face κ, so `Diffusion` owns a
     κ-weighted coarse-ghost rewrite (issue #58) fed by weight-free `cfflux`
     descriptors emitted in the same schedule build — κ must stay out of schedule
@@ -874,7 +889,7 @@ pre-built.
     `PackedBlockField` + `pack`/`unpack` with the Laplacian forest kernel
     end-to-end, (2) the remaining operator kernels + adjoint
     transpose-gather kernels + the coefficient-field layout policy,
-    (3) kernelized exchange/BC/flat passes (incl. `GhostFill.terms` CSR
+    (3) kernelized exchange/BC/flat passes (incl. the `GhostFill` CSR term
     flattening; adjoint exchange deliberately stays on the host
     descriptor loops — see §5), (4) packed regrid — resolved as the documented
     re-pack contract, not code: `regrid!` of a packed field errors — regrid the

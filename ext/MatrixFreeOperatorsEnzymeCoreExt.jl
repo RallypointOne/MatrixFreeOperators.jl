@@ -13,11 +13,13 @@ suite. The rules therefore carry an **empty tape**: nothing from the forward pas
 has to survive to the reverse pass.
 
 Two payoffs. Enzyme never performs type analysis on the coarse–fine `GhostFill`
-descriptor loop — a `Vector` of structs each holding another `Vector`, hence not
-isbits, which is what trips `EnzymeNoTypeError` on some platforms (issue #26). And
-on GPU backends the same sweeps run as KernelAbstractions kernels, which DESIGN.md
-§6 says must never be differentiated through; a rule makes that structural rather
-than incidental.
+descriptor loop at all — historically a `Vector` of structs each holding another
+`Vector`, hence not isbits, which is what tripped `EnzymeNoTypeError` on some
+platforms (issue #26); the descriptors are isbits since #42, but the rule keeps
+the sweep off the tape regardless of what a future descriptor shape looks like.
+And on GPU backends the same sweeps run as KernelAbstractions kernels, which
+DESIGN.md §6 says must never be differentiated through; a rule makes that
+structural rather than incidental.
 
 These rules cannot swallow a parameter gradient: neither function reads an
 operator, let alone a coefficient field, so a coefficient's cotangent never flows

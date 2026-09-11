@@ -173,3 +173,19 @@ SUITE["forest"]["2D refined"]["halo_update_adjoint!"] =
 x̄r = scalar_field(bfr)
 SUITE["forest"]["2D refined"]["laplacian apply_adjoint!"] =
     @benchmarkable apply_adjoint!($x̄r, $Lr, $xbr, $bfr)
+
+# 3D twin of the refined leg. 3D is where the coarse–fine sweeps are widest — a
+# fill row is 19 interpolation terms against 7 in 2D, and a refined interface is a
+# plane of faces rather than a line — so anything touching the ghost-fill
+# descriptors shows here in a way the 2D leg cannot see. Small on purpose (32³
+# cells in 8³ blocks, x < 0.5 refined ⇒ 288 leaves) since the setup reruns on
+# every benchpkg revision, yet its 1024 interpolation fills / 19456 terms are
+# already 8×/22× the 2D leg's.
+g3r = CartesianGrid(((0.0, 1.0), (0.0, 1.0), (0.0, 1.0)), (32, 32, 32))
+bfr3 = BlockForest(g3r; blocksize=(8, 8, 8), maxlevel=2)
+refine!(bfr3, p -> p[1] < 0.5)
+xbr3 = set!(scalar_field(bfr3), p -> sin(4p[1]) + cos(3p[3]))
+
+SUITE["forest"]["3D refined"]["halo_update!"] = @benchmarkable halo_update!($xbr3, $bfr3)
+SUITE["forest"]["3D refined"]["halo_update_adjoint!"] =
+    @benchmarkable MatrixFreeOperators.halo_update_adjoint!($xbr3, $bfr3)
