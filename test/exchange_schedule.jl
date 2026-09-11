@@ -1,3 +1,36 @@
+# Adaptor that doubles every Array it reaches — proves an Adapt rule recursed into a
+# wrapper's contents (the _AsScalar broadcast scalar of the fused ghost gather).
+struct DoubleAdaptor end
+Adapt.adapt_storage(::DoubleAdaptor, x::Array) = 2 .* x
+
+# Block storage that counts what a sweep does to it: every element write, and every
+# broadcast materialized into a view of it. This is the structural guard on the
+# fused gather — a per-term loop over a K-wide row issues K broadcasts and writes
+# each dst cell K times, the fused gather issues one and writes each cell once, and
+# no numerical test can tell them apart.
+struct ProbeArray{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    parent::A
+    writes::Base.RefValue{Int}
+    bcasts::Base.RefValue{Int}
+end
+ProbeArray(a::AbstractArray, w::Base.RefValue{Int}, b::Base.RefValue{Int}) =
+    ProbeArray{eltype(a),ndims(a),typeof(a)}(a, w, b)
+Base.size(p::ProbeArray) = size(p.parent)
+Base.IndexStyle(::Type{<:ProbeArray}) = IndexCartesian()
+Base.@propagate_inbounds Base.getindex(p::ProbeArray{T,N}, I::Vararg{Int,N}) where {T,N} =
+    p.parent[I...]
+Base.@propagate_inbounds function Base.setindex!(
+    p::ProbeArray{T,N}, v, I::Vararg{Int,N}
+) where {T,N}
+    p.writes[] += 1
+    return p.parent[I...] = v
+end
+const ProbeView{T,N} = SubArray{T,N,<:ProbeArray}
+function Base.copyto!(dst::ProbeView, bc::Base.Broadcast.Broadcasted{Nothing})
+    parent(dst).bcasts[] += 1
+    return invoke(copyto!, Tuple{AbstractArray,Base.Broadcast.Broadcasted{Nothing}}, dst, bc)
+end
+
 @testset "Exchange schedule" begin
     MFO = MatrixFreeOperators
 
@@ -159,10 +192,46 @@
                 @test all(ts -> sum(t.weight for t in ts) ≈ 1, rterms)
             end
         end
-        # A row of the wrong width is an emitter bug and must throw, never be recorded.
-        box = (1:1:1, 2:1:3)
-        @test_throws AssertionError MFO._close_fill(1, box, 1, 2, 3)
-        @test MFO._close_fill(1, box, 4, 6, 3) === MFO.GhostFill{2}(1, box, 4, 6)
+        # `_close_fill` asserts the three row invariants the sweeps index by: width,
+        # every term window shaped like the dst slab, and every term window disjoint
+        # from it. All three are emitter bugs — a ragged row, an out-of-bounds read
+        # in the fused gather, and a fill that reads the cells it writes (which the
+        # gather could not see, its term views riding a non-array broadcast scalar).
+        box = (1:1:1, 2:1:3)                                    # 1×2 dst on block 1
+        good(b, r) = MFO.SlabTerm{2,Float64}(b, r, 0.5)
+        row = [good(2, (4:1:4, 2:1:3)), good(2, (5:1:5, 2:1:3))]
+        @test MFO._close_fill(row, 1, box, 1, 2) === MFO.GhostFill{2}(1, box, 1, 2)
+        @test_throws AssertionError MFO._close_fill(row, 1, box, 1, 3)   # width
+        @test_throws AssertionError MFO._close_fill(                     # width
+            [row; good(2, (6:1:6, 2:1:3))], 1, box, 1, 2
+        )
+        @test_throws AssertionError MFO._close_fill(                     # shape
+            [row[1], good(2, (5:1:5, 2:1:4))], 1, box, 1, 2
+        )
+        @test_throws AssertionError MFO._close_fill(                     # reads its dst
+            [row[1], good(1, (1:1:1, 2:1:3))], 1, box, 1, 2
+        )
+        # a same-block term that misses the dst cells is fine (step-2 windows
+        # interleave all over the coarse–fine descriptors)
+        @test MFO._close_fill([row[1], good(1, (1:1:1, 4:1:5))], 1, box, 1, 2) isa
+            MFO.GhostFill{2}
+        # and both invariants hold of every row a real emitter produces
+        for N in (2, 3)
+            ext = ntuple(_ -> (0.0, 1.0), N)
+            g = CartesianGrid(ext, ntuple(_ -> 16, N); bc=ntuple(_ -> (Dirichlet(), Neumann()), N))
+            bfe = BlockForest(g; blocksize=ntuple(_ -> 4, N), maxlevel=3)
+            refine!(bfe, x -> x[1] < 0.5)
+            refine!(bfe, x -> x[1] < 0.25)
+            sched = MFO._exchange_schedule(bfe)
+            for (fills, terms) in
+                ((sched.interp, sched.interp_terms), (sched.restrict, sched.restrict_terms))
+                @test !isempty(fills)
+                for f in fills, t in MFO._fill_terms(terms, f)
+                    @test length.(t.ranges) == length.(f.dst_ranges)
+                    @test !MFO._boxes_overlap(f.dst_block, f.dst_ranges, t.block, t.ranges)
+                end
+            end
+        end
     end
 
     @testset "bcfaces: physical-face lists per (dim, side)" begin
@@ -300,6 +369,239 @@
         end
     end
 
+    @testset "fused gather: one pass per fill, and what it matches bit for bit" begin
+        # `_run_fills!` evaluates dst[I] = Σₖ wₖ·srcₖ[I] in ONE broadcast per fill,
+        # over the CSR row `tfirst:tlast` of its phase. Three claims, each checked by
+        # something that fails when the fusion is reverted or reassociated:
+        #   (1) same term and accumulation order as the retired per-term loop ⇒
+        #       bit-identical to it whenever the field eltype IS the weight type,
+        #   (2) it really is one pass — a structural count, because (1) passes either
+        #       way (its reference is a re-written copy of the loop it replaces) and
+        #       so does the zero-allocation testset,
+        #   (3) in mixed precision it is bit-identical to the device CSR kernel, which
+        #       the retired loop was not.
+        MFOL = MatrixFreeOperators
+        # (1)'s reference: the retired per-term loop, over the same CSR buffers.
+        function ref_fills!(store, lay, fills, terms)
+            for f in fills
+                dst = MFOL._leaf_view(store, lay, f.dst_block, f.dst_ranges)
+                t1 = terms[f.tfirst]
+                dst .= t1.weight .* MFOL._leaf_view(store, lay, t1.block, t1.ranges)
+                for k in (f.tfirst + 1):f.tlast
+                    tk = terms[k]
+                    dst .+= tk.weight .* MFOL._leaf_view(store, lay, tk.block, tk.ranges)
+                end
+            end
+            return nothing
+        end
+        function ref_fills_adjoint!(store, lay, fills, terms)
+            for f in Iterators.reverse(fills)
+                dst = MFOL._leaf_view(store, lay, f.dst_block, f.dst_ranges)
+                for k in f.tfirst:f.tlast
+                    tk = terms[k]
+                    MFOL._leaf_view(store, lay, tk.block, tk.ranges) .+= tk.weight .* dst
+                end
+                fill!(dst, zero(eltype(dst)))
+            end
+            return nothing
+        end
+        function ref_exchange!(x, sched)
+            store, lay = MFOL._storage(x), MFOL._layout(x)
+            MFOL._run_copies!(store, lay, sched.copies)
+            ref_fills!(store, lay, sched.interp, sched.interp_terms)
+            ref_fills!(store, lay, sched.restrict, sched.restrict_terms)
+            return x
+        end
+        function ref_exchange_adjoint!(x, sched)
+            store, lay = MFOL._storage(x), MFOL._layout(x)
+            ref_fills_adjoint!(store, lay, sched.restrict, sched.restrict_terms)
+            ref_fills_adjoint!(store, lay, sched.interp, sched.interp_terms)
+            MFOL._run_copies_adjoint!(store, lay, sched.copies)
+            return x
+        end
+        # exact per-cell comparison over the full padded storage, with a diagnostic
+        # on mismatch (how many cells, how far apart, on which leaf)
+        function bit_equal(a, b, what)
+            for i in 1:MFO.nleaves(a.grid)
+                A, B = MFO._block_array(a, i), MFO._block_array(b, i)
+                A == B && continue
+                bad = count(!iszero, A .- B)
+                @info "fused gather mismatch" what leaf = i ncells = bad worst =
+                    maximum(maximum.(abs.(A .- B)))
+                return false
+            end
+            return true
+        end
+        # dimension-fixed row widths reach the sweep as compile-time values
+        @test @inferred(MFO._interp_width(Val(2))) === Val(7)
+        @test @inferred(MFO._interp_width(Val(3))) === Val(19)
+        @test @inferred(MFO._restrict_width(Val(2))) === Val(5)
+        @test @inferred(MFO._restrict_width(Val(3))) === Val(9)
+
+        rng = Random.MersenneTwister(31)
+        for T in (Float64, Float32), N in (2, 3)
+            ext = ntuple(_ -> (T(0), T(1)), N)
+            bc = ntuple(d -> d == 1 ? (Dirichlet(), Neumann()) : (Periodic(), Periodic()), N)
+            g = CartesianGrid(ext, ntuple(_ -> 16, N); bc=bc)
+            bf = BlockForest(g; blocksize=ntuple(_ -> 4, N), maxlevel=3)
+            refine!(bf, x -> x[1] < 0.5)
+            refine!(bf, x -> x[1] < 0.25 && x[2] < 0.5)
+            sched = MFO._exchange_schedule(bf)
+            @test eltype(sched.interp_terms) === MFO.SlabTerm{N,T}
+            @test !isempty(sched.interp) && !isempty(sched.restrict)
+            x = scalar_field(bf)
+            @test eltype(x) === T
+            for i in 1:MFO.nleaves(bf)
+                rand!(rng, x.blocks[i])
+            end
+            what = (T=T, N=N)
+            # (1) forward, BlockField and PackedBlockField (both run the host gather)
+            @test bit_equal(halo_update!(copy(x), bf), ref_exchange!(copy(x), sched), (what..., :fwd))
+            @test bit_equal(
+                halo_update!(pack(copy(x)), bf), ref_exchange!(pack(copy(x)), sched),
+                (what..., :fwd_packed),
+            )
+            # adjoint: the transposed per-term scatter, unchanged by the fusion, but
+            # its fill/term order is part of the same contract
+            @test bit_equal(
+                MFO.halo_update_adjoint!(copy(x), bf), ref_exchange_adjoint!(copy(x), sched),
+                (what..., :adj),
+            )
+            @test bit_equal(
+                MFO.halo_update_adjoint!(pack(copy(x)), bf),
+                ref_exchange_adjoint!(pack(copy(x)), sched), (what..., :adj_packed),
+            )
+            # SVector elements ride the same fills (the weight is a scalar T)
+            v = vector_field(bf)
+            for i in 1:MFO.nleaves(bf)
+                v.blocks[i] .= SVector{N,T}.(ntuple(_ -> rand(rng, T, size(v.blocks[i])), N)...)
+            end
+            @test bit_equal(halo_update!(copy(v), bf), ref_exchange!(copy(v), sched), (what..., :fwd_vec))
+            @test bit_equal(
+                MFO.halo_update_adjoint!(copy(v), bf), ref_exchange_adjoint!(copy(v), sched),
+                (what..., :adj_vec),
+            )
+
+            # (2) one broadcast per fill, one write per dst cell. A per-term loop over
+            # a K-wide row issues K broadcasts and writes every dst cell K times.
+            for (fills, terms, K) in (
+                (sched.interp, sched.interp_terms, MFO._ninterp_terms(Val(N))),
+                (sched.restrict, sched.restrict_terms, MFO._nrestrict_terms(Val(N))),
+            )
+                nw, nb = Ref(0), Ref(0)
+                store = [ProbeArray(copy(b), nw, nb) for b in x.blocks]
+                MFO._run_fills!(store, MFO.BlocksLayout(), fills, terms, Val(K))
+                @test nb[] == length(fills)
+                @test nw[] == sum(f -> prod(length.(f.dst_ranges)), fills)
+                # and the counted run really did the work: same cells as the reference
+                ref = [copy(b) for b in x.blocks]
+                ref_fills!(ref, MFO.BlocksLayout(), fills, terms)
+                @test all(i -> store[i].parent == ref[i], eachindex(ref))
+                # a row that is not K wide is an emitter bug, not an out-of-bounds read
+                @test_throws AssertionError MFO._run_fills!(
+                    store, MFO.BlocksLayout(), fills, terms, Val(K + 1)
+                )
+            end
+        end
+
+        # (3) mixed precision — a Float32 field on a Float64 forest, which the API
+        # allows (`scalar_field(bf, Float32)`). The retired loop rounded its partial
+        # sum into the Float32 slab K−1 times; the fused gather keeps the promoted
+        # accumulator and rounds once, which is what the device CSR kernel
+        # `_fill_kernel!` has always done. So the fusion does not merely differ from
+        # the retired loop here — it removes a host/device divergence. Compared with
+        # the host copy phase run on both sides, to isolate the fills from the
+        # documented corner divergence of the batched copy kernel.
+        cpu = KernelAbstractions.CPU()
+        for N in (2, 3)
+            ext = ntuple(_ -> (0.0, 1.0), N)
+            bc = ntuple(d -> d == 1 ? (Dirichlet(), Neumann()) : (Periodic(), Periodic()), N)
+            g = CartesianGrid(ext, ntuple(_ -> 16, N); bc=bc)
+            bf = BlockForest(g; blocksize=ntuple(_ -> 4, N), maxlevel=3)
+            refine!(bf, x -> x[1] < 0.5)
+            refine!(bf, x -> x[1] < 0.25 && x[2] < 0.5)
+            sched = MFO._exchange_schedule(bf)
+            @test eltype(sched.interp_terms) === MFO.SlabTerm{N,Float64}
+            ds = MFO._flatten_schedule(sched, bf, cpu)
+            rng32 = Random.MersenneTwister(17)
+            x32 = scalar_field(bf, Float32)
+            @test eltype(x32) === Float32
+            for i in 1:MFO.nleaves(bf)
+                rand!(rng32, x32.blocks[i])
+            end
+            copies!(y) = MFO._run_copies!(MFO._storage(y), MFO._layout(y), sched.copies)
+            fused = pack(copy(x32))
+            copies!(fused)
+            MFO._run_fills!(
+                MFO._storage(fused), MFO._layout(fused), sched.interp, sched.interp_terms,
+                MFO._interp_width(Val(N)),
+            )
+            MFO._run_fills!(
+                MFO._storage(fused), MFO._layout(fused), sched.restrict,
+                sched.restrict_terms, MFO._restrict_width(Val(N)),
+            )
+            retired = pack(copy(x32))
+            copies!(retired)
+            ref_fills!(MFO._storage(retired), MFO._layout(retired), sched.interp, sched.interp_terms)
+            ref_fills!(
+                MFO._storage(retired), MFO._layout(retired), sched.restrict, sched.restrict_terms
+            )
+            device = pack(copy(x32))
+            copies!(device)
+            MFO._run_fills_device!(
+                device.data, ds.interp, ds.interp_terms, ds.interp_maxcells, cpu
+            )
+            MFO._run_fills_device!(
+                device.data, ds.restrict, ds.restrict_terms, ds.restrict_maxcells, cpu
+            )
+            @test fused.data == device.data                      # fused ≡ device kernel
+            ndiff = count(!iszero, retired.data .- device.data)  # retired loop was not
+            @test ndiff > 0
+            @test maximum(abs, retired.data .- device.data) <= 4 * eps(Float32)
+            @info "mixed precision (Float32 field, Float64 weights)" N ndiff
+        end
+
+        # The pieces: term views alias storage cell-for-cell from the CSR row, the
+        # weights come out in term order, and the per-cell body is the LEFT-associated
+        # sum — checked with values whose reassociation is visible in Float32:
+        # (1 + 1e8) + (−1e8) = 0 but 1 + (1e8 − 1e8) = 1.
+        ws = (1.0f0, 1.0f0, 1.0f0)
+        blocks = [fill(1.0f0, 2, 2), fill(1.0f8, 2, 2), fill(-1.0f8, 2, 2)]
+        row = MFO.SlabTerm{2,Float32}[
+            MFO.SlabTerm{2,Float32}(k, (1:1:2, 2:1:2), ws[k]) for k in 1:3
+        ]
+        srcs = MFO._term_views(blocks, MFO.BlocksLayout(), row, 1, Val(3))
+        @test srcs === ntuple(k -> view(blocks[k], 1:1:2, 2:1:2), 3)
+        @test MFO._term_weights(row, 1, Val(3)) === ws
+        @test MFO._term_weights([row; row], 4, Val(3)) === ws      # rows start anywhere
+        I = CartesianIndex(2, 1)
+        @test (ws[1] * srcs[1][I] + ws[2] * srcs[2][I]) + ws[3] * srcs[3][I] === 0.0f0
+        @test ws[1] * srcs[1][I] + (ws[2] * srcs[2][I] + ws[3] * srcs[3][I]) === 1.0f0
+        @test MFO._gather_at(I, srcs, ws) === 0.0f0
+        packed = cat(blocks...; dims=3)
+        psrcs = MFO._term_views(packed, MFO.PackedLayout(), row, 1, Val(3))
+        @test all(k -> psrcs[k] == srcs[k], 1:3)
+        @test MFO._gather_at(I, psrcs, ws) === 0.0f0
+        # and a mis-weighted probe: the seed really is term 1 (not a zero accumulator,
+        # which would also make (0 + 1) + 1e8 − 1e8 = 0)
+        @test MFO._gather_at(I, srcs, (2.0f0, 1.0f0, 1.0f0)) === 0.0f0
+        @test MFO._gather_at(I, srcs, (1.0f0, 1.0f0, 0.0f0)) === 1.0f8
+
+        # _AsScalar: an immutable Ref that broadcasts as a scalar (a mutable Ref of
+        # the term views escapes into copyto! and heap-allocates per fill), whose
+        # contents Adapt still converts for a device broadcast.
+        sc = MFO._AsScalar((1, 2))
+        @test sc isa Ref
+        @test isbitstype(typeof(sc))
+        @test sc[] === (1, 2)
+        @test ((i, t) -> i + t[1] * t[2]).(1:3, sc) == [3, 4, 5]
+        @test ((i, t) -> i + t[1] * t[2]).(1:3, MFO._AsScalar((1, 2))) == [3, 4, 5]
+        a = Float32[1 2; 3 4]
+        adapted = Adapt.adapt(DoubleAdaptor(), MFO._AsScalar((a, view(a, 1:1:1, 1:1:2))))
+        @test adapted isa MFO._AsScalar
+        @test adapted[] == (2 .* a, view(2 .* a, 1:1:1, 1:1:2))
+    end
+
     @testset "forest apply_bc! matches the per-leaf physical fill" begin
         # Reference: per-leaf single-grid apply_bc! on hand-built leaf grids carrying
         # the physical/Interface mix leaf grids themselves no longer encode.
@@ -369,6 +671,35 @@
             halo_update!(f, g)
             return @allocated halo_update!(f, g)
         end
+        # (qualified through the module constant: `MFO` is a testset-local binding,
+        # and a captured local makes the call a dynamic lookup that boxes its
+        # arguments — an allocation of the scaffolding, not of the sweep)
+        function alloc_halo_adjoint(f, g)
+            MatrixFreeOperators.halo_update_adjoint!(f, g)
+            MatrixFreeOperators.halo_update_adjoint!(f, g)
+            return @allocated MatrixFreeOperators.halo_update_adjoint!(f, g)
+        end
         @test alloc_halo(uf, bf) == 0
+        # Refined forests run the coarse–fine fills — 7 terms per interpolation fill
+        # in 2D, 19 in 3D. The fused gather's term views ride an immutable broadcast
+        # scalar precisely so this stays at zero: a mutable `Ref` escapes the
+        # un-inlined gather body and heap-allocates the whole tuple of views on every
+        # fill (~2 KB per 3D fill), inside the `_exchange_storage!` rule seam that
+        # must not allocate.
+        for N in (2, 3)
+            ext = ntuple(_ -> (0.0, 1.0), N)
+            bc = ntuple(d -> d == 1 ? (Dirichlet(), Neumann()) : (Periodic(), Periodic()), N)
+            g = CartesianGrid(ext, ntuple(_ -> 16, N); bc=bc)
+            bfr = BlockForest(g; blocksize=ntuple(_ -> 4, N), maxlevel=3)
+            refine!(bfr, x -> x[1] < 0.5)
+            sched = MFO._exchange_schedule(bfr)
+            @test !isempty(sched.interp) && !isempty(sched.restrict)
+            for xr in (scalar_field(bfr), pack(scalar_field(bfr)))
+                @inferred halo_update!(xr, bfr)
+                @inferred MFO.halo_update_adjoint!(xr, bfr)
+                @test alloc_halo(xr, bfr) == 0
+                @test alloc_halo_adjoint(xr, bfr) == 0
+            end
+        end
     end
 end
