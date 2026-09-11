@@ -290,14 +290,7 @@ apply_adjoint!(x̄::Field, L::Laplacian, ȳ::Field, g::CartesianGrid, α, β)
   # HOLDS: ⟨Lx, y⟩ = ⟨x, Lᵀy⟩ exactly, boundary contributions included
 ```
 
-**1. The gate and the hook are two different functions.** `Base.adjoint` checks
-`islinear` and refuses nonlinear operators with a message pointing at
-[`linearize`](api.qmd) (§4). `adjoint_operator` is the internal hook that skips
-the check; leaves override it when a cheaper closed form exists, and it is what
-every combinator recursion calls. [`AdjointOp`](api.qmd) is the lazy fallback:
-it forwards all five traits to its operand, swaps `allocate_output` with
-`allocate_input`, is its own involution, and swaps the two actions, so
-`apply!(y, AdjointOp(L), x, …)` *is* `apply_adjoint!(y, L, x, …)`.
+**1. The gate and the hook are two different functions.** `Base.adjoint` checks `islinear` and refuses nonlinear operators with a message pointing at [`linearize`](api.qmd) (§4). `adjoint_operator` is the internal hook that skips the check; leaves override it when a cheaper closed form exists, and it is what every combinator recursion calls. [`AdjointOp`](api.qmd) is the lazy fallback: it forwards `islinear`, `isconstant`, `isselfadjoint` and `isdiagonal` to its operand. It explicitly declares `shares_exchange = false`: the forest adjoint needs a gather and a cross-block fold, which sharing a forward exchange would bypass. It swaps `allocate_output` with `allocate_input`, is its own involution, and swaps the two actions, so `apply!(y, AdjointOp(L), x, …)` *is* `apply_adjoint!(y, L, x, …)`.
 
 **2. The gather sweeps the padded array, on purpose.** A forward stencil reads
 ghosts, so its transpose must *write* them. `adjoint_gather!` therefore runs
@@ -335,14 +328,7 @@ declares all five; nothing falls through to a default it did not earn.
 | `shares_exchange` | operand | both | **always `false`** | **always `false`** |
 | `adjoint_operator` | `Scaled(opᵀ, conj α)` | `Added(aᵀ, bᵀ)` | `Composed(bᵀ, aᵀ)` — order flips | the operand |
 
-The two hard `false`s are the interesting entries. `isselfadjoint(::Composed)`
-cannot be `true` from its factors: `(AB)ᵀ = BᵀAᵀ`, which equals `AB` only when
-they commute, and nothing here can check that. `shares_exchange(::Composed)` is
-`false` because `b(x)` is a fresh intermediate that needs its own exchange
-before `a` reads it. `isselfadjoint` is also grid-aware rather than fixed: it
-asks `_uniform_grid(L.grid)`, which for a `BlockForest` reads a live `Ref` — so
-the moment a regrid makes the forest non-uniform, the Laplacian stops claiming
-self-adjointness.
+The hard `false`s encode limits on propagation. `isselfadjoint(::Composed)` cannot be `true` from its factors: `(AB)ᵀ = BᵀAᵀ`, which equals `AB` only when they commute, and nothing here can check that. `shares_exchange(::Composed)` is `false` because `b(x)` is a fresh intermediate that needs its own exchange before `a` reads it; `AdjointOp` needs the separate adjoint fold described above. `isselfadjoint` is also grid-aware rather than fixed: it asks `_uniform_grid(L.grid)`, which for a `BlockForest` reads a live `Ref` — so the moment a regrid makes the forest non-uniform, the Laplacian stops claiming self-adjointness.
 
 **Throws and invalidates.** `adjoint(L)` on a nonlinear `L` throws
 `ArgumentError` naming `linearize` as the alternative. `apply_adjoint!` has a
@@ -396,8 +382,11 @@ _prepare_tree(L::Composed, x)
   PreparedComposed(_prepare_tree(L.a, …), _prepare_tree(L.b, x),
                    allocate_output(L.b, x))             # tmp bound once, reused forever
 _prepare_tree(L::AdjointOp, x)
-  inner = _push_adjoints(L)                             # (A*B)ᵀ  ->  Composed(Bᵀ, Aᵀ)
-  inner isa AdjointOp ? PreparedAdjoint(inner.op, similar(x)) : _prepare_tree(inner, x)
+  pushed = _push_adjoints(L)                            # (A*B)ᵀ  ->  Composed(Bᵀ, Aᵀ)
+  pushed isa AdjointOp || return _prepare_tree(pushed, x)
+  op = _prepare_tree(pushed.op, x)                      # normalise the leaf's coefficient layout
+  scratch = allocate_output(pushed, x)                  # adjoint OUTPUT shape, not x's shape
+  return PreparedAdjoint(op, scratch)
 
 mul!(y::AbstractVector, P::PreparedOperator, x::AbstractVector, α, β)
   flat_to_interior!(P.xpad, x)     # MUTATES interior(P.xpad); NO zero_ghosts! here
@@ -406,25 +395,9 @@ mul!(y::AbstractVector, P::PreparedOperator, x::AbstractVector, α, β)
   # HOLDS: zero allocation in steady state
 ```
 
-**1. A prepared operator is not an operator.** `PreparedOperator` and
-`PreparedForest` are deliberately *not* `AbstractOperator` subtypes: they are
-the solver boundary, so they cannot re-enter `+`, `*`, `adjoint` or `apply`.
-They do implement the small interface Krylov consumes — `size` as
-`(output DOFs, input DOFs)`, so rank changers report an honestly rectangular
-shape, and `eltype` unwrapping `SVector{M,T}` to `T`. All five traits are
-forwarded to the wrapped tree explicitly, because there is no supertype to fall
-through to and an undeclared one would be a `MethodError`.
+**1. A prepared operator is not an operator.** `PreparedOperator` and `PreparedForest` are deliberately *not* `AbstractOperator` subtypes: they are the solver boundary, so they cannot re-enter `+`, `*`, `adjoint` or `apply`. They do implement the small interface Krylov consumes — `size` as `(output DOFs, input DOFs)`, so rank changers report an honestly rectangular shape, and `eltype` unwrapping `SVector{M,T}` to `T`. Four traits are forwarded to the wrapped tree explicitly: `islinear`, `isconstant`, `isselfadjoint` and `isdiagonal`. Neither wrapper exposes `shares_exchange`; that trait is queried on nodes inside the tree. Calling it on a prepared solver wrapper raises `MethodError`, because there is no `AbstractOperator` supertype to supply the default.
 
-**2. The tree rewrite hoists every per-call allocation.** Unprepared,
-`Composed` allocates its intermediate on every apply. `_prepare_tree` replaces
-it with `PreparedComposed`, which carries that intermediate as a field — and
-`PreparedComposed` *is* an `AbstractOperator`, so it re-enters ordinary `apply!`
-dispatch and the sweep code below it needs no changes. `PreparedAdjoint` does
-the same for a surviving leaf adjoint's scratch. Both re-declare their traits
-rather than inherit; `PreparedAdjoint` additionally declares
-`adjoint_operator(L) = L.op`, without which the generic forest adjoint walk
-would wrap it in another `AdjointOp` whose apply is this node's transpose again,
-recursing forever.
+**2. The tree rewrite hoists every per-call allocation.** Unprepared, `Composed` allocates its intermediate on every apply. `_prepare_tree` replaces it with `PreparedComposed`, which carries that intermediate as a field — and `PreparedComposed` *is* an `AbstractOperator`, so it re-enters ordinary `apply!` dispatch and the sweep code below it needs no changes. `PreparedAdjoint` does the same for a surviving leaf adjoint's scratch. Both explicitly declare `islinear`, `isconstant`, `isselfadjoint` and `isdiagonal`, while `shares_exchange` uses the `AbstractOperator` default of `false`. `PreparedAdjoint` additionally declares `adjoint_operator(L) = L.op`, without which the generic forest adjoint walk would wrap it in another `AdjointOp` whose apply is this node's transpose again, recursing forever.
 
 **3. `_push_adjoints` runs before any buffer is bound.** It rewrites
 `AdjointOp(A*B)` into `Composed(Bᵀ, Aᵀ)`, with a fixed-point guard so a leaf
@@ -1102,12 +1075,18 @@ of `u`.
 
 ## 9 — Multigrid: a tuple of levels, and one recursive V-cycle
 
-Why multigrid breaks the link between grid size and iteration count, and how the
-transfer pair and the smoothers fall out of machinery that already exists, is in
-[Geometric Multigrid](multigrid.qmd). This section is the hierarchy's
-representation and the cycle's control flow. The example traced is
-`M = MultigridPreconditioner(laplacian(g))` on a 256×256 grid, used as
-`Krylov.cg(P, b; M)`.
+Why multigrid breaks the link between grid size and iteration count, and how the transfer pair and the smoothers fall out of machinery that already exists, is in [Geometric Multigrid](multigrid.qmd). This section is the hierarchy's representation and the cycle's control flow. The example traced solves $-\Delta u = f$ on a 256×256 grid with homogeneous Dirichlet boundaries. The minus sign makes the operator positive definite, as CG requires; both the prepared operator and its multigrid preconditioner are built from that same `L`.
+
+```julia
+using MatrixFreeOperators, Krylov
+
+g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (256, 256))  # homogeneous Dirichlet by default
+L = -laplacian(g)
+P = prepare(L)
+M = MultigridPreconditioner(L)
+b = flatten(set!(scalar_field(g), x -> 2π^2 * sinpi(x[1]) * sinpi(x[2])))
+u, stats = Krylov.cg(P, b; M)
+```
 
 *Entry point* [`MultigridPreconditioner`](api.qmd), `mul!(z, M, r)` ·
 *Source* `src/multigrid.jl`, `src/operators/restriction.jl`,
@@ -1191,13 +1170,9 @@ additionally runs ten power iterations on `D⁻¹A` at setup, seeded with a
 checkerboard, to bracket the spectrum; the two scratch fields that costs are
 discarded afterwards.
 
-**5. The cycle never zeroes anything explicitly.** The pre-smooth runs "from
-zero": its first sweep *writes* `x` rather than updating it, which both skips a
-residual evaluation and removes the need for a separate zeroing pass. The
-coarse correction comes back through `apply!(lvl.x, lvl.P, nxt.x, lvl.g, true,
-true)` — prolongate and accumulate, using §1's `β ≠ 0` form. Pre- and
-post-smoothing are the same fixed operator, so for symmetric `L` the cycle is
-symmetric and `Krylov.cg` is valid.
+**5. The default Jacobi smoother skips a separate zeroing pass.** The pre-smooth runs "from zero": its first sweep *writes* `x` rather than updating it, which both skips a residual evaluation and removes the need for a separate zeroing pass. Chebyshev's from-zero path explicitly clears `x` before its recurrence. The coarse correction comes back through `apply!(lvl.x, lvl.P, nxt.x, lvl.g, true, true)` — prolongate and accumulate, using §1's `β ≠ 0` form.
+
+Pre- and post-smoothing use the same fixed operator, making the cycle symmetric for symmetric `L`. Symmetry alone does not establish CG compatibility: [Krylov's CG contract](https://jso.dev/Krylov.jl/stable/solvers/spd/) requires both the system and preconditioner to be positive definite. The Dirichlet $-\Delta$ example with the default damped Jacobi smoother satisfies those conditions; `test/multigrid.jl` checks the preconditioner's symmetry and positive eigenvalues on a small grid.
 
 **6. Everything is preallocated at construction; `mul!` allocates nothing.** The
 construction cost includes the coarsest level's dense `Matrix` and its `lu`
@@ -1366,12 +1341,7 @@ test that catches you if you skip it.
    small grid so structure can be checked exactly. Caught by the per-operator
    file, e.g. `test/laplacian.jl`, `test/diffusion.jl`.
 
-2. **A new combinator owes all five traits, explicitly.** Nothing inherits. A
-   combinator that falls through to the defaults is safe by accident rather than
-   by declaration, and it hides a linear tree from everything that keys off
-   `islinear`. The same applies to a new prepared wrapper, which has no
-   supertype to fall through to at all. Caught by `test/algebra.jl` and
-   `test/operators_abstract.jl`.
+2. **A new wrapper must preserve the traits its interface exposes.** The lazy combinators declare all five traits, including explicit `false` declarations where propagation is unsafe. The internal `PreparedComposed` and `PreparedAdjoint` nodes declare the four algebraic traits and use the inherited `shares_exchange = false` default. The solver wrappers `PreparedOperator` and `PreparedForest` forward only the four algebraic traits; they have no `AbstractOperator` fallback and expose no `shares_exchange` method. Forgetting `islinear` on an internal node hides a linear tree from consumers; forgetting a method on a solver wrapper raises `MethodError`. Check `test/algebra.jl`, `test/operators_abstract.jl` and `test/prepare_linalg.jl` when changing these declarations.
 
 3. **A new forest-level sweep owes a declared transpose and an `isbits`
    descriptor.** The transpose is what keeps the adjoint identity exact on a
