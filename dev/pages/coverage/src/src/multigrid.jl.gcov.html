@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryHi">91.6&nbsp;%</td>
-            <td class="headerCovTableEntry">202</td>
-            <td class="headerCovTableEntry">185</td>
+            <td class="headerCovTableEntryHi">91.7&nbsp;%</td>
+            <td class="headerCovTableEntry">204</td>
+            <td class="headerCovTableEntry">187</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 22:14:58</td>
+            <td class="headerValue">2026-09-22 14:19:45</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -254,282 +254,288 @@
 <span id="L192"><span class="lineNum">     192</span>              : function _rediscretize(L::ScalingOp{&lt;:Field}, gc::CartesianGrid)</span>
 <span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC tlaBgGNC">           1 :     return ScalingOp(_average_to_coarse(L.coeff, gc))</span></span>
 <span id="L194"><span class="lineNum">     194</span>              : end</span>
-<span id="L195"><span class="lineNum">     195</span> <span class="tlaGNC">          31 : _rediscretize(L::Scaled, gc::CartesianGrid) = Scaled(_rediscretize(L.op, gc), L.α)</span></span>
-<span id="L196"><span class="lineNum">     196</span>              : function _rediscretize(L::Added, gc::CartesianGrid)</span>
-<span id="L197"><span class="lineNum">     197</span> <span class="tlaGNC">           1 :     return Added(_rediscretize(L.a, gc), _rediscretize(L.b, gc))</span></span>
-<span id="L198"><span class="lineNum">     198</span>              : end</span>
-<span id="L199"><span class="lineNum">     199</span> <span class="tlaUNC tlaBgUNC">           0 : function _rediscretize(L::Composed, gc::CartesianGrid)</span></span>
-<span id="L200"><span class="lineNum">     200</span> <span class="tlaUNC">           0 :     return Composed(_rediscretize(L.a, gc), _rediscretize(L.b, gc))</span></span>
-<span id="L201"><span class="lineNum">     201</span>              : end</span>
-<span id="L202"><span class="lineNum">     202</span> <span class="tlaGNC tlaBgGNC">           1 : _rediscretize(L::AbstractOperator, ::CartesianGrid) = throw(</span></span>
-<span id="L203"><span class="lineNum">     203</span>              :     ArgumentError(</span>
-<span id="L204"><span class="lineNum">     204</span>              :         &quot;multigrid rediscretization does not support $(nameof(typeof(L))); supported &quot; *</span>
-<span id="L205"><span class="lineNum">     205</span>              :         &quot;leaves: Laplacian, Derivative, Gradient, Divergence, ScalingOp, IdentityOp&quot;,</span>
-<span id="L206"><span class="lineNum">     206</span>              :     ),</span>
-<span id="L207"><span class="lineNum">     207</span>              : )</span>
-<span id="L208"><span class="lineNum">     208</span>              : </span>
-<span id="L209"><span class="lineNum">     209</span>              : # Plain 2^N-child arithmetic mean of a coefficient field onto the coarse grid.</span>
-<span id="L210"><span class="lineNum">     210</span>              : # Deliberately NOT restriction: R folds Dirichlet's -1 mirror through the</span>
-<span id="L211"><span class="lineNum">     211</span>              : # boundary, which would corrupt a material coefficient at walls.</span>
-<span id="L212"><span class="lineNum">     212</span>              : @inline function _child_mean(</span>
-<span id="L213"><span class="lineNum">     213</span>              :     u::AbstractArray{T,N},</span>
-<span id="L214"><span class="lineNum">     214</span>              :     J::CartesianIndex{N},</span>
-<span id="L215"><span class="lineNum">     215</span>              :     hf::NTuple{N,Int},</span>
-<span id="L216"><span class="lineNum">     216</span>              :     hc::NTuple{N,Int},</span>
-<span id="L217"><span class="lineNum">     217</span>              :     scale,</span>
-<span id="L218"><span class="lineNum">     218</span>              : ) where {T,N}</span>
-<span id="L219"><span class="lineNum">     219</span> <span class="tlaGNC">         128 :     F0 = ntuple(d -&gt; 2 * (J[d] - hc[d]) - 1 + hf[d], Val(N))</span></span>
-<span id="L220"><span class="lineNum">     220</span> <span class="tlaGNC">          64 :     acc = zero(T)</span></span>
-<span id="L221"><span class="lineNum">     221</span> <span class="tlaGNC">         128 :     @inbounds for t in CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
-<span id="L222"><span class="lineNum">     222</span> <span class="tlaGNC">         512 :         acc += u[CartesianIndex(ntuple(d -&gt; F0[d] + t[d], Val(N)))]</span></span>
-<span id="L223"><span class="lineNum">     223</span> <span class="tlaGNC">         320 :     end</span></span>
-<span id="L224"><span class="lineNum">     224</span> <span class="tlaGNC">          64 :     return scale * acc</span></span>
-<span id="L225"><span class="lineNum">     225</span>              : end</span>
-<span id="L226"><span class="lineNum">     226</span>              : </span>
-<span id="L227"><span class="lineNum">     227</span> <span class="tlaGNC">           1 : function _average_to_coarse(f::Field, gc::CartesianGrid{N}) where {N}</span></span>
-<span id="L228"><span class="lineNum">     228</span> <span class="tlaGNC">           2 :     c = _field_like(f, gc)</span></span>
-<span id="L229"><span class="lineNum">     229</span> <span class="tlaGNC">           1 :     hf = halo_width(f.grid)</span></span>
-<span id="L230"><span class="lineNum">     230</span> <span class="tlaGNC">           1 :     hc = halo_width(gc)</span></span>
-<span id="L231"><span class="lineNum">     231</span> <span class="tlaGNC">           1 :     scale = inv(eltype(spacing(gc))(2)^N)</span></span>
-<span id="L232"><span class="lineNum">     232</span> <span class="tlaGNC">           2 :     interior(c) .= _child_mean.(Ref(f.data), interior(gc), Ref(hf), Ref(hc), scale)</span></span>
-<span id="L233"><span class="lineNum">     233</span> <span class="tlaGNC">           1 :     return c</span></span>
-<span id="L234"><span class="lineNum">     234</span>              : end</span>
-<span id="L235"><span class="lineNum">     235</span>              : </span>
-<span id="L236"><span class="lineNum">     236</span>              : #--------------------------------------------------------------------------------# Level construction</span>
-<span id="L237"><span class="lineNum">     237</span>              : </span>
-<span id="L238"><span class="lineNum">     238</span> <span class="tlaGNC">          17 : function _mg_grids(g::CartesianGrid, levels)</span></span>
-<span id="L239"><span class="lineNum">     239</span> <span class="tlaGNC">          17 :     grids = [g]</span></span>
-<span id="L240"><span class="lineNum">     240</span> <span class="tlaGNC">          17 :     if levels === :auto</span></span>
-<span id="L241"><span class="lineNum">     241</span> <span class="tlaGNC">          35 :         while all(iseven, local_size(last(grids))) &amp;&amp;</span></span>
-<span id="L242"><span class="lineNum">     242</span>              :             prod(local_size(last(grids))) &gt; 64 &amp;&amp;</span>
-<span id="L243"><span class="lineNum">     243</span>              :             length(grids) &lt; 10</span>
-<span id="L244"><span class="lineNum">     244</span> <span class="tlaGNC">          25 :             push!(grids, coarsen(last(grids)))</span></span>
-<span id="L245"><span class="lineNum">     245</span> <span class="tlaGNC">          25 :         end</span></span>
-<span id="L246"><span class="lineNum">     246</span> <span class="tlaGNC">          11 :         length(grids) &gt; 1 || throw(</span></span>
-<span id="L247"><span class="lineNum">     247</span>              :             ArgumentError(</span>
-<span id="L248"><span class="lineNum">     248</span>              :                 &quot;levels=:auto found no coarsenable level below grid size &quot; *</span>
-<span id="L249"><span class="lineNum">     249</span>              :                 &quot;$(local_size(g)); pass levels=n explicitly&quot;,</span>
-<span id="L250"><span class="lineNum">     250</span>              :             ),</span>
-<span id="L251"><span class="lineNum">     251</span>              :         )</span>
-<span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">           7 :     elseif levels isa Integer</span></span>
-<span id="L253"><span class="lineNum">     253</span> <span class="tlaGNC">           8 :         levels &gt;= 2 || throw(ArgumentError(&quot;levels must be ≥ 2, got $levels&quot;))</span></span>
-<span id="L254"><span class="lineNum">     254</span> <span class="tlaGNC">           6 :         for _ in 2:levels</span></span>
-<span id="L255"><span class="lineNum">     255</span> <span class="tlaGNC">          13 :             push!(grids, coarsen(last(grids)))</span></span>
-<span id="L256"><span class="lineNum">     256</span> <span class="tlaGNC">          19 :         end</span></span>
-<span id="L257"><span class="lineNum">     257</span>              :     else</span>
-<span id="L258"><span class="lineNum">     258</span> <span class="tlaUNC tlaBgUNC">           0 :         throw(ArgumentError(&quot;levels must be :auto or an Integer ≥ 2&quot;))</span></span>
-<span id="L259"><span class="lineNum">     259</span>              :     end</span>
-<span id="L260"><span class="lineNum">     260</span> <span class="tlaGNC tlaBgGNC">          14 :     return grids</span></span>
-<span id="L261"><span class="lineNum">     261</span>              : end</span>
-<span id="L262"><span class="lineNum">     262</span>              : </span>
-<span id="L263"><span class="lineNum">     263</span> <span class="tlaGNC">          45 : function _build_levels(L::AbstractOperator, grids::Vector, smoother, i::Int)</span></span>
-<span id="L264"><span class="lineNum">     264</span> <span class="tlaGNC">          45 :     g = grids[i]</span></span>
-<span id="L265"><span class="lineNum">     265</span> <span class="tlaGNC">          45 :     i == length(grids) &amp;&amp; return (_build_coarsest(L, g),)</span></span>
-<span id="L266"><span class="lineNum">     266</span> <span class="tlaGNC">          62 :     proto = scalar_field(g)</span></span>
-<span id="L267"><span class="lineNum">     267</span> <span class="tlaGNC">          31 :     A = _prepare_tree(L, proto)</span></span>
-<span id="L268"><span class="lineNum">     268</span> <span class="tlaGNC">          62 :     lvl = MGLevel(</span></span>
-<span id="L269"><span class="lineNum">     269</span>              :         A,</span>
-<span id="L270"><span class="lineNum">     270</span>              :         restriction(g, grids[i + 1]),</span>
-<span id="L271"><span class="lineNum">     271</span>              :         prolongation(grids[i + 1], g),</span>
-<span id="L272"><span class="lineNum">     272</span>              :         g,</span>
-<span id="L273"><span class="lineNum">     273</span>              :         scalar_field(g),</span>
-<span id="L274"><span class="lineNum">     274</span>              :         scalar_field(g),</span>
-<span id="L275"><span class="lineNum">     275</span>              :         scalar_field(g),</span>
-<span id="L276"><span class="lineNum">     276</span>              :         scalar_field(g),</span>
-<span id="L277"><span class="lineNum">     277</span>              :         _smoother_state(smoother, L, A, g),</span>
-<span id="L278"><span class="lineNum">     278</span>              :     )</span>
-<span id="L279"><span class="lineNum">     279</span> <span class="tlaGNC">          31 :     return (lvl, _build_levels(_rediscretize(L, grids[i + 1]), grids, smoother, i + 1)...)</span></span>
-<span id="L280"><span class="lineNum">     280</span>              : end</span>
-<span id="L281"><span class="lineNum">     281</span>              : </span>
-<span id="L282"><span class="lineNum">     282</span> <span class="tlaGNC">          14 : function _build_coarsest(L::AbstractOperator, g::CartesianGrid)</span></span>
-<span id="L283"><span class="lineNum">     283</span> <span class="tlaGNC">          28 :     proto = scalar_field(g)</span></span>
-<span id="L284"><span class="lineNum">     284</span> <span class="tlaGNC">          14 :     A = _prepare_tree(L, proto)</span></span>
-<span id="L285"><span class="lineNum">     285</span> <span class="tlaGNC">          14 :     T = eltype(spacing(g))</span></span>
-<span id="L286"><span class="lineNum">     286</span> <span class="tlaGNC">          14 :     n = prod(local_size(g))</span></span>
-<span id="L287"><span class="lineNum">     287</span> <span class="tlaGNC">          14 :     Ad = Matrix{T}(undef, n, n)</span></span>
-<span id="L288"><span class="lineNum">     288</span> <span class="tlaGNC">          28 :     e = scalar_field(g)</span></span>
-<span id="L289"><span class="lineNum">     289</span> <span class="tlaGNC">          28 :     y = scalar_field(g)</span></span>
-<span id="L290"><span class="lineNum">     290</span> <span class="tlaGNC">          14 :     bflat = Vector{T}(undef, n)</span></span>
-<span id="L291"><span class="lineNum">     291</span> <span class="tlaGNC">          14 :     for j in 1:n</span></span>
-<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">      166144 :         fill!(e.data, zero(T))</span></span>
-<span id="L293"><span class="lineNum">     293</span> <span class="tlaGNC">      118784 :         fill!(bflat, zero(T))</span></span>
-<span id="L294"><span class="lineNum">     294</span> <span class="tlaGNC">        1088 :         bflat[j] = one(T)</span></span>
-<span id="L295"><span class="lineNum">     295</span> <span class="tlaGNC">        1088 :         flat_to_interior!(e, bflat)</span></span>
-<span id="L296"><span class="lineNum">     296</span> <span class="tlaGNC">        1088 :         apply!(y, A, e, g)</span></span>
-<span id="L297"><span class="lineNum">     297</span> <span class="tlaGNC">        1088 :         interior_to_flat!(view(Ad, :, j), y)</span></span>
-<span id="L298"><span class="lineNum">     298</span> <span class="tlaGNC">        2162 :     end</span></span>
-<span id="L299"><span class="lineNum">     299</span> <span class="tlaGNC">          14 :     fact = lu(Ad; check=false)</span></span>
-<span id="L300"><span class="lineNum">     300</span> <span class="tlaGNC">          28 :     dU = abs.(diag(fact.factors))</span></span>
-<span id="L301"><span class="lineNum">     301</span> <span class="tlaGNC">          27 :     if !issuccess(fact) || minimum(dU) &lt;= sqrt(eps(T)) * maximum(dU)</span></span>
-<span id="L302"><span class="lineNum">     302</span> <span class="tlaGNC">           1 :         throw(</span></span>
-<span id="L303"><span class="lineNum">     303</span>              :             ArgumentError(</span>
-<span id="L304"><span class="lineNum">     304</span>              :                 &quot;the operator is singular at the coarsest multigrid level — an &quot; *</span>
-<span id="L305"><span class="lineNum">     305</span>              :                 &quot;all-Neumann/Periodic Poisson problem has a constant nullspace; add &quot; *</span>
-<span id="L306"><span class="lineNum">     306</span>              :                 &quot;a Dirichlet face or a zeroth-order term&quot;,</span>
-<span id="L307"><span class="lineNum">     307</span>              :             ),</span>
-<span id="L308"><span class="lineNum">     308</span>              :         )</span>
-<span id="L309"><span class="lineNum">     309</span>              :     end</span>
-<span id="L310"><span class="lineNum">     310</span> <span class="tlaGNC">          13 :     return MGCoarsest(g, scalar_field(g), scalar_field(g), fact, bflat)</span></span>
-<span id="L311"><span class="lineNum">     311</span>              : end</span>
-<span id="L312"><span class="lineNum">     312</span>              : </span>
-<span id="L313"><span class="lineNum">     313</span>              : #--------------------------------------------------------------------------------# Preconditioner</span>
-<span id="L314"><span class="lineNum">     314</span>              : </span>
-<span id="L315"><span class="lineNum">     315</span>              : &quot;&quot;&quot;</span>
-<span id="L316"><span class="lineNum">     316</span>              :     MultigridPreconditioner(L; smoother=Jacobi(), cycle=:V, levels=:auto)</span>
-<span id="L317"><span class="lineNum">     317</span>              : </span>
-<span id="L318"><span class="lineNum">     318</span>              : Geometric-multigrid V-cycle preconditioner for a linear operator on a uniform</span>
-<span id="L319"><span class="lineNum">     319</span>              : [`CartesianGrid`](@ref). Each `mul!(z, M, r)` runs one V-cycle from a zero</span>
-<span id="L320"><span class="lineNum">     320</span>              : initial guess, so `M` acts as a fixed linear approximation of `L⁻¹` — pass it</span>
-<span id="L321"><span class="lineNum">     321</span>              : as the preconditioner `M` to a Krylov solver.</span>
-<span id="L322"><span class="lineNum">     322</span>              : </span>
-<span id="L323"><span class="lineNum">     323</span>              : Levels are built by [`coarsen`](@ref)-ing the grid (`levels=:auto` stops at ≤64</span>
-<span id="L324"><span class="lineNum">     324</span>              : DOFs, odd cell counts, or 10 levels; pass an `Integer` to force a depth); each</span>
-<span id="L325"><span class="lineNum">     325</span>              : level rediscretizes `L` on its grid, transfers residuals/corrections with</span>
-<span id="L326"><span class="lineNum">     326</span>              : [`restriction`](@ref)/[`prolongation`](@ref), smooths with `smoother`</span>
-<span id="L327"><span class="lineNum">     327</span>              : ([`Jacobi`](@ref) or [`Chebyshev`](@ref)) symmetrically before and after the</span>
-<span id="L328"><span class="lineNum">     328</span>              : coarse correction, and solves the coarsest level with a dense LU factored at</span>
-<span id="L329"><span class="lineNum">     329</span>              : construction. For a symmetric `L` the cycle is symmetric, so `Krylov.cg`</span>
-<span id="L330"><span class="lineNum">     330</span>              : applies.</span>
-<span id="L331"><span class="lineNum">     331</span>              : </span>
-<span id="L332"><span class="lineNum">     332</span>              : Stateful and single-threaded, like [`prepare`](@ref) — construct one per</span>
-<span id="L333"><span class="lineNum">     333</span>              : concurrent solve.</span>
-<span id="L334"><span class="lineNum">     334</span>              : </span>
-<span id="L335"><span class="lineNum">     335</span>              : ### Examples</span>
-<span id="L336"><span class="lineNum">     336</span>              : </span>
-<span id="L337"><span class="lineNum">     337</span>              : ```julia</span>
-<span id="L338"><span class="lineNum">     338</span>              : g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))</span>
-<span id="L339"><span class="lineNum">     339</span>              : L = -laplacian(g)</span>
-<span id="L340"><span class="lineNum">     340</span>              : A = prepare(L)</span>
-<span id="L341"><span class="lineNum">     341</span>              : M = MultigridPreconditioner(L)</span>
-<span id="L342"><span class="lineNum">     342</span>              : b = flatten(set!(scalar_field(g), x -&gt; sinpi(x[1]) * sinpi(x[2])))</span>
-<span id="L343"><span class="lineNum">     343</span>              : u, stats = Krylov.cg(A, b; M)</span>
-<span id="L344"><span class="lineNum">     344</span>              : ```</span>
-<span id="L345"><span class="lineNum">     345</span>              : </span>
-<span id="L346"><span class="lineNum">     346</span>              : See also: [`MultigridSolver`](@ref), [`operator_diagonal`](@ref).</span>
-<span id="L347"><span class="lineNum">     347</span>              : &quot;&quot;&quot;</span>
-<span id="L348"><span class="lineNum">     348</span>              : struct MultigridPreconditioner{Lv&lt;:Tuple}</span>
-<span id="L349"><span class="lineNum">     349</span> <span class="tlaGNC">          13 :     levels::Lv</span></span>
-<span id="L350"><span class="lineNum">     350</span>              : end</span>
+<span id="L195"><span class="lineNum">     195</span>              : # The coarse coefficient goes through the child mean, not Restriction — see</span>
+<span id="L196"><span class="lineNum">     196</span>              : # _average_to_coarse. check=false: the fine κ was already validated at construction, and</span>
+<span id="L197"><span class="lineNum">     197</span>              : # both means map positive values to positive values.</span>
+<span id="L198"><span class="lineNum">     198</span> <span class="tlaGNC">           1 : function _rediscretize(L::Diffusion, gc::CartesianGrid)</span></span>
+<span id="L199"><span class="lineNum">     199</span> <span class="tlaGNC">           1 :     return diffusion(gc, _average_to_coarse(L.κ, gc); averaging=L.avg, check=false)</span></span>
+<span id="L200"><span class="lineNum">     200</span>              : end</span>
+<span id="L201"><span class="lineNum">     201</span> <span class="tlaGNC">          31 : _rediscretize(L::Scaled, gc::CartesianGrid) = Scaled(_rediscretize(L.op, gc), L.α)</span></span>
+<span id="L202"><span class="lineNum">     202</span>              : function _rediscretize(L::Added, gc::CartesianGrid)</span>
+<span id="L203"><span class="lineNum">     203</span> <span class="tlaGNC">           1 :     return Added(_rediscretize(L.a, gc), _rediscretize(L.b, gc))</span></span>
+<span id="L204"><span class="lineNum">     204</span>              : end</span>
+<span id="L205"><span class="lineNum">     205</span> <span class="tlaUNC tlaBgUNC">           0 : function _rediscretize(L::Composed, gc::CartesianGrid)</span></span>
+<span id="L206"><span class="lineNum">     206</span> <span class="tlaUNC">           0 :     return Composed(_rediscretize(L.a, gc), _rediscretize(L.b, gc))</span></span>
+<span id="L207"><span class="lineNum">     207</span>              : end</span>
+<span id="L208"><span class="lineNum">     208</span> <span class="tlaGNC tlaBgGNC">           1 : _rediscretize(L::AbstractOperator, ::CartesianGrid) = throw(</span></span>
+<span id="L209"><span class="lineNum">     209</span>              :     ArgumentError(</span>
+<span id="L210"><span class="lineNum">     210</span>              :         &quot;multigrid rediscretization does not support $(nameof(typeof(L))); supported &quot; *</span>
+<span id="L211"><span class="lineNum">     211</span>              :         &quot;leaves: Laplacian, Derivative, Gradient, Divergence, ScalingOp, Diffusion, IdentityOp&quot;,</span>
+<span id="L212"><span class="lineNum">     212</span>              :     ),</span>
+<span id="L213"><span class="lineNum">     213</span>              : )</span>
+<span id="L214"><span class="lineNum">     214</span>              : </span>
+<span id="L215"><span class="lineNum">     215</span>              : # Plain 2^N-child arithmetic mean of a coefficient field onto the coarse grid.</span>
+<span id="L216"><span class="lineNum">     216</span>              : # Deliberately NOT restriction: R folds Dirichlet's -1 mirror through the</span>
+<span id="L217"><span class="lineNum">     217</span>              : # boundary, which would corrupt a material coefficient at walls.</span>
+<span id="L218"><span class="lineNum">     218</span>              : @inline function _child_mean(</span>
+<span id="L219"><span class="lineNum">     219</span>              :     u::AbstractArray{T,N},</span>
+<span id="L220"><span class="lineNum">     220</span>              :     J::CartesianIndex{N},</span>
+<span id="L221"><span class="lineNum">     221</span>              :     hf::NTuple{N,Int},</span>
+<span id="L222"><span class="lineNum">     222</span>              :     hc::NTuple{N,Int},</span>
+<span id="L223"><span class="lineNum">     223</span>              :     scale,</span>
+<span id="L224"><span class="lineNum">     224</span>              : ) where {T,N}</span>
+<span id="L225"><span class="lineNum">     225</span> <span class="tlaGNC">         384 :     F0 = ntuple(d -&gt; 2 * (J[d] - hc[d]) - 1 + hf[d], Val(N))</span></span>
+<span id="L226"><span class="lineNum">     226</span> <span class="tlaGNC">         192 :     acc = zero(T)</span></span>
+<span id="L227"><span class="lineNum">     227</span> <span class="tlaGNC">         384 :     @inbounds for t in CartesianIndices(ntuple(_ -&gt; 0:1, Val(N)))</span></span>
+<span id="L228"><span class="lineNum">     228</span> <span class="tlaGNC">        1536 :         acc += u[CartesianIndex(ntuple(d -&gt; F0[d] + t[d], Val(N)))]</span></span>
+<span id="L229"><span class="lineNum">     229</span> <span class="tlaGNC">         960 :     end</span></span>
+<span id="L230"><span class="lineNum">     230</span> <span class="tlaGNC">         192 :     return scale * acc</span></span>
+<span id="L231"><span class="lineNum">     231</span>              : end</span>
+<span id="L232"><span class="lineNum">     232</span>              : </span>
+<span id="L233"><span class="lineNum">     233</span> <span class="tlaGNC">           3 : function _average_to_coarse(f::Field, gc::CartesianGrid{N}) where {N}</span></span>
+<span id="L234"><span class="lineNum">     234</span> <span class="tlaGNC">           6 :     c = _field_like(f, gc)</span></span>
+<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC">           3 :     hf = halo_width(f.grid)</span></span>
+<span id="L236"><span class="lineNum">     236</span> <span class="tlaGNC">           3 :     hc = halo_width(gc)</span></span>
+<span id="L237"><span class="lineNum">     237</span> <span class="tlaGNC">           3 :     scale = inv(eltype(spacing(gc))(2)^N)</span></span>
+<span id="L238"><span class="lineNum">     238</span> <span class="tlaGNC">           6 :     interior(c) .= _child_mean.(Ref(f.data), interior(gc), Ref(hf), Ref(hc), scale)</span></span>
+<span id="L239"><span class="lineNum">     239</span> <span class="tlaGNC">           3 :     return c</span></span>
+<span id="L240"><span class="lineNum">     240</span>              : end</span>
+<span id="L241"><span class="lineNum">     241</span>              : </span>
+<span id="L242"><span class="lineNum">     242</span>              : #--------------------------------------------------------------------------------# Level construction</span>
+<span id="L243"><span class="lineNum">     243</span>              : </span>
+<span id="L244"><span class="lineNum">     244</span> <span class="tlaGNC">          17 : function _mg_grids(g::CartesianGrid, levels)</span></span>
+<span id="L245"><span class="lineNum">     245</span> <span class="tlaGNC">          17 :     grids = [g]</span></span>
+<span id="L246"><span class="lineNum">     246</span> <span class="tlaGNC">          17 :     if levels === :auto</span></span>
+<span id="L247"><span class="lineNum">     247</span> <span class="tlaGNC">          35 :         while all(iseven, local_size(last(grids))) &amp;&amp;</span></span>
+<span id="L248"><span class="lineNum">     248</span>              :             prod(local_size(last(grids))) &gt; 64 &amp;&amp;</span>
+<span id="L249"><span class="lineNum">     249</span>              :             length(grids) &lt; 10</span>
+<span id="L250"><span class="lineNum">     250</span> <span class="tlaGNC">          25 :             push!(grids, coarsen(last(grids)))</span></span>
+<span id="L251"><span class="lineNum">     251</span> <span class="tlaGNC">          25 :         end</span></span>
+<span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">          11 :         length(grids) &gt; 1 || throw(</span></span>
+<span id="L253"><span class="lineNum">     253</span>              :             ArgumentError(</span>
+<span id="L254"><span class="lineNum">     254</span>              :                 &quot;levels=:auto found no coarsenable level below grid size &quot; *</span>
+<span id="L255"><span class="lineNum">     255</span>              :                 &quot;$(local_size(g)); pass levels=n explicitly&quot;,</span>
+<span id="L256"><span class="lineNum">     256</span>              :             ),</span>
+<span id="L257"><span class="lineNum">     257</span>              :         )</span>
+<span id="L258"><span class="lineNum">     258</span> <span class="tlaGNC">           7 :     elseif levels isa Integer</span></span>
+<span id="L259"><span class="lineNum">     259</span> <span class="tlaGNC">           8 :         levels &gt;= 2 || throw(ArgumentError(&quot;levels must be ≥ 2, got $levels&quot;))</span></span>
+<span id="L260"><span class="lineNum">     260</span> <span class="tlaGNC">           6 :         for _ in 2:levels</span></span>
+<span id="L261"><span class="lineNum">     261</span> <span class="tlaGNC">          13 :             push!(grids, coarsen(last(grids)))</span></span>
+<span id="L262"><span class="lineNum">     262</span> <span class="tlaGNC">          19 :         end</span></span>
+<span id="L263"><span class="lineNum">     263</span>              :     else</span>
+<span id="L264"><span class="lineNum">     264</span> <span class="tlaUNC tlaBgUNC">           0 :         throw(ArgumentError(&quot;levels must be :auto or an Integer ≥ 2&quot;))</span></span>
+<span id="L265"><span class="lineNum">     265</span>              :     end</span>
+<span id="L266"><span class="lineNum">     266</span> <span class="tlaGNC tlaBgGNC">          14 :     return grids</span></span>
+<span id="L267"><span class="lineNum">     267</span>              : end</span>
+<span id="L268"><span class="lineNum">     268</span>              : </span>
+<span id="L269"><span class="lineNum">     269</span> <span class="tlaGNC">          45 : function _build_levels(L::AbstractOperator, grids::Vector, smoother, i::Int)</span></span>
+<span id="L270"><span class="lineNum">     270</span> <span class="tlaGNC">          45 :     g = grids[i]</span></span>
+<span id="L271"><span class="lineNum">     271</span> <span class="tlaGNC">          45 :     i == length(grids) &amp;&amp; return (_build_coarsest(L, g),)</span></span>
+<span id="L272"><span class="lineNum">     272</span> <span class="tlaGNC">          62 :     proto = scalar_field(g)</span></span>
+<span id="L273"><span class="lineNum">     273</span> <span class="tlaGNC">          31 :     A = _prepare_tree(L, proto)</span></span>
+<span id="L274"><span class="lineNum">     274</span> <span class="tlaGNC">          62 :     lvl = MGLevel(</span></span>
+<span id="L275"><span class="lineNum">     275</span>              :         A,</span>
+<span id="L276"><span class="lineNum">     276</span>              :         restriction(g, grids[i + 1]),</span>
+<span id="L277"><span class="lineNum">     277</span>              :         prolongation(grids[i + 1], g),</span>
+<span id="L278"><span class="lineNum">     278</span>              :         g,</span>
+<span id="L279"><span class="lineNum">     279</span>              :         scalar_field(g),</span>
+<span id="L280"><span class="lineNum">     280</span>              :         scalar_field(g),</span>
+<span id="L281"><span class="lineNum">     281</span>              :         scalar_field(g),</span>
+<span id="L282"><span class="lineNum">     282</span>              :         scalar_field(g),</span>
+<span id="L283"><span class="lineNum">     283</span>              :         _smoother_state(smoother, L, A, g),</span>
+<span id="L284"><span class="lineNum">     284</span>              :     )</span>
+<span id="L285"><span class="lineNum">     285</span> <span class="tlaGNC">          31 :     return (lvl, _build_levels(_rediscretize(L, grids[i + 1]), grids, smoother, i + 1)...)</span></span>
+<span id="L286"><span class="lineNum">     286</span>              : end</span>
+<span id="L287"><span class="lineNum">     287</span>              : </span>
+<span id="L288"><span class="lineNum">     288</span> <span class="tlaGNC">          14 : function _build_coarsest(L::AbstractOperator, g::CartesianGrid)</span></span>
+<span id="L289"><span class="lineNum">     289</span> <span class="tlaGNC">          28 :     proto = scalar_field(g)</span></span>
+<span id="L290"><span class="lineNum">     290</span> <span class="tlaGNC">          14 :     A = _prepare_tree(L, proto)</span></span>
+<span id="L291"><span class="lineNum">     291</span> <span class="tlaGNC">          14 :     T = eltype(spacing(g))</span></span>
+<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">          14 :     n = prod(local_size(g))</span></span>
+<span id="L293"><span class="lineNum">     293</span> <span class="tlaGNC">          14 :     Ad = Matrix{T}(undef, n, n)</span></span>
+<span id="L294"><span class="lineNum">     294</span> <span class="tlaGNC">          28 :     e = scalar_field(g)</span></span>
+<span id="L295"><span class="lineNum">     295</span> <span class="tlaGNC">          28 :     y = scalar_field(g)</span></span>
+<span id="L296"><span class="lineNum">     296</span> <span class="tlaGNC">          14 :     bflat = Vector{T}(undef, n)</span></span>
+<span id="L297"><span class="lineNum">     297</span> <span class="tlaGNC">          14 :     for j in 1:n</span></span>
+<span id="L298"><span class="lineNum">     298</span> <span class="tlaGNC">      166144 :         fill!(e.data, zero(T))</span></span>
+<span id="L299"><span class="lineNum">     299</span> <span class="tlaGNC">      118784 :         fill!(bflat, zero(T))</span></span>
+<span id="L300"><span class="lineNum">     300</span> <span class="tlaGNC">        1088 :         bflat[j] = one(T)</span></span>
+<span id="L301"><span class="lineNum">     301</span> <span class="tlaGNC">        1088 :         flat_to_interior!(e, bflat)</span></span>
+<span id="L302"><span class="lineNum">     302</span> <span class="tlaGNC">        1088 :         apply!(y, A, e, g)</span></span>
+<span id="L303"><span class="lineNum">     303</span> <span class="tlaGNC">        1088 :         interior_to_flat!(view(Ad, :, j), y)</span></span>
+<span id="L304"><span class="lineNum">     304</span> <span class="tlaGNC">        2162 :     end</span></span>
+<span id="L305"><span class="lineNum">     305</span> <span class="tlaGNC">          14 :     fact = lu(Ad; check=false)</span></span>
+<span id="L306"><span class="lineNum">     306</span> <span class="tlaGNC">          28 :     dU = abs.(diag(fact.factors))</span></span>
+<span id="L307"><span class="lineNum">     307</span> <span class="tlaGNC">          27 :     if !issuccess(fact) || minimum(dU) &lt;= sqrt(eps(T)) * maximum(dU)</span></span>
+<span id="L308"><span class="lineNum">     308</span> <span class="tlaGNC">           1 :         throw(</span></span>
+<span id="L309"><span class="lineNum">     309</span>              :             ArgumentError(</span>
+<span id="L310"><span class="lineNum">     310</span>              :                 &quot;the operator is singular at the coarsest multigrid level — an &quot; *</span>
+<span id="L311"><span class="lineNum">     311</span>              :                 &quot;all-Neumann/Periodic Poisson problem has a constant nullspace; add &quot; *</span>
+<span id="L312"><span class="lineNum">     312</span>              :                 &quot;a Dirichlet face or a zeroth-order term&quot;,</span>
+<span id="L313"><span class="lineNum">     313</span>              :             ),</span>
+<span id="L314"><span class="lineNum">     314</span>              :         )</span>
+<span id="L315"><span class="lineNum">     315</span>              :     end</span>
+<span id="L316"><span class="lineNum">     316</span> <span class="tlaGNC">          13 :     return MGCoarsest(g, scalar_field(g), scalar_field(g), fact, bflat)</span></span>
+<span id="L317"><span class="lineNum">     317</span>              : end</span>
+<span id="L318"><span class="lineNum">     318</span>              : </span>
+<span id="L319"><span class="lineNum">     319</span>              : #--------------------------------------------------------------------------------# Preconditioner</span>
+<span id="L320"><span class="lineNum">     320</span>              : </span>
+<span id="L321"><span class="lineNum">     321</span>              : &quot;&quot;&quot;</span>
+<span id="L322"><span class="lineNum">     322</span>              :     MultigridPreconditioner(L; smoother=Jacobi(), cycle=:V, levels=:auto)</span>
+<span id="L323"><span class="lineNum">     323</span>              : </span>
+<span id="L324"><span class="lineNum">     324</span>              : Geometric-multigrid V-cycle preconditioner for a linear operator on a uniform</span>
+<span id="L325"><span class="lineNum">     325</span>              : [`CartesianGrid`](@ref). Each `mul!(z, M, r)` runs one V-cycle from a zero</span>
+<span id="L326"><span class="lineNum">     326</span>              : initial guess, so `M` acts as a fixed linear approximation of `L⁻¹` — pass it</span>
+<span id="L327"><span class="lineNum">     327</span>              : as the preconditioner `M` to a Krylov solver.</span>
+<span id="L328"><span class="lineNum">     328</span>              : </span>
+<span id="L329"><span class="lineNum">     329</span>              : Levels are built by [`coarsen`](@ref)-ing the grid (`levels=:auto` stops at ≤64</span>
+<span id="L330"><span class="lineNum">     330</span>              : DOFs, odd cell counts, or 10 levels; pass an `Integer` to force a depth); each</span>
+<span id="L331"><span class="lineNum">     331</span>              : level rediscretizes `L` on its grid, transfers residuals/corrections with</span>
+<span id="L332"><span class="lineNum">     332</span>              : [`restriction`](@ref)/[`prolongation`](@ref), smooths with `smoother`</span>
+<span id="L333"><span class="lineNum">     333</span>              : ([`Jacobi`](@ref) or [`Chebyshev`](@ref)) symmetrically before and after the</span>
+<span id="L334"><span class="lineNum">     334</span>              : coarse correction, and solves the coarsest level with a dense LU factored at</span>
+<span id="L335"><span class="lineNum">     335</span>              : construction. For a symmetric `L` the cycle is symmetric, so `Krylov.cg`</span>
+<span id="L336"><span class="lineNum">     336</span>              : applies.</span>
+<span id="L337"><span class="lineNum">     337</span>              : </span>
+<span id="L338"><span class="lineNum">     338</span>              : Stateful and single-threaded, like [`prepare`](@ref) — construct one per</span>
+<span id="L339"><span class="lineNum">     339</span>              : concurrent solve.</span>
+<span id="L340"><span class="lineNum">     340</span>              : </span>
+<span id="L341"><span class="lineNum">     341</span>              : ### Examples</span>
+<span id="L342"><span class="lineNum">     342</span>              : </span>
+<span id="L343"><span class="lineNum">     343</span>              : ```julia</span>
+<span id="L344"><span class="lineNum">     344</span>              : g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (64, 64))</span>
+<span id="L345"><span class="lineNum">     345</span>              : L = -laplacian(g)</span>
+<span id="L346"><span class="lineNum">     346</span>              : A = prepare(L)</span>
+<span id="L347"><span class="lineNum">     347</span>              : M = MultigridPreconditioner(L)</span>
+<span id="L348"><span class="lineNum">     348</span>              : b = flatten(set!(x -&gt; sinpi(x[1]) * sinpi(x[2]), scalar_field(g)))</span>
+<span id="L349"><span class="lineNum">     349</span>              : u, stats = Krylov.cg(A, b; M)</span>
+<span id="L350"><span class="lineNum">     350</span>              : ```</span>
 <span id="L351"><span class="lineNum">     351</span>              : </span>
-<span id="L352"><span class="lineNum">     352</span> <span class="tlaGNC">          20 : function MultigridPreconditioner(</span></span>
-<span id="L353"><span class="lineNum">     353</span>              :     L::AbstractOperator; smoother=Jacobi(), cycle::Symbol=:V, levels=:auto</span>
-<span id="L354"><span class="lineNum">     354</span>              : )</span>
-<span id="L355"><span class="lineNum">     355</span> <span class="tlaGNC">          19 :     islinear(L) || throw(</span></span>
-<span id="L356"><span class="lineNum">     356</span>              :         ArgumentError(</span>
-<span id="L357"><span class="lineNum">     357</span>              :             &quot;multigrid requires a linear operator; linearize nonlinear operators first&quot;,</span>
-<span id="L358"><span class="lineNum">     358</span>              :         ),</span>
-<span id="L359"><span class="lineNum">     359</span>              :     )</span>
-<span id="L360"><span class="lineNum">     360</span> <span class="tlaGNC">          18 :     g = operator_grid(L)</span></span>
-<span id="L361"><span class="lineNum">     361</span> <span class="tlaGNC">          18 :     g isa CartesianGrid || throw(</span></span>
+<span id="L352"><span class="lineNum">     352</span>              : See also: [`MultigridSolver`](@ref), [`operator_diagonal`](@ref).</span>
+<span id="L353"><span class="lineNum">     353</span>              : &quot;&quot;&quot;</span>
+<span id="L354"><span class="lineNum">     354</span>              : struct MultigridPreconditioner{Lv&lt;:Tuple}</span>
+<span id="L355"><span class="lineNum">     355</span> <span class="tlaGNC">          13 :     levels::Lv</span></span>
+<span id="L356"><span class="lineNum">     356</span>              : end</span>
+<span id="L357"><span class="lineNum">     357</span>              : </span>
+<span id="L358"><span class="lineNum">     358</span> <span class="tlaGNC">          20 : function MultigridPreconditioner(</span></span>
+<span id="L359"><span class="lineNum">     359</span>              :     L::AbstractOperator; smoother=Jacobi(), cycle::Symbol=:V, levels=:auto</span>
+<span id="L360"><span class="lineNum">     360</span>              : )</span>
+<span id="L361"><span class="lineNum">     361</span> <span class="tlaGNC">          19 :     islinear(L) || throw(</span></span>
 <span id="L362"><span class="lineNum">     362</span>              :         ArgumentError(</span>
-<span id="L363"><span class="lineNum">     363</span>              :             &quot;geometric multigrid supports uniform CartesianGrid operators only; &quot; *</span>
-<span id="L364"><span class="lineNum">     364</span>              :             &quot;multigrid on a BlockForest is not yet supported&quot;,</span>
-<span id="L365"><span class="lineNum">     365</span>              :         ),</span>
-<span id="L366"><span class="lineNum">     366</span>              :     )</span>
-<span id="L367"><span class="lineNum">     367</span> <span class="tlaGNC">          19 :     cycle === :V ||</span></span>
-<span id="L368"><span class="lineNum">     368</span>              :         throw(ArgumentError(&quot;only cycle=:V is supported in v1; :W and :F follow&quot;))</span>
-<span id="L369"><span class="lineNum">     369</span> <span class="tlaGNC">          17 :     return MultigridPreconditioner(_build_levels(L, _mg_grids(g, levels), smoother, 1))</span></span>
-<span id="L370"><span class="lineNum">     370</span>              : end</span>
-<span id="L371"><span class="lineNum">     371</span>              : </span>
-<span id="L372"><span class="lineNum">     372</span> <span class="tlaGNC">           2 : function Base.size(M::MultigridPreconditioner)</span></span>
-<span id="L373"><span class="lineNum">     373</span> <span class="tlaGNC">           8 :     n = prod(local_size(first(M.levels).g))</span></span>
-<span id="L374"><span class="lineNum">     374</span> <span class="tlaGNC">           8 :     return (n, n)</span></span>
-<span id="L375"><span class="lineNum">     375</span>              : end</span>
-<span id="L376"><span class="lineNum">     376</span> <span class="tlaGNC">           2 : Base.size(M::MultigridPreconditioner, d::Integer) = size(M)[d]</span></span>
-<span id="L377"><span class="lineNum">     377</span> <span class="tlaGNC">          14 : Base.eltype(M::MultigridPreconditioner) = eltype(spacing(first(M.levels).g))</span></span>
-<span id="L378"><span class="lineNum">     378</span>              : </span>
-<span id="L379"><span class="lineNum">     379</span>              : function LinearAlgebra.mul!(</span>
-<span id="L380"><span class="lineNum">     380</span>              :     z::AbstractVector, M::MultigridPreconditioner, r::AbstractVector, α::Number, β::Number</span>
-<span id="L381"><span class="lineNum">     381</span>              : )</span>
-<span id="L382"><span class="lineNum">     382</span> <span class="tlaGNC">        1091 :     top = first(M.levels)</span></span>
-<span id="L383"><span class="lineNum">     383</span> <span class="tlaGNC">        1091 :     flat_to_interior!(top.b, r)</span></span>
-<span id="L384"><span class="lineNum">     384</span> <span class="tlaGNC">        1091 :     _vcycle!(M.levels)</span></span>
-<span id="L385"><span class="lineNum">     385</span> <span class="tlaGNC">        1091 :     interior_to_flat!(z, top.x, α, β)</span></span>
-<span id="L386"><span class="lineNum">     386</span> <span class="tlaGNC">        1091 :     return z</span></span>
-<span id="L387"><span class="lineNum">     387</span>              : end</span>
-<span id="L388"><span class="lineNum">     388</span> <span class="tlaGNC">           6 : function LinearAlgebra.mul!(z::AbstractVector, M::MultigridPreconditioner, r::AbstractVector)</span></span>
-<span id="L389"><span class="lineNum">     389</span> <span class="tlaGNC">        1091 :     return mul!(z, M, r, true, false)</span></span>
-<span id="L390"><span class="lineNum">     390</span>              : end</span>
-<span id="L391"><span class="lineNum">     391</span>              : </span>
-<span id="L392"><span class="lineNum">     392</span> <span class="tlaUNC tlaBgUNC">           0 : _smoother_name(::JacobiState) = &quot;Jacobi&quot;</span></span>
-<span id="L393"><span class="lineNum">     393</span> <span class="tlaUNC">           0 : _smoother_name(::ChebyshevState) = &quot;Chebyshev&quot;</span></span>
-<span id="L394"><span class="lineNum">     394</span>              : </span>
-<span id="L395"><span class="lineNum">     395</span>              : function Base.show(io::IO, M::MultigridPreconditioner)</span>
-<span id="L396"><span class="lineNum">     396</span> <span class="tlaGNC tlaBgGNC">           1 :     top = first(M.levels)</span></span>
-<span id="L397"><span class="lineNum">     397</span> <span class="tlaGNC">           1 :     bottom = last(M.levels)</span></span>
-<span id="L398"><span class="lineNum">     398</span> <span class="tlaGNC">           1 :     return print(</span></span>
-<span id="L399"><span class="lineNum">     399</span>              :         io,</span>
-<span id="L400"><span class="lineNum">     400</span>              :         &quot;MultigridPreconditioner($(length(M.levels)) levels: &quot;,</span>
-<span id="L401"><span class="lineNum">     401</span>              :         join(local_size(top.g), &quot;×&quot;),</span>
-<span id="L402"><span class="lineNum">     402</span>              :         &quot; → &quot;,</span>
-<span id="L403"><span class="lineNum">     403</span>              :         join(local_size(bottom.g), &quot;×&quot;),</span>
-<span id="L404"><span class="lineNum">     404</span>              :         &quot;, &quot;,</span>
-<span id="L405"><span class="lineNum">     405</span>              :         _smoother_name(top.smoother),</span>
-<span id="L406"><span class="lineNum">     406</span>              :         &quot;)&quot;,</span>
-<span id="L407"><span class="lineNum">     407</span>              :     )</span>
-<span id="L408"><span class="lineNum">     408</span>              : end</span>
-<span id="L409"><span class="lineNum">     409</span>              : </span>
-<span id="L410"><span class="lineNum">     410</span>              : #--------------------------------------------------------------------------------# Standalone solver</span>
-<span id="L411"><span class="lineNum">     411</span>              : </span>
-<span id="L412"><span class="lineNum">     412</span>              : &quot;&quot;&quot;</span>
-<span id="L413"><span class="lineNum">     413</span>              :     MultigridSolver(L; smoother=Jacobi(), cycle=:V, levels=:auto, maxiter=200)</span>
-<span id="L414"><span class="lineNum">     414</span>              : </span>
-<span id="L415"><span class="lineNum">     415</span>              : Standalone multigrid solver: the stationary iteration `u ← u + M·(b - A·u)`</span>
-<span id="L416"><span class="lineNum">     416</span>              : with `M` a [`MultigridPreconditioner`](@ref) of `L` and `A = prepare(L)`. Run</span>
-<span id="L417"><span class="lineNum">     417</span>              : it with [`solve`](@ref).</span>
+<span id="L363"><span class="lineNum">     363</span>              :             &quot;multigrid requires a linear operator; linearize nonlinear operators first&quot;,</span>
+<span id="L364"><span class="lineNum">     364</span>              :         ),</span>
+<span id="L365"><span class="lineNum">     365</span>              :     )</span>
+<span id="L366"><span class="lineNum">     366</span> <span class="tlaGNC">          18 :     g = operator_grid(L)</span></span>
+<span id="L367"><span class="lineNum">     367</span> <span class="tlaGNC">          18 :     g isa CartesianGrid || throw(</span></span>
+<span id="L368"><span class="lineNum">     368</span>              :         ArgumentError(</span>
+<span id="L369"><span class="lineNum">     369</span>              :             &quot;geometric multigrid supports uniform CartesianGrid operators only; &quot; *</span>
+<span id="L370"><span class="lineNum">     370</span>              :             &quot;multigrid on a BlockForest is not yet supported&quot;,</span>
+<span id="L371"><span class="lineNum">     371</span>              :         ),</span>
+<span id="L372"><span class="lineNum">     372</span>              :     )</span>
+<span id="L373"><span class="lineNum">     373</span> <span class="tlaGNC">          19 :     cycle === :V ||</span></span>
+<span id="L374"><span class="lineNum">     374</span>              :         throw(ArgumentError(&quot;only cycle=:V is supported in v1; :W and :F follow&quot;))</span>
+<span id="L375"><span class="lineNum">     375</span> <span class="tlaGNC">          17 :     return MultigridPreconditioner(_build_levels(L, _mg_grids(g, levels), smoother, 1))</span></span>
+<span id="L376"><span class="lineNum">     376</span>              : end</span>
+<span id="L377"><span class="lineNum">     377</span>              : </span>
+<span id="L378"><span class="lineNum">     378</span> <span class="tlaGNC">           2 : function Base.size(M::MultigridPreconditioner)</span></span>
+<span id="L379"><span class="lineNum">     379</span> <span class="tlaGNC">           8 :     n = prod(local_size(first(M.levels).g))</span></span>
+<span id="L380"><span class="lineNum">     380</span> <span class="tlaGNC">           8 :     return (n, n)</span></span>
+<span id="L381"><span class="lineNum">     381</span>              : end</span>
+<span id="L382"><span class="lineNum">     382</span> <span class="tlaGNC">           2 : Base.size(M::MultigridPreconditioner, d::Integer) = size(M)[d]</span></span>
+<span id="L383"><span class="lineNum">     383</span> <span class="tlaGNC">          14 : Base.eltype(M::MultigridPreconditioner) = eltype(spacing(first(M.levels).g))</span></span>
+<span id="L384"><span class="lineNum">     384</span>              : </span>
+<span id="L385"><span class="lineNum">     385</span>              : function LinearAlgebra.mul!(</span>
+<span id="L386"><span class="lineNum">     386</span>              :     z::AbstractVector, M::MultigridPreconditioner, r::AbstractVector, α::Number, β::Number</span>
+<span id="L387"><span class="lineNum">     387</span>              : )</span>
+<span id="L388"><span class="lineNum">     388</span> <span class="tlaGNC">        1091 :     top = first(M.levels)</span></span>
+<span id="L389"><span class="lineNum">     389</span> <span class="tlaGNC">        1091 :     flat_to_interior!(top.b, r)</span></span>
+<span id="L390"><span class="lineNum">     390</span> <span class="tlaGNC">        1091 :     _vcycle!(M.levels)</span></span>
+<span id="L391"><span class="lineNum">     391</span> <span class="tlaGNC">        1091 :     interior_to_flat!(z, top.x, α, β)</span></span>
+<span id="L392"><span class="lineNum">     392</span> <span class="tlaGNC">        1091 :     return z</span></span>
+<span id="L393"><span class="lineNum">     393</span>              : end</span>
+<span id="L394"><span class="lineNum">     394</span> <span class="tlaGNC">           6 : function LinearAlgebra.mul!(z::AbstractVector, M::MultigridPreconditioner, r::AbstractVector)</span></span>
+<span id="L395"><span class="lineNum">     395</span> <span class="tlaGNC">        1091 :     return mul!(z, M, r, true, false)</span></span>
+<span id="L396"><span class="lineNum">     396</span>              : end</span>
+<span id="L397"><span class="lineNum">     397</span>              : </span>
+<span id="L398"><span class="lineNum">     398</span> <span class="tlaUNC tlaBgUNC">           0 : _smoother_name(::JacobiState) = &quot;Jacobi&quot;</span></span>
+<span id="L399"><span class="lineNum">     399</span> <span class="tlaUNC">           0 : _smoother_name(::ChebyshevState) = &quot;Chebyshev&quot;</span></span>
+<span id="L400"><span class="lineNum">     400</span>              : </span>
+<span id="L401"><span class="lineNum">     401</span>              : function Base.show(io::IO, M::MultigridPreconditioner)</span>
+<span id="L402"><span class="lineNum">     402</span> <span class="tlaGNC tlaBgGNC">           1 :     top = first(M.levels)</span></span>
+<span id="L403"><span class="lineNum">     403</span> <span class="tlaGNC">           1 :     bottom = last(M.levels)</span></span>
+<span id="L404"><span class="lineNum">     404</span> <span class="tlaGNC">           1 :     return print(</span></span>
+<span id="L405"><span class="lineNum">     405</span>              :         io,</span>
+<span id="L406"><span class="lineNum">     406</span>              :         &quot;MultigridPreconditioner($(length(M.levels)) levels: &quot;,</span>
+<span id="L407"><span class="lineNum">     407</span>              :         join(local_size(top.g), &quot;×&quot;),</span>
+<span id="L408"><span class="lineNum">     408</span>              :         &quot; → &quot;,</span>
+<span id="L409"><span class="lineNum">     409</span>              :         join(local_size(bottom.g), &quot;×&quot;),</span>
+<span id="L410"><span class="lineNum">     410</span>              :         &quot;, &quot;,</span>
+<span id="L411"><span class="lineNum">     411</span>              :         _smoother_name(top.smoother),</span>
+<span id="L412"><span class="lineNum">     412</span>              :         &quot;)&quot;,</span>
+<span id="L413"><span class="lineNum">     413</span>              :     )</span>
+<span id="L414"><span class="lineNum">     414</span>              : end</span>
+<span id="L415"><span class="lineNum">     415</span>              : </span>
+<span id="L416"><span class="lineNum">     416</span>              : #--------------------------------------------------------------------------------# Standalone solver</span>
+<span id="L417"><span class="lineNum">     417</span>              : </span>
 <span id="L418"><span class="lineNum">     418</span>              : &quot;&quot;&quot;</span>
-<span id="L419"><span class="lineNum">     419</span>              : struct MultigridSolver{M&lt;:MultigridPreconditioner,P&lt;:PreparedOperator,T&lt;:Number}</span>
-<span id="L420"><span class="lineNum">     420</span> <span class="tlaGNC">           2 :     M::M</span></span>
-<span id="L421"><span class="lineNum">     421</span>              :     A::P</span>
-<span id="L422"><span class="lineNum">     422</span>              :     r::Vector{T}</span>
-<span id="L423"><span class="lineNum">     423</span>              :     z::Vector{T}</span>
-<span id="L424"><span class="lineNum">     424</span>              :     maxiter::Int</span>
-<span id="L425"><span class="lineNum">     425</span>              : end</span>
-<span id="L426"><span class="lineNum">     426</span>              : </span>
-<span id="L427"><span class="lineNum">     427</span> <span class="tlaGNC">           4 : function MultigridSolver(</span></span>
-<span id="L428"><span class="lineNum">     428</span>              :     L::AbstractOperator; smoother=Jacobi(), cycle::Symbol=:V, levels=:auto, maxiter::Int=200</span>
-<span id="L429"><span class="lineNum">     429</span>              : )</span>
-<span id="L430"><span class="lineNum">     430</span> <span class="tlaGNC">           2 :     M = MultigridPreconditioner(L; smoother, cycle, levels)</span></span>
-<span id="L431"><span class="lineNum">     431</span> <span class="tlaGNC">           2 :     A = prepare(L)</span></span>
-<span id="L432"><span class="lineNum">     432</span> <span class="tlaGNC">           2 :     T = eltype(A)</span></span>
-<span id="L433"><span class="lineNum">     433</span> <span class="tlaGNC">           2 :     n = size(A, 2)</span></span>
-<span id="L434"><span class="lineNum">     434</span> <span class="tlaGNC">           2 :     return MultigridSolver(M, A, Vector{T}(undef, n), Vector{T}(undef, n), maxiter)</span></span>
-<span id="L435"><span class="lineNum">     435</span>              : end</span>
-<span id="L436"><span class="lineNum">     436</span>              : </span>
-<span id="L437"><span class="lineNum">     437</span>              : &quot;&quot;&quot;</span>
-<span id="L438"><span class="lineNum">     438</span>              :     solve(s::MultigridSolver, b::AbstractVector; rtol=1e-8, atol=0) -&gt; u</span>
-<span id="L439"><span class="lineNum">     439</span>              : </span>
-<span id="L440"><span class="lineNum">     440</span>              : Solve `A·u = b` by multigrid V-cycle iteration on flat interior-DOF vectors</span>
-<span id="L441"><span class="lineNum">     441</span>              : (the [`flatten`](@ref) layout), from a zero initial guess, until</span>
-<span id="L442"><span class="lineNum">     442</span>              : `‖b - A·u‖ ≤ max(rtol·‖b‖, atol)` or `maxiter` cycles. Warns and returns the</span>
-<span id="L443"><span class="lineNum">     443</span>              : current iterate if the tolerance is not reached.</span>
-<span id="L444"><span class="lineNum">     444</span>              : </span>
-<span id="L445"><span class="lineNum">     445</span>              : Note: other packages (CommonSolve/SciML) also export a `solve`; qualify as</span>
-<span id="L446"><span class="lineNum">     446</span>              : `MatrixFreeOperators.solve` when both are loaded.</span>
-<span id="L447"><span class="lineNum">     447</span>              : </span>
-<span id="L448"><span class="lineNum">     448</span>              : ### Examples</span>
-<span id="L449"><span class="lineNum">     449</span>              : </span>
-<span id="L450"><span class="lineNum">     450</span>              : ```julia</span>
-<span id="L451"><span class="lineNum">     451</span>              : u = solve(MultigridSolver(-laplacian(g)), flatten(f); rtol=1e-10)</span>
-<span id="L452"><span class="lineNum">     452</span>              : ```</span>
-<span id="L453"><span class="lineNum">     453</span>              : &quot;&quot;&quot;</span>
-<span id="L454"><span class="lineNum">     454</span> <span class="tlaGNC">           4 : function solve(s::MultigridSolver, b::AbstractVector; rtol::Real=1e-8, atol::Real=zero(rtol))</span></span>
-<span id="L455"><span class="lineNum">     455</span> <span class="tlaGNC">           2 :     T = eltype(s.A)</span></span>
-<span id="L456"><span class="lineNum">     456</span> <span class="tlaGNC">        5120 :     u = zeros(T, length(b))</span></span>
-<span id="L457"><span class="lineNum">     457</span> <span class="tlaGNC">           2 :     tol = max(rtol * norm(b), atol)</span></span>
-<span id="L458"><span class="lineNum">     458</span> <span class="tlaGNC">           2 :     for _ in 1:s.maxiter</span></span>
-<span id="L459"><span class="lineNum">     459</span> <span class="tlaGNC">          33 :         mul!(s.r, s.A, u)</span></span>
-<span id="L460"><span class="lineNum">     460</span> <span class="tlaGNC">          33 :         s.r .= b .- s.r</span></span>
-<span id="L461"><span class="lineNum">     461</span> <span class="tlaGNC">          33 :         norm(s.r) &lt;= tol &amp;&amp; return u</span></span>
-<span id="L462"><span class="lineNum">     462</span> <span class="tlaGNC">          31 :         mul!(s.z, s.M, s.r)</span></span>
-<span id="L463"><span class="lineNum">     463</span> <span class="tlaGNC">          62 :         u .+= s.z</span></span>
-<span id="L464"><span class="lineNum">     464</span> <span class="tlaGNC">          62 :     end</span></span>
-<span id="L465"><span class="lineNum">     465</span> <span class="tlaUNC tlaBgUNC">           0 :     mul!(s.r, s.A, u)</span></span>
-<span id="L466"><span class="lineNum">     466</span> <span class="tlaUNC">           0 :     s.r .= b .- s.r</span></span>
-<span id="L467"><span class="lineNum">     467</span> <span class="tlaUNC">           0 :     @warn &quot;multigrid solve did not reach the requested tolerance in $(s.maxiter) cycles&quot; residual =</span></span>
-<span id="L468"><span class="lineNum">     468</span>              :         norm(s.r) tol</span>
-<span id="L469"><span class="lineNum">     469</span> <span class="tlaUNC">           0 :     return u</span></span>
-<span id="L470"><span class="lineNum">     470</span>              : end</span>
+<span id="L419"><span class="lineNum">     419</span>              :     MultigridSolver(L; smoother=Jacobi(), cycle=:V, levels=:auto, maxiter=200)</span>
+<span id="L420"><span class="lineNum">     420</span>              : </span>
+<span id="L421"><span class="lineNum">     421</span>              : Standalone multigrid solver: the stationary iteration `u ← u + M·(b - A·u)`</span>
+<span id="L422"><span class="lineNum">     422</span>              : with `M` a [`MultigridPreconditioner`](@ref) of `L` and `A = prepare(L)`. Run</span>
+<span id="L423"><span class="lineNum">     423</span>              : it with [`solve`](@ref).</span>
+<span id="L424"><span class="lineNum">     424</span>              : &quot;&quot;&quot;</span>
+<span id="L425"><span class="lineNum">     425</span>              : struct MultigridSolver{M&lt;:MultigridPreconditioner,P&lt;:PreparedOperator,T&lt;:Number}</span>
+<span id="L426"><span class="lineNum">     426</span> <span class="tlaGNC">           2 :     M::M</span></span>
+<span id="L427"><span class="lineNum">     427</span>              :     A::P</span>
+<span id="L428"><span class="lineNum">     428</span>              :     r::Vector{T}</span>
+<span id="L429"><span class="lineNum">     429</span>              :     z::Vector{T}</span>
+<span id="L430"><span class="lineNum">     430</span>              :     maxiter::Int</span>
+<span id="L431"><span class="lineNum">     431</span>              : end</span>
+<span id="L432"><span class="lineNum">     432</span>              : </span>
+<span id="L433"><span class="lineNum">     433</span> <span class="tlaGNC">           4 : function MultigridSolver(</span></span>
+<span id="L434"><span class="lineNum">     434</span>              :     L::AbstractOperator; smoother=Jacobi(), cycle::Symbol=:V, levels=:auto, maxiter::Int=200</span>
+<span id="L435"><span class="lineNum">     435</span>              : )</span>
+<span id="L436"><span class="lineNum">     436</span> <span class="tlaGNC">           2 :     M = MultigridPreconditioner(L; smoother, cycle, levels)</span></span>
+<span id="L437"><span class="lineNum">     437</span> <span class="tlaGNC">           2 :     A = prepare(L)</span></span>
+<span id="L438"><span class="lineNum">     438</span> <span class="tlaGNC">           2 :     T = eltype(A)</span></span>
+<span id="L439"><span class="lineNum">     439</span> <span class="tlaGNC">           2 :     n = size(A, 2)</span></span>
+<span id="L440"><span class="lineNum">     440</span> <span class="tlaGNC">           2 :     return MultigridSolver(M, A, Vector{T}(undef, n), Vector{T}(undef, n), maxiter)</span></span>
+<span id="L441"><span class="lineNum">     441</span>              : end</span>
+<span id="L442"><span class="lineNum">     442</span>              : </span>
+<span id="L443"><span class="lineNum">     443</span>              : &quot;&quot;&quot;</span>
+<span id="L444"><span class="lineNum">     444</span>              :     solve(s::MultigridSolver, b::AbstractVector; rtol=1e-8, atol=0) -&gt; u</span>
+<span id="L445"><span class="lineNum">     445</span>              : </span>
+<span id="L446"><span class="lineNum">     446</span>              : Solve `A·u = b` by multigrid V-cycle iteration on flat interior-DOF vectors</span>
+<span id="L447"><span class="lineNum">     447</span>              : (the [`flatten`](@ref) layout), from a zero initial guess, until</span>
+<span id="L448"><span class="lineNum">     448</span>              : `‖b - A·u‖ ≤ max(rtol·‖b‖, atol)` or `maxiter` cycles. Warns and returns the</span>
+<span id="L449"><span class="lineNum">     449</span>              : current iterate if the tolerance is not reached.</span>
+<span id="L450"><span class="lineNum">     450</span>              : </span>
+<span id="L451"><span class="lineNum">     451</span>              : Note: other packages (CommonSolve/SciML) also export a `solve`; qualify as</span>
+<span id="L452"><span class="lineNum">     452</span>              : `MatrixFreeOperators.solve` when both are loaded.</span>
+<span id="L453"><span class="lineNum">     453</span>              : </span>
+<span id="L454"><span class="lineNum">     454</span>              : ### Examples</span>
+<span id="L455"><span class="lineNum">     455</span>              : </span>
+<span id="L456"><span class="lineNum">     456</span>              : ```julia</span>
+<span id="L457"><span class="lineNum">     457</span>              : u = solve(MultigridSolver(-laplacian(g)), flatten(f); rtol=1e-10)</span>
+<span id="L458"><span class="lineNum">     458</span>              : ```</span>
+<span id="L459"><span class="lineNum">     459</span>              : &quot;&quot;&quot;</span>
+<span id="L460"><span class="lineNum">     460</span> <span class="tlaGNC">           4 : function solve(s::MultigridSolver, b::AbstractVector; rtol::Real=1e-8, atol::Real=zero(rtol))</span></span>
+<span id="L461"><span class="lineNum">     461</span> <span class="tlaGNC">           2 :     T = eltype(s.A)</span></span>
+<span id="L462"><span class="lineNum">     462</span> <span class="tlaGNC">        5120 :     u = zeros(T, length(b))</span></span>
+<span id="L463"><span class="lineNum">     463</span> <span class="tlaGNC">           2 :     tol = max(rtol * norm(b), atol)</span></span>
+<span id="L464"><span class="lineNum">     464</span> <span class="tlaGNC">           2 :     for _ in 1:s.maxiter</span></span>
+<span id="L465"><span class="lineNum">     465</span> <span class="tlaGNC">          33 :         mul!(s.r, s.A, u)</span></span>
+<span id="L466"><span class="lineNum">     466</span> <span class="tlaGNC">          33 :         s.r .= b .- s.r</span></span>
+<span id="L467"><span class="lineNum">     467</span> <span class="tlaGNC">          33 :         norm(s.r) &lt;= tol &amp;&amp; return u</span></span>
+<span id="L468"><span class="lineNum">     468</span> <span class="tlaGNC">          31 :         mul!(s.z, s.M, s.r)</span></span>
+<span id="L469"><span class="lineNum">     469</span> <span class="tlaGNC">          62 :         u .+= s.z</span></span>
+<span id="L470"><span class="lineNum">     470</span> <span class="tlaGNC">          62 :     end</span></span>
+<span id="L471"><span class="lineNum">     471</span> <span class="tlaUNC tlaBgUNC">           0 :     mul!(s.r, s.A, u)</span></span>
+<span id="L472"><span class="lineNum">     472</span> <span class="tlaUNC">           0 :     s.r .= b .- s.r</span></span>
+<span id="L473"><span class="lineNum">     473</span> <span class="tlaUNC">           0 :     @warn &quot;multigrid solve did not reach the requested tolerance in $(s.maxiter) cycles&quot; residual =</span></span>
+<span id="L474"><span class="lineNum">     474</span>              :         norm(s.r) tol</span>
+<span id="L475"><span class="lineNum">     475</span> <span class="tlaUNC">           0 :     return u</span></span>
+<span id="L476"><span class="lineNum">     476</span>              : end</span>
         </pre>
               </td>
             </tr>

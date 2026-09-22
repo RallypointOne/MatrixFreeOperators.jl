@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryLo">59.1&nbsp;%</td>
-            <td class="headerCovTableEntry">115</td>
-            <td class="headerCovTableEntry">68</td>
+            <td class="headerCovTableEntryLo">62.0&nbsp;%</td>
+            <td class="headerCovTableEntry">142</td>
+            <td class="headerCovTableEntry">88</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 22:14:58</td>
+            <td class="headerValue">2026-09-22 14:19:45</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -79,7 +79,7 @@
 <span id="L17"><span class="lineNum">      17</span>              : # Bit-identical to _inv_spacing2(leaf_grid(bf, i)): _leaf_spacing divides the</span>
 <span id="L18"><span class="lineNum">      18</span>              : # root spacing by 1 &lt;&lt; level, _inv_spacing2 inverts its square.</span>
 <span id="L19"><span class="lineNum">      19</span>              : @inline function _leaf_inv_h2(spacing0::NTuple{N}, ℓ::Integer) where {N}</span>
-<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC tlaBgGNC">        9584 :     return ntuple(d -&gt; inv((spacing0[d] / (1 &lt;&lt; ℓ))^2), Val(N))</span></span>
+<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC tlaBgGNC">       13392 :     return ntuple(d -&gt; inv((spacing0[d] / (1 &lt;&lt; ℓ))^2), Val(N))</span></span>
 <span id="L21"><span class="lineNum">      21</span>              : end</span>
 <span id="L22"><span class="lineNum">      22</span>              : </span>
 <span id="L23"><span class="lineNum">      23</span>              : # Bit-identical to _inv_spacing(leaf_grid(bf, i)).</span>
@@ -89,7 +89,7 @@
 <span id="L27"><span class="lineNum">      27</span>              : </span>
 <span id="L28"><span class="lineNum">      28</span>              : # First N entries of the global (cell..., leaf) index, offset into the halo frame.</span>
 <span id="L29"><span class="lineNum">      29</span>              : @inline function _halo_cell(idx::NTuple, h::NTuple{N,Int}) where {N}</span>
-<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">       24320 :     return CartesianIndex(ntuple(d -&gt; idx[d] + h[d], Val(N)))</span></span>
+<span id="L30"><span class="lineNum">      30</span> <span class="tlaGNC">       26112 :     return CartesianIndex(ntuple(d -&gt; idx[d] + h[d], Val(N)))</span></span>
 <span id="L31"><span class="lineNum">      31</span>              : end</span>
 <span id="L32"><span class="lineNum">      32</span>              : </span>
 <span id="L33"><span class="lineNum">      33</span>              : @kernel function _lap_forest_kernel!(y, @Const(x), @Const(levels), spacing0, h, α, β)</span>
@@ -105,10 +105,10 @@
 <span id="L43"><span class="lineNum">      43</span>              : function _forest_sweep!(</span>
 <span id="L44"><span class="lineNum">      44</span>              :     y::PackedBlockField, L::Laplacian, x::PackedBlockField, g::BlockForest, α, β</span>
 <span id="L45"><span class="lineNum">      45</span>              : )</span>
-<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">          33 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">          66 :     backend = KernelAbstractions.get_backend(g)</span></span>
 <span id="L47"><span class="lineNum">      47</span>              :     # Broadcast fusion beats KA CPU codegen for this stencil (~1.6× measured); the</span>
 <span id="L48"><span class="lineNum">      48</span>              :     # single launch pays only where per-leaf launches are the cost (GPU backends).</span>
-<span id="L49"><span class="lineNum">      49</span> <span class="tlaGNC">          33 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
+<span id="L49"><span class="lineNum">      49</span> <span class="tlaGNC">          66 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
 <span id="L50"><span class="lineNum">      50</span> <span class="tlaUNC tlaBgUNC">           0 :     kernel! = _lap_forest_kernel!(backend)</span></span>
 <span id="L51"><span class="lineNum">      51</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
 <span id="L52"><span class="lineNum">      52</span>              :         y.data, x.data, x.levels, g.spacing0, g.halo, α, β;</span>
@@ -131,8 +131,8 @@
 <span id="L69"><span class="lineNum">      69</span>              : function _forest_sweep!(</span>
 <span id="L70"><span class="lineNum">      70</span>              :     y::PackedBlockField, L::Derivative, x::PackedBlockField, g::BlockForest, α, β</span>
 <span id="L71"><span class="lineNum">      71</span>              : )</span>
-<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">          32 :     backend = KernelAbstractions.get_backend(g)</span></span>
-<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">          32 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
+<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">          53 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">          53 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
 <span id="L74"><span class="lineNum">      74</span> <span class="tlaUNC tlaBgUNC">           0 :     kernel! = _deriv_forest_kernel!(backend)</span></span>
 <span id="L75"><span class="lineNum">      75</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
 <span id="L76"><span class="lineNum">      76</span>              :         y.data, x.data, x.levels, g.spacing0, g.halo, L.dim, L.order, α, β;</span>
@@ -275,8 +275,8 @@
 <span id="L213"><span class="lineNum">     213</span>              :     α,</span>
 <span id="L214"><span class="lineNum">     214</span>              :     β,</span>
 <span id="L215"><span class="lineNum">     215</span>              : )</span>
-<span id="L216"><span class="lineNum">     216</span> <span class="tlaGNC tlaBgGNC">          35 :     backend = KernelAbstractions.get_backend(g)</span></span>
-<span id="L217"><span class="lineNum">     217</span> <span class="tlaGNC">          35 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, S, x, g, α, β)</span></span>
+<span id="L216"><span class="lineNum">     216</span> <span class="tlaGNC tlaBgGNC">          39 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L217"><span class="lineNum">     217</span> <span class="tlaGNC">          39 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, S, x, g, α, β)</span></span>
 <span id="L218"><span class="lineNum">     218</span>              :     # @inbounds in the kernel would turn a foreign coefficient into UB, not an</span>
 <span id="L219"><span class="lineNum">     219</span>              :     # error. Extents, not identity: adaptation clones the forest wrapper (the</span>
 <span id="L220"><span class="lineNum">     220</span>              :     # topology and its generation Ref are shared), so === would reject adapted</span>
@@ -294,125 +294,223 @@
 <span id="L232"><span class="lineNum">     232</span>              : function _forest_sweep!(</span>
 <span id="L233"><span class="lineNum">     233</span>              :     y::PackedBlockField, L::IdentityOp, x::PackedBlockField, g::BlockForest, α, β</span>
 <span id="L234"><span class="lineNum">     234</span>              : )</span>
-<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC tlaBgGNC">           8 :     backend = KernelAbstractions.get_backend(g)</span></span>
-<span id="L236"><span class="lineNum">     236</span> <span class="tlaGNC">           8 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
+<span id="L235"><span class="lineNum">     235</span> <span class="tlaGNC tlaBgGNC">          12 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L236"><span class="lineNum">     236</span> <span class="tlaGNC">          12 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
 <span id="L237"><span class="lineNum">     237</span> <span class="tlaUNC tlaBgUNC">           0 :     kernel! = _scale_forest_kernel!(backend)</span></span>
 <span id="L238"><span class="lineNum">     238</span>              :     # κ = true: α * true * x ≡ α * x bit-exactly.</span>
 <span id="L239"><span class="lineNum">     239</span> <span class="tlaUNC">           0 :     kernel!(y.data, x.data, true, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g)))</span></span>
 <span id="L240"><span class="lineNum">     240</span> <span class="tlaUNC">           0 :     return y</span></span>
 <span id="L241"><span class="lineNum">     241</span>              : end</span>
 <span id="L242"><span class="lineNum">     242</span>              : </span>
-<span id="L243"><span class="lineNum">     243</span>              : #--------------------------------------------------------------------------------# Adjoint transpose-gather kernels (packed sweeps)</span>
-<span id="L244"><span class="lineNum">     244</span>              : </span>
-<span id="L245"><span class="lineNum">     245</span>              : # Single-launch transposes of the stencil sweeps, mirroring the per-leaf</span>
-<span id="L246"><span class="lineNum">     246</span>              : # adjoint_gather! contract: ȳ's ghosts are zeroed (interior-only cotangents),</span>
-<span id="L247"><span class="lineNum">     247</span>              : # every padded cell of x̄ is overwritten (ghost cotangents feed the callers'</span>
-<span id="L248"><span class="lineNum">     248</span>              : # fold_bc!/halo_update_adjoint!), and the leaf-level fold_bc! is omitted — a</span>
-<span id="L249"><span class="lineNum">     249</span>              : # no-op on the all-Interface leaf grids. Unlike the forward kernels the ndrange</span>
-<span id="L250"><span class="lineNum">     250</span>              : # spans the full padded extent and the index is used directly (no halo offset);</span>
-<span id="L251"><span class="lineNum">     251</span>              : # the seam contract is overwrite-only (no β — callers blend). α folds into the</span>
-<span id="L252"><span class="lineNum">     252</span>              : # gather in-kernel; the reference post-multiplies, bit-equal by commutativity.</span>
-<span id="L253"><span class="lineNum">     253</span>              : </span>
-<span id="L254"><span class="lineNum">     254</span>              : @kernel function _lap_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)</span>
-<span id="L255"><span class="lineNum">     255</span>              :     idx = @index(Global, NTuple)</span>
-<span id="L256"><span class="lineNum">     256</span>              :     leaf = idx[end]</span>
-<span id="L257"><span class="lineNum">     257</span>              :     J = CartesianIndex(Base.front(idx))</span>
-<span id="L258"><span class="lineNum">     258</span> <span class="tlaGNC tlaBgGNC">         504 :     ℓ = @inbounds levels[leaf]</span></span>
-<span id="L259"><span class="lineNum">     259</span> <span class="tlaGNC">         504 :     v = α * _lap_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h2(spacing0, ℓ))</span></span>
-<span id="L260"><span class="lineNum">     260</span> <span class="tlaGNC">         504 :     @inbounds x̄[J, leaf] = v</span></span>
-<span id="L261"><span class="lineNum">     261</span>              : end</span>
-<span id="L262"><span class="lineNum">     262</span>              : </span>
-<span id="L263"><span class="lineNum">     263</span>              : @kernel function _deriv_adjoint_forest_kernel!(</span>
-<span id="L264"><span class="lineNum">     264</span>              :     x̄, @Const(ȳ), @Const(levels), spacing0, dim, order, α</span>
-<span id="L265"><span class="lineNum">     265</span>              : )</span>
-<span id="L266"><span class="lineNum">     266</span>              :     idx = @index(Global, NTuple)</span>
-<span id="L267"><span class="lineNum">     267</span>              :     leaf = idx[end]</span>
-<span id="L268"><span class="lineNum">     268</span>              :     J = CartesianIndex(Base.front(idx))</span>
-<span id="L269"><span class="lineNum">     269</span> <span class="tlaGNC">        9648 :     ℓ = @inbounds levels[leaf]</span></span>
-<span id="L270"><span class="lineNum">     270</span> <span class="tlaGNC">        9648 :     v =</span></span>
-<span id="L271"><span class="lineNum">     271</span>              :         α * _deriv_adjoint_gather(</span>
-<span id="L272"><span class="lineNum">     272</span>              :             _leaf_slice(ȳ, leaf), J, dim, order, _leaf_inv_h(spacing0, ℓ)[dim]</span>
-<span id="L273"><span class="lineNum">     273</span>              :         )</span>
-<span id="L274"><span class="lineNum">     274</span> <span class="tlaGNC">        9648 :     @inbounds x̄[J, leaf] = v</span></span>
-<span id="L275"><span class="lineNum">     275</span>              : end</span>
-<span id="L276"><span class="lineNum">     276</span>              : </span>
-<span id="L277"><span class="lineNum">     277</span>              : @kernel function _grad_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)</span>
-<span id="L278"><span class="lineNum">     278</span>              :     idx = @index(Global, NTuple)</span>
-<span id="L279"><span class="lineNum">     279</span>              :     leaf = idx[end]</span>
-<span id="L280"><span class="lineNum">     280</span>              :     J = CartesianIndex(Base.front(idx))</span>
-<span id="L281"><span class="lineNum">     281</span> <span class="tlaGNC">         504 :     ℓ = @inbounds levels[leaf]</span></span>
-<span id="L282"><span class="lineNum">     282</span> <span class="tlaGNC">         504 :     v = α * _grad_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h(spacing0, ℓ))</span></span>
-<span id="L283"><span class="lineNum">     283</span> <span class="tlaGNC">         504 :     @inbounds x̄[J, leaf] = v</span></span>
-<span id="L284"><span class="lineNum">     284</span>              : end</span>
-<span id="L285"><span class="lineNum">     285</span>              : </span>
-<span id="L286"><span class="lineNum">     286</span>              : @kernel function _div_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)</span>
-<span id="L287"><span class="lineNum">     287</span>              :     idx = @index(Global, NTuple)</span>
-<span id="L288"><span class="lineNum">     288</span>              :     leaf = idx[end]</span>
-<span id="L289"><span class="lineNum">     289</span>              :     J = CartesianIndex(Base.front(idx))</span>
-<span id="L290"><span class="lineNum">     290</span> <span class="tlaGNC">         504 :     ℓ = @inbounds levels[leaf]</span></span>
-<span id="L291"><span class="lineNum">     291</span> <span class="tlaGNC">         504 :     v = α * _div_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h(spacing0, ℓ))</span></span>
-<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">         504 :     @inbounds x̄[J, leaf] = v</span></span>
-<span id="L293"><span class="lineNum">     293</span>              : end</span>
-<span id="L294"><span class="lineNum">     294</span>              : </span>
-<span id="L295"><span class="lineNum">     295</span>              : function _forest_adjoint_sweep!(</span>
-<span id="L296"><span class="lineNum">     296</span>              :     x̄::PackedBlockField, L::Laplacian, ȳ::PackedBlockField, g::BlockForest, α</span>
-<span id="L297"><span class="lineNum">     297</span>              : )</span>
-<span id="L298"><span class="lineNum">     298</span> <span class="tlaGNC">           4 :     backend = KernelAbstractions.get_backend(g)</span></span>
-<span id="L299"><span class="lineNum">     299</span> <span class="tlaGNC">           4 :     backend isa KernelAbstractions.GPU ||</span></span>
-<span id="L300"><span class="lineNum">     300</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
-<span id="L301"><span class="lineNum">     301</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
-<span id="L302"><span class="lineNum">     302</span> <span class="tlaUNC">           0 :     kernel! = _lap_adjoint_forest_kernel!(backend)</span></span>
-<span id="L303"><span class="lineNum">     303</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
-<span id="L304"><span class="lineNum">     304</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;</span>
-<span id="L305"><span class="lineNum">     305</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
-<span id="L306"><span class="lineNum">     306</span>              :     )</span>
-<span id="L307"><span class="lineNum">     307</span> <span class="tlaUNC">           0 :     return x̄</span></span>
-<span id="L308"><span class="lineNum">     308</span>              : end</span>
-<span id="L309"><span class="lineNum">     309</span>              : </span>
-<span id="L310"><span class="lineNum">     310</span>              : function _forest_adjoint_sweep!(</span>
-<span id="L311"><span class="lineNum">     311</span>              :     x̄::PackedBlockField, L::Derivative, ȳ::PackedBlockField, g::BlockForest, α</span>
-<span id="L312"><span class="lineNum">     312</span>              : )</span>
-<span id="L313"><span class="lineNum">     313</span> <span class="tlaGNC tlaBgGNC">          34 :     backend = KernelAbstractions.get_backend(g)</span></span>
-<span id="L314"><span class="lineNum">     314</span> <span class="tlaGNC">          34 :     backend isa KernelAbstractions.GPU ||</span></span>
-<span id="L315"><span class="lineNum">     315</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
-<span id="L316"><span class="lineNum">     316</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
-<span id="L317"><span class="lineNum">     317</span> <span class="tlaUNC">           0 :     kernel! = _deriv_adjoint_forest_kernel!(backend)</span></span>
-<span id="L318"><span class="lineNum">     318</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
-<span id="L319"><span class="lineNum">     319</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, L.dim, L.order, α;</span>
-<span id="L320"><span class="lineNum">     320</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
-<span id="L321"><span class="lineNum">     321</span>              :     )</span>
-<span id="L322"><span class="lineNum">     322</span> <span class="tlaUNC">           0 :     return x̄</span></span>
-<span id="L323"><span class="lineNum">     323</span>              : end</span>
-<span id="L324"><span class="lineNum">     324</span>              : </span>
-<span id="L325"><span class="lineNum">     325</span>              : function _forest_adjoint_sweep!(</span>
-<span id="L326"><span class="lineNum">     326</span>              :     x̄::PackedBlockField, L::Gradient, ȳ::PackedBlockField, g::BlockForest, α</span>
-<span id="L327"><span class="lineNum">     327</span>              : )</span>
-<span id="L328"><span class="lineNum">     328</span> <span class="tlaGNC tlaBgGNC">           8 :     backend = KernelAbstractions.get_backend(g)</span></span>
-<span id="L329"><span class="lineNum">     329</span> <span class="tlaGNC">           8 :     backend isa KernelAbstractions.GPU ||</span></span>
-<span id="L330"><span class="lineNum">     330</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
-<span id="L331"><span class="lineNum">     331</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
-<span id="L332"><span class="lineNum">     332</span> <span class="tlaUNC">           0 :     kernel! = _grad_adjoint_forest_kernel!(backend)</span></span>
-<span id="L333"><span class="lineNum">     333</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
-<span id="L334"><span class="lineNum">     334</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;</span>
-<span id="L335"><span class="lineNum">     335</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
-<span id="L336"><span class="lineNum">     336</span>              :     )</span>
-<span id="L337"><span class="lineNum">     337</span> <span class="tlaUNC">           0 :     return x̄</span></span>
-<span id="L338"><span class="lineNum">     338</span>              : end</span>
-<span id="L339"><span class="lineNum">     339</span>              : </span>
-<span id="L340"><span class="lineNum">     340</span>              : function _forest_adjoint_sweep!(</span>
-<span id="L341"><span class="lineNum">     341</span>              :     x̄::PackedBlockField, L::Divergence, ȳ::PackedBlockField, g::BlockForest, α</span>
-<span id="L342"><span class="lineNum">     342</span>              : )</span>
-<span id="L343"><span class="lineNum">     343</span> <span class="tlaGNC tlaBgGNC">           8 :     backend = KernelAbstractions.get_backend(g)</span></span>
-<span id="L344"><span class="lineNum">     344</span> <span class="tlaGNC">           8 :     backend isa KernelAbstractions.GPU ||</span></span>
-<span id="L345"><span class="lineNum">     345</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
-<span id="L346"><span class="lineNum">     346</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
-<span id="L347"><span class="lineNum">     347</span> <span class="tlaUNC">           0 :     kernel! = _div_adjoint_forest_kernel!(backend)</span></span>
-<span id="L348"><span class="lineNum">     348</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
-<span id="L349"><span class="lineNum">     349</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;</span>
-<span id="L350"><span class="lineNum">     350</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
-<span id="L351"><span class="lineNum">     351</span>              :     )</span>
-<span id="L352"><span class="lineNum">     352</span> <span class="tlaUNC">           0 :     return x̄</span></span>
-<span id="L353"><span class="lineNum">     353</span>              : end</span>
+<span id="L243"><span class="lineNum">     243</span>              : @kernel function _diff_forest_kernel!(</span>
+<span id="L244"><span class="lineNum">     244</span>              :     y, @Const(x), @Const(κ), @Const(levels), spacing0, h, avg, α, β</span>
+<span id="L245"><span class="lineNum">     245</span>              : )</span>
+<span id="L246"><span class="lineNum">     246</span>              :     idx = @index(Global, NTuple)</span>
+<span id="L247"><span class="lineNum">     247</span>              :     leaf = idx[end]</span>
+<span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC tlaBgGNC">         896 :     I = _halo_cell(idx, h)</span></span>
+<span id="L249"><span class="lineNum">     249</span> <span class="tlaGNC">         896 :     ℓ = @inbounds levels[leaf]</span></span>
+<span id="L250"><span class="lineNum">     250</span> <span class="tlaGNC">         896 :     v =</span></span>
+<span id="L251"><span class="lineNum">     251</span>              :         α * _diff_at(</span>
+<span id="L252"><span class="lineNum">     252</span>              :             _leaf_slice(x, leaf), _leaf_slice(κ, leaf), I, _leaf_inv_h2(spacing0, ℓ), avg</span>
+<span id="L253"><span class="lineNum">     253</span>              :         )</span>
+<span id="L254"><span class="lineNum">     254</span> <span class="tlaGNC">         896 :     @inbounds y[I, leaf] = iszero(β) ? v : muladd(β, y[I, leaf], v)</span></span>
+<span id="L255"><span class="lineNum">     255</span>              : end</span>
+<span id="L256"><span class="lineNum">     256</span>              : </span>
+<span id="L257"><span class="lineNum">     257</span>              : # Diffusion's packed sweep keeps the conservative coarse–fine seam: the rewrite</span>
+<span id="L258"><span class="lineNum">     258</span>              : # runs unconditionally before the backend guard (on GPU it is a host descriptor</span>
+<span id="L259"><span class="lineNum">     259</span>              : # loop of device-view broadcasts — a few small launches per coarse–fine face on</span>
+<span id="L260"><span class="lineNum">     260</span>              : # top of the one stencil launch; a batched device twin of `cfflux` is a possible</span>
+<span id="L261"><span class="lineNum">     261</span>              : # follow-up), and the CPU fallback goes straight to `_forest_sweep_leaves!`</span>
+<span id="L262"><span class="lineNum">     262</span>              : # because the rewrite is already done — routing back through the</span>
+<span id="L263"><span class="lineNum">     263</span>              : # AbstractBlockField override would run it twice.</span>
+<span id="L264"><span class="lineNum">     264</span> <span class="tlaGNC">           7 : function _forest_sweep!(</span></span>
+<span id="L265"><span class="lineNum">     265</span>              :     y::PackedBlockField,</span>
+<span id="L266"><span class="lineNum">     266</span>              :     D::Diffusion{&lt;:BlockForest,&lt;:PackedBlockField},</span>
+<span id="L267"><span class="lineNum">     267</span>              :     x::PackedBlockField,</span>
+<span id="L268"><span class="lineNum">     268</span>              :     g::BlockForest,</span>
+<span id="L269"><span class="lineNum">     269</span>              :     α,</span>
+<span id="L270"><span class="lineNum">     270</span>              :     β,</span>
+<span id="L271"><span class="lineNum">     271</span>              : )</span>
+<span id="L272"><span class="lineNum">     272</span> <span class="tlaGNC">           7 :     _require_current(D.κ)</span></span>
+<span id="L273"><span class="lineNum">     273</span>              :     # @inbounds in the kernel would turn a foreign coefficient into UB, not an</span>
+<span id="L274"><span class="lineNum">     274</span>              :     # error (mirrors the ScalingOp wrapper's extent check).</span>
+<span id="L275"><span class="lineNum">     275</span> <span class="tlaGNC">           7 :     size(D.κ.data) == size(x.data) || throw(</span></span>
+<span id="L276"><span class="lineNum">     276</span>              :         ArgumentError(&quot;diffusion coefficient does not match the packed field extents&quot;)</span>
+<span id="L277"><span class="lineNum">     277</span>              :     )</span>
+<span id="L278"><span class="lineNum">     278</span> <span class="tlaGNC">           7 :     _cf_flux_rewrite!(</span></span>
+<span id="L279"><span class="lineNum">     279</span>              :         _storage(x), _layout(x), _storage(D.κ), _layout(D.κ), D.avg,</span>
+<span id="L280"><span class="lineNum">     280</span>              :         _exchange_schedule(g).cfflux, g.blocksize,</span>
+<span id="L281"><span class="lineNum">     281</span>              :     )</span>
+<span id="L282"><span class="lineNum">     282</span> <span class="tlaGNC">           7 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L283"><span class="lineNum">     283</span> <span class="tlaGNC">           7 :     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, D, x, g, α, β)</span></span>
+<span id="L284"><span class="lineNum">     284</span> <span class="tlaUNC tlaBgUNC">           0 :     kernel! = _diff_forest_kernel!(backend)</span></span>
+<span id="L285"><span class="lineNum">     285</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
+<span id="L286"><span class="lineNum">     286</span>              :         y.data, x.data, D.κ.data, x.levels, g.spacing0, g.halo, D.avg, α, β;</span>
+<span id="L287"><span class="lineNum">     287</span>              :         ndrange=(g.blocksize..., nleaves(g)),</span>
+<span id="L288"><span class="lineNum">     288</span>              :     )</span>
+<span id="L289"><span class="lineNum">     289</span> <span class="tlaUNC">           0 :     return y</span></span>
+<span id="L290"><span class="lineNum">     290</span>              : end</span>
+<span id="L291"><span class="lineNum">     291</span>              : </span>
+<span id="L292"><span class="lineNum">     292</span>              : #--------------------------------------------------------------------------------# Adjoint transpose-gather kernels (packed sweeps)</span>
+<span id="L293"><span class="lineNum">     293</span>              : </span>
+<span id="L294"><span class="lineNum">     294</span>              : # Single-launch transposes of the stencil sweeps, mirroring the per-leaf</span>
+<span id="L295"><span class="lineNum">     295</span>              : # adjoint_gather! contract: ȳ's ghosts are zeroed (interior-only cotangents),</span>
+<span id="L296"><span class="lineNum">     296</span>              : # every padded cell of x̄ is overwritten (ghost cotangents feed the callers'</span>
+<span id="L297"><span class="lineNum">     297</span>              : # fold_bc!/halo_update_adjoint!), and the leaf-level fold_bc! is omitted — a</span>
+<span id="L298"><span class="lineNum">     298</span>              : # no-op on the all-Interface leaf grids. Unlike the forward kernels the ndrange</span>
+<span id="L299"><span class="lineNum">     299</span>              : # spans the full padded extent and the index is used directly (no halo offset);</span>
+<span id="L300"><span class="lineNum">     300</span>              : # the seam contract is overwrite-only (no β — callers blend). α folds into the</span>
+<span id="L301"><span class="lineNum">     301</span>              : # gather in-kernel; the reference post-multiplies, bit-equal by commutativity.</span>
+<span id="L302"><span class="lineNum">     302</span>              : </span>
+<span id="L303"><span class="lineNum">     303</span>              : @kernel function _lap_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)</span>
+<span id="L304"><span class="lineNum">     304</span>              :     idx = @index(Global, NTuple)</span>
+<span id="L305"><span class="lineNum">     305</span>              :     leaf = idx[end]</span>
+<span id="L306"><span class="lineNum">     306</span>              :     J = CartesianIndex(Base.front(idx))</span>
+<span id="L307"><span class="lineNum">     307</span> <span class="tlaGNC tlaBgGNC">         504 :     ℓ = @inbounds levels[leaf]</span></span>
+<span id="L308"><span class="lineNum">     308</span> <span class="tlaGNC">         504 :     v = α * _lap_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h2(spacing0, ℓ))</span></span>
+<span id="L309"><span class="lineNum">     309</span> <span class="tlaGNC">         504 :     @inbounds x̄[J, leaf] = v</span></span>
+<span id="L310"><span class="lineNum">     310</span>              : end</span>
+<span id="L311"><span class="lineNum">     311</span>              : </span>
+<span id="L312"><span class="lineNum">     312</span>              : @kernel function _deriv_adjoint_forest_kernel!(</span>
+<span id="L313"><span class="lineNum">     313</span>              :     x̄, @Const(ȳ), @Const(levels), spacing0, dim, order, α</span>
+<span id="L314"><span class="lineNum">     314</span>              : )</span>
+<span id="L315"><span class="lineNum">     315</span>              :     idx = @index(Global, NTuple)</span>
+<span id="L316"><span class="lineNum">     316</span>              :     leaf = idx[end]</span>
+<span id="L317"><span class="lineNum">     317</span>              :     J = CartesianIndex(Base.front(idx))</span>
+<span id="L318"><span class="lineNum">     318</span> <span class="tlaGNC">        9648 :     ℓ = @inbounds levels[leaf]</span></span>
+<span id="L319"><span class="lineNum">     319</span> <span class="tlaGNC">        9648 :     v =</span></span>
+<span id="L320"><span class="lineNum">     320</span>              :         α * _deriv_adjoint_gather(</span>
+<span id="L321"><span class="lineNum">     321</span>              :             _leaf_slice(ȳ, leaf), J, dim, order, _leaf_inv_h(spacing0, ℓ)[dim]</span>
+<span id="L322"><span class="lineNum">     322</span>              :         )</span>
+<span id="L323"><span class="lineNum">     323</span> <span class="tlaGNC">        9648 :     @inbounds x̄[J, leaf] = v</span></span>
+<span id="L324"><span class="lineNum">     324</span>              : end</span>
+<span id="L325"><span class="lineNum">     325</span>              : </span>
+<span id="L326"><span class="lineNum">     326</span>              : @kernel function _grad_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)</span>
+<span id="L327"><span class="lineNum">     327</span>              :     idx = @index(Global, NTuple)</span>
+<span id="L328"><span class="lineNum">     328</span>              :     leaf = idx[end]</span>
+<span id="L329"><span class="lineNum">     329</span>              :     J = CartesianIndex(Base.front(idx))</span>
+<span id="L330"><span class="lineNum">     330</span> <span class="tlaGNC">         504 :     ℓ = @inbounds levels[leaf]</span></span>
+<span id="L331"><span class="lineNum">     331</span> <span class="tlaGNC">         504 :     v = α * _grad_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h(spacing0, ℓ))</span></span>
+<span id="L332"><span class="lineNum">     332</span> <span class="tlaGNC">         504 :     @inbounds x̄[J, leaf] = v</span></span>
+<span id="L333"><span class="lineNum">     333</span>              : end</span>
+<span id="L334"><span class="lineNum">     334</span>              : </span>
+<span id="L335"><span class="lineNum">     335</span>              : @kernel function _div_adjoint_forest_kernel!(x̄, @Const(ȳ), @Const(levels), spacing0, α)</span>
+<span id="L336"><span class="lineNum">     336</span>              :     idx = @index(Global, NTuple)</span>
+<span id="L337"><span class="lineNum">     337</span>              :     leaf = idx[end]</span>
+<span id="L338"><span class="lineNum">     338</span>              :     J = CartesianIndex(Base.front(idx))</span>
+<span id="L339"><span class="lineNum">     339</span> <span class="tlaGNC">         504 :     ℓ = @inbounds levels[leaf]</span></span>
+<span id="L340"><span class="lineNum">     340</span> <span class="tlaGNC">         504 :     v = α * _div_adjoint_gather(_leaf_slice(ȳ, leaf), J, _leaf_inv_h(spacing0, ℓ))</span></span>
+<span id="L341"><span class="lineNum">     341</span> <span class="tlaGNC">         504 :     @inbounds x̄[J, leaf] = v</span></span>
+<span id="L342"><span class="lineNum">     342</span>              : end</span>
+<span id="L343"><span class="lineNum">     343</span>              : </span>
+<span id="L344"><span class="lineNum">     344</span>              : function _forest_adjoint_sweep!(</span>
+<span id="L345"><span class="lineNum">     345</span>              :     x̄::PackedBlockField, L::Laplacian, ȳ::PackedBlockField, g::BlockForest, α</span>
+<span id="L346"><span class="lineNum">     346</span>              : )</span>
+<span id="L347"><span class="lineNum">     347</span> <span class="tlaGNC">           4 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L348"><span class="lineNum">     348</span> <span class="tlaGNC">           4 :     backend isa KernelAbstractions.GPU ||</span></span>
+<span id="L349"><span class="lineNum">     349</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
+<span id="L350"><span class="lineNum">     350</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
+<span id="L351"><span class="lineNum">     351</span> <span class="tlaUNC">           0 :     kernel! = _lap_adjoint_forest_kernel!(backend)</span></span>
+<span id="L352"><span class="lineNum">     352</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
+<span id="L353"><span class="lineNum">     353</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;</span>
+<span id="L354"><span class="lineNum">     354</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
+<span id="L355"><span class="lineNum">     355</span>              :     )</span>
+<span id="L356"><span class="lineNum">     356</span> <span class="tlaUNC">           0 :     return x̄</span></span>
+<span id="L357"><span class="lineNum">     357</span>              : end</span>
+<span id="L358"><span class="lineNum">     358</span>              : </span>
+<span id="L359"><span class="lineNum">     359</span>              : function _forest_adjoint_sweep!(</span>
+<span id="L360"><span class="lineNum">     360</span>              :     x̄::PackedBlockField, L::Derivative, ȳ::PackedBlockField, g::BlockForest, α</span>
+<span id="L361"><span class="lineNum">     361</span>              : )</span>
+<span id="L362"><span class="lineNum">     362</span> <span class="tlaGNC tlaBgGNC">          46 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L363"><span class="lineNum">     363</span> <span class="tlaGNC">          46 :     backend isa KernelAbstractions.GPU ||</span></span>
+<span id="L364"><span class="lineNum">     364</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
+<span id="L365"><span class="lineNum">     365</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
+<span id="L366"><span class="lineNum">     366</span> <span class="tlaUNC">           0 :     kernel! = _deriv_adjoint_forest_kernel!(backend)</span></span>
+<span id="L367"><span class="lineNum">     367</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
+<span id="L368"><span class="lineNum">     368</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, L.dim, L.order, α;</span>
+<span id="L369"><span class="lineNum">     369</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
+<span id="L370"><span class="lineNum">     370</span>              :     )</span>
+<span id="L371"><span class="lineNum">     371</span> <span class="tlaUNC">           0 :     return x̄</span></span>
+<span id="L372"><span class="lineNum">     372</span>              : end</span>
+<span id="L373"><span class="lineNum">     373</span>              : </span>
+<span id="L374"><span class="lineNum">     374</span>              : function _forest_adjoint_sweep!(</span>
+<span id="L375"><span class="lineNum">     375</span>              :     x̄::PackedBlockField, L::Gradient, ȳ::PackedBlockField, g::BlockForest, α</span>
+<span id="L376"><span class="lineNum">     376</span>              : )</span>
+<span id="L377"><span class="lineNum">     377</span> <span class="tlaGNC tlaBgGNC">           8 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L378"><span class="lineNum">     378</span> <span class="tlaGNC">           8 :     backend isa KernelAbstractions.GPU ||</span></span>
+<span id="L379"><span class="lineNum">     379</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
+<span id="L380"><span class="lineNum">     380</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
+<span id="L381"><span class="lineNum">     381</span> <span class="tlaUNC">           0 :     kernel! = _grad_adjoint_forest_kernel!(backend)</span></span>
+<span id="L382"><span class="lineNum">     382</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
+<span id="L383"><span class="lineNum">     383</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;</span>
+<span id="L384"><span class="lineNum">     384</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
+<span id="L385"><span class="lineNum">     385</span>              :     )</span>
+<span id="L386"><span class="lineNum">     386</span> <span class="tlaUNC">           0 :     return x̄</span></span>
+<span id="L387"><span class="lineNum">     387</span>              : end</span>
+<span id="L388"><span class="lineNum">     388</span>              : </span>
+<span id="L389"><span class="lineNum">     389</span>              : function _forest_adjoint_sweep!(</span>
+<span id="L390"><span class="lineNum">     390</span>              :     x̄::PackedBlockField, L::Divergence, ȳ::PackedBlockField, g::BlockForest, α</span>
+<span id="L391"><span class="lineNum">     391</span>              : )</span>
+<span id="L392"><span class="lineNum">     392</span> <span class="tlaGNC tlaBgGNC">           8 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L393"><span class="lineNum">     393</span> <span class="tlaGNC">           8 :     backend isa KernelAbstractions.GPU ||</span></span>
+<span id="L394"><span class="lineNum">     394</span>              :         return _forest_adjoint_sweep_leaves!(x̄, L, ȳ, g, α)</span>
+<span id="L395"><span class="lineNum">     395</span> <span class="tlaUNC tlaBgUNC">           0 :     zero_ghosts!(ȳ)</span></span>
+<span id="L396"><span class="lineNum">     396</span> <span class="tlaUNC">           0 :     kernel! = _div_adjoint_forest_kernel!(backend)</span></span>
+<span id="L397"><span class="lineNum">     397</span> <span class="tlaUNC">           0 :     kernel!(</span></span>
+<span id="L398"><span class="lineNum">     398</span>              :         x̄.data, ȳ.data, ȳ.levels, g.spacing0, α;</span>
+<span id="L399"><span class="lineNum">     399</span>              :         ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
+<span id="L400"><span class="lineNum">     400</span>              :     )</span>
+<span id="L401"><span class="lineNum">     401</span> <span class="tlaUNC">           0 :     return x̄</span></span>
+<span id="L402"><span class="lineNum">     402</span>              : end</span>
+<span id="L403"><span class="lineNum">     403</span>              : </span>
+<span id="L404"><span class="lineNum">     404</span>              : @kernel function _diff_adjoint_forest_kernel!(</span>
+<span id="L405"><span class="lineNum">     405</span>              :     x̄, @Const(ȳ), @Const(κ), @Const(levels), spacing0, avg, α</span>
+<span id="L406"><span class="lineNum">     406</span>              : )</span>
+<span id="L407"><span class="lineNum">     407</span>              :     idx = @index(Global, NTuple)</span>
+<span id="L408"><span class="lineNum">     408</span>              :     leaf = idx[end]</span>
+<span id="L409"><span class="lineNum">     409</span>              :     J = CartesianIndex(Base.front(idx))</span>
+<span id="L410"><span class="lineNum">     410</span> <span class="tlaGNC tlaBgGNC">        1008 :     ℓ = @inbounds levels[leaf]</span></span>
+<span id="L411"><span class="lineNum">     411</span> <span class="tlaGNC">        1008 :     v =</span></span>
+<span id="L412"><span class="lineNum">     412</span>              :         α * _diff_adjoint_gather(</span>
+<span id="L413"><span class="lineNum">     413</span>              :             _leaf_slice(ȳ, leaf), _leaf_slice(κ, leaf), J, _leaf_inv_h2(spacing0, ℓ), avg</span>
+<span id="L414"><span class="lineNum">     414</span>              :         )</span>
+<span id="L415"><span class="lineNum">     415</span> <span class="tlaGNC">        1008 :     @inbounds x̄[J, leaf] = v</span></span>
+<span id="L416"><span class="lineNum">     416</span>              : end</span>
+<span id="L417"><span class="lineNum">     417</span>              : </span>
+<span id="L418"><span class="lineNum">     418</span>              : # The adjoint keeps the seam's transpose after the gather, mirroring the</span>
+<span id="L419"><span class="lineNum">     419</span>              : # AbstractBlockField override in forest.jl. The kernel path is real-κ only: the</span>
+<span id="L420"><span class="lineNum">     420</span>              : # adjoint of a complex-symmetric leaf needs the conjugated coefficient, which the</span>
+<span id="L421"><span class="lineNum">     421</span>              : # per-leaf reference builds through `_conj_op` — falling back keeps that path</span>
+<span id="L422"><span class="lineNum">     422</span>              : # allocation-shaped exactly as before rather than conjugating a packed copy per</span>
+<span id="L423"><span class="lineNum">     423</span>              : # apply.</span>
+<span id="L424"><span class="lineNum">     424</span> <span class="tlaGNC">           3 : function _forest_adjoint_sweep!(</span></span>
+<span id="L425"><span class="lineNum">     425</span>              :     x̄::PackedBlockField,</span>
+<span id="L426"><span class="lineNum">     426</span>              :     D::Diffusion{&lt;:BlockForest,&lt;:PackedBlockField},</span>
+<span id="L427"><span class="lineNum">     427</span>              :     ȳ::PackedBlockField,</span>
+<span id="L428"><span class="lineNum">     428</span>              :     g::BlockForest,</span>
+<span id="L429"><span class="lineNum">     429</span>              :     α,</span>
+<span id="L430"><span class="lineNum">     430</span>              : )</span>
+<span id="L431"><span class="lineNum">     431</span> <span class="tlaGNC">           3 :     _require_current(D.κ)</span></span>
+<span id="L432"><span class="lineNum">     432</span> <span class="tlaGNC">           3 :     backend = KernelAbstractions.get_backend(g)</span></span>
+<span id="L433"><span class="lineNum">     433</span> <span class="tlaGNC">           3 :     if backend isa KernelAbstractions.GPU &amp;&amp; eltype(D.κ) &lt;: Real</span></span>
+<span id="L434"><span class="lineNum">     434</span> <span class="tlaUNC tlaBgUNC">           0 :         size(D.κ.data) == size(ȳ.data) || throw(</span></span>
+<span id="L435"><span class="lineNum">     435</span>              :             ArgumentError(&quot;diffusion coefficient does not match the packed field extents&quot;)</span>
+<span id="L436"><span class="lineNum">     436</span>              :         )</span>
+<span id="L437"><span class="lineNum">     437</span> <span class="tlaUNC">           0 :         zero_ghosts!(ȳ)</span></span>
+<span id="L438"><span class="lineNum">     438</span> <span class="tlaUNC">           0 :         kernel! = _diff_adjoint_forest_kernel!(backend)</span></span>
+<span id="L439"><span class="lineNum">     439</span> <span class="tlaUNC">           0 :         kernel!(</span></span>
+<span id="L440"><span class="lineNum">     440</span>              :             x̄.data, ȳ.data, D.κ.data, ȳ.levels, g.spacing0, D.avg, α;</span>
+<span id="L441"><span class="lineNum">     441</span>              :             ndrange=(g.blocksize .+ 2 .* g.halo..., nleaves(g)),</span>
+<span id="L442"><span class="lineNum">     442</span>              :         )</span>
+<span id="L443"><span class="lineNum">     443</span>              :     else</span>
+<span id="L444"><span class="lineNum">     444</span> <span class="tlaGNC tlaBgGNC">           3 :         _forest_adjoint_sweep_leaves!(x̄, D, ȳ, g, α)</span></span>
+<span id="L445"><span class="lineNum">     445</span>              :     end</span>
+<span id="L446"><span class="lineNum">     446</span> <span class="tlaGNC">           3 :     _cf_flux_rewrite_adjoint!(</span></span>
+<span id="L447"><span class="lineNum">     447</span>              :         _storage(x̄), _layout(x̄), _storage(D.κ), _layout(D.κ), D.avg,</span>
+<span id="L448"><span class="lineNum">     448</span>              :         _exchange_schedule(g).cfflux, g.blocksize,</span>
+<span id="L449"><span class="lineNum">     449</span>              :     )</span>
+<span id="L450"><span class="lineNum">     450</span> <span class="tlaGNC">           3 :     return x̄</span></span>
+<span id="L451"><span class="lineNum">     451</span>              : end</span>
         </pre>
               </td>
             </tr>

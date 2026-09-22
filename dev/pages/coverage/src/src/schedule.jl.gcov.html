@@ -32,12 +32,12 @@
             <td></td>
             <td class="headerItem">Lines:</td>
             <td class="headerCovTableEntryHi">100.0&nbsp;%</td>
-            <td class="headerCovTableEntry">14</td>
-            <td class="headerCovTableEntry">14</td>
+            <td class="headerCovTableEntry">19</td>
+            <td class="headerCovTableEntry">19</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 22:14:58</td>
+            <td class="headerValue">2026-09-22 14:19:45</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -71,7 +71,7 @@
 <span id="L9"><span class="lineNum">       9</span>              : the ghost slab is scatter-added into the source slab, then zeroed.</span>
 <span id="L10"><span class="lineNum">      10</span>              : &quot;&quot;&quot;</span>
 <span id="L11"><span class="lineNum">      11</span>              : struct CopyDescriptor{N}</span>
-<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">        6677 :     src::Int</span></span>
+<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">       51125 :     src::Int</span></span>
 <span id="L13"><span class="lineNum">      13</span>              :     dst::Int</span>
 <span id="L14"><span class="lineNum">      14</span>              :     src_ranges::NTuple{N,UnitRange{Int}}</span>
 <span id="L15"><span class="lineNum">      15</span>              :     dst_ranges::NTuple{N,UnitRange{Int}}</span>
@@ -86,142 +86,236 @@
 <span id="L24"><span class="lineNum">      24</span>              : columns.</span>
 <span id="L25"><span class="lineNum">      25</span>              : &quot;&quot;&quot;</span>
 <span id="L26"><span class="lineNum">      26</span>              : struct SlabTerm{N,T}</span>
-<span id="L27"><span class="lineNum">      27</span> <span class="tlaGNC">       16104 :     block::Int</span></span>
+<span id="L27"><span class="lineNum">      27</span> <span class="tlaGNC">      966835 :     block::Int</span></span>
 <span id="L28"><span class="lineNum">      28</span>              :     ranges::NTuple{N,StepRange{Int,Int}}</span>
 <span id="L29"><span class="lineNum">      29</span>              :     weight::T</span>
 <span id="L30"><span class="lineNum">      30</span>              : end</span>
 <span id="L31"><span class="lineNum">      31</span>              : </span>
 <span id="L32"><span class="lineNum">      32</span>              : &quot;&quot;&quot;</span>
-<span id="L33"><span class="lineNum">      33</span>              :     GhostFill{N,T}</span>
+<span id="L33"><span class="lineNum">      33</span>              :     GhostFill{N}</span>
 <span id="L34"><span class="lineNum">      34</span>              : </span>
-<span id="L35"><span class="lineNum">      35</span>              : One coarse–fine ghost sub-slab fill: `dst .= Σₖ wₖ · srcₖ` over `terms`. The same</span>
-<span id="L36"><span class="lineNum">      36</span>              : concrete shape serves both directions of a 2:1 interface — coarse→fine quadratic</span>
-<span id="L37"><span class="lineNum">      37</span>              : interpolation and fine→coarse flux-matching restriction. Each dst region is</span>
-<span id="L38"><span class="lineNum">      38</span>              : written by exactly one descriptor, so the adjoint is the same-weight scatter-add</span>
-<span id="L39"><span class="lineNum">      39</span>              : into every term source followed by zeroing the dst — forward and adjoint share</span>
-<span id="L40"><span class="lineNum">      40</span>              : their weights by construction.</span>
-<span id="L41"><span class="lineNum">      41</span>              : &quot;&quot;&quot;</span>
-<span id="L42"><span class="lineNum">      42</span>              : struct GhostFill{N,T}</span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">        2440 :     dst_block::Int</span></span>
-<span id="L44"><span class="lineNum">      44</span>              :     dst_ranges::NTuple{N,StepRange{Int,Int}}</span>
-<span id="L45"><span class="lineNum">      45</span>              :     terms::Vector{SlabTerm{N,T}}</span>
-<span id="L46"><span class="lineNum">      46</span>              : end</span>
-<span id="L47"><span class="lineNum">      47</span>              : </span>
-<span id="L48"><span class="lineNum">      48</span>              : &quot;&quot;&quot;</span>
-<span id="L49"><span class="lineNum">      49</span>              :     ExchangeSchedule{N,T}</span>
-<span id="L50"><span class="lineNum">      50</span>              : </span>
-<span id="L51"><span class="lineNum">      51</span>              : Halo-exchange plan for one forest generation, replacing every runtime topology</span>
-<span id="L52"><span class="lineNum">      52</span>              : query in [`halo_update!`](@ref) with flat homogeneous descriptor vectors:</span>
-<span id="L53"><span class="lineNum">      53</span>              : `copies` (same-level faces), `interp` (coarse→fine quadratic ghost</span>
-<span id="L54"><span class="lineNum">      54</span>              : interpolation), `restrict` (fine→coarse flux-matching restriction). The forward</span>
-<span id="L55"><span class="lineNum">      55</span>              : sweep runs `copies → interp → restrict` — restriction reads the</span>
-<span id="L56"><span class="lineNum">      56</span>              : interpolation-filled fine ghosts, and no other cross-phase dependency exists.</span>
-<span id="L57"><span class="lineNum">      57</span>              : The adjoint runs the phases, and each phase's descriptors, in exact reverse</span>
-<span id="L58"><span class="lineNum">      58</span>              : order, making it the exact transpose of the forward composition. Each ghost</span>
-<span id="L59"><span class="lineNum">      59</span>              : region is the dst of exactly one descriptor across all three vectors. The</span>
-<span id="L60"><span class="lineNum">      60</span>              : descriptor list is also the send/recv list a future distributed backend</span>
-<span id="L61"><span class="lineNum">      61</span>              : consumes. `bcfaces` lists, per dimension and (low, high) side, the leaves whose</span>
-<span id="L62"><span class="lineNum">      62</span>              : face lies on the physical domain boundary — the input of the forest-level</span>
-<span id="L63"><span class="lineNum">      63</span>              : physical-BC passes ([`apply_bc!`](@ref)/[`fold_bc!`](@ref)/</span>
-<span id="L64"><span class="lineNum">      64</span>              : `fill_bc_inhomogeneous!` on a [`BlockField`](@ref)); periodic dimensions stay</span>
-<span id="L65"><span class="lineNum">      65</span>              : empty, their wrap being halo-exchange territory.</span>
-<span id="L66"><span class="lineNum">      66</span>              : </span>
-<span id="L67"><span class="lineNum">      67</span>              : Built by `_build_exchange_schedule` and cached on the grid per regrid generation</span>
-<span id="L68"><span class="lineNum">      68</span>              : by `_exchange_schedule`; a stale schedule is unusable by construction because the</span>
-<span id="L69"><span class="lineNum">      69</span>              : cache keys on the live `forest.generation[]`.</span>
-<span id="L70"><span class="lineNum">      70</span>              : &quot;&quot;&quot;</span>
-<span id="L71"><span class="lineNum">      71</span>              : struct ExchangeSchedule{N,T}</span>
-<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">         309 :     copies::Vector{CopyDescriptor{N}}</span></span>
-<span id="L73"><span class="lineNum">      73</span>              :     interp::Vector{GhostFill{N,T}}</span>
-<span id="L74"><span class="lineNum">      74</span>              :     restrict::Vector{GhostFill{N,T}}</span>
-<span id="L75"><span class="lineNum">      75</span>              :     bcfaces::NTuple{N,NTuple{2,Vector{Int}}}</span>
-<span id="L76"><span class="lineNum">      76</span>              :     generation::Int</span>
-<span id="L77"><span class="lineNum">      77</span>              : end</span>
-<span id="L78"><span class="lineNum">      78</span>              : </span>
-<span id="L79"><span class="lineNum">      79</span>              : # Sentinel: generation -1 never matches a live forest generation (construction</span>
-<span id="L80"><span class="lineNum">      80</span>              : # already bumps it to ≥ 1), so the first _exchange_schedule fetch always builds.</span>
-<span id="L81"><span class="lineNum">      81</span> <span class="tlaGNC">         165 : _empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(</span></span>
-<span id="L82"><span class="lineNum">      82</span>              :     CopyDescriptor{N}[], GhostFill{N,T}[], GhostFill{N,T}[],</span>
-<span id="L83"><span class="lineNum">      83</span> <span class="tlaGNC">         165 :     ntuple(_ -&gt; (Int[], Int[]), Val(N)), -1,</span></span>
-<span id="L84"><span class="lineNum">      84</span>              : )</span>
-<span id="L85"><span class="lineNum">      85</span>              : </span>
-<span id="L86"><span class="lineNum">      86</span>              : #--------------------------------------------------------------------------------# Device schedule (flattened descriptor SoA)</span>
-<span id="L87"><span class="lineNum">      87</span>              : </span>
-<span id="L88"><span class="lineNum">      88</span>              : # Flattened, device-resident twin of an ExchangeSchedule for the batched</span>
-<span id="L89"><span class="lineNum">      89</span>              : # single-launch exchange of packed fields on GPU backends (transfer_kernels.jl).</span>
-<span id="L90"><span class="lineNum">      90</span>              : # Isbits AoS records in device vectors — Int32 indices (descriptor metadata is</span>
-<span id="L91"><span class="lineNum">      91</span>              : # bandwidth), ranges flattened to first/step/len scalars, and the ragged</span>
-<span id="L92"><span class="lineNum">      92</span>              : # GhostFill.terms concatenated per phase in host fill order with each fill</span>
-<span id="L93"><span class="lineNum">      93</span>              : # carrying its embedded CSR row [tfirst, tlast]. Copy boxes need no shape</span>
-<span id="L94"><span class="lineNum">      94</span>              : # fields: for normal dim d the box is h[d] × the full padded transverse extent,</span>
-<span id="L95"><span class="lineNum">      95</span>              : # recomputed at launch. Built lazily by _device_schedule, cached on the forest</span>
-<span id="L96"><span class="lineNum">      96</span>              : # keyed on generation AND backend; _NoDeviceSchedule is the unbuilt sentinel</span>
-<span id="L97"><span class="lineNum">      97</span>              : # behind the abstract-eltype Ref (only GPU paths ever touch it).</span>
-<span id="L98"><span class="lineNum">      98</span>              : abstract type _AbstractDeviceSchedule end</span>
-<span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">         165 : struct _NoDeviceSchedule &lt;: _AbstractDeviceSchedule end</span></span>
-<span id="L100"><span class="lineNum">     100</span>              : </span>
-<span id="L101"><span class="lineNum">     101</span>              : struct _DevCopy{N}</span>
-<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">        1828 :     src::Int32</span></span>
-<span id="L103"><span class="lineNum">     103</span>              :     dst::Int32</span>
-<span id="L104"><span class="lineNum">     104</span>              :     src_first::NTuple{N,Int32}</span>
-<span id="L105"><span class="lineNum">     105</span>              :     dst_first::NTuple{N,Int32}</span>
-<span id="L106"><span class="lineNum">     106</span>              : end</span>
-<span id="L107"><span class="lineNum">     107</span>              : </span>
-<span id="L108"><span class="lineNum">     108</span>              : struct _DevFill{N}</span>
-<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">         440 :     dst::Int32</span></span>
-<span id="L110"><span class="lineNum">     110</span>              :     first::NTuple{N,Int32}</span>
-<span id="L111"><span class="lineNum">     111</span>              :     step::NTuple{N,Int32}</span>
-<span id="L112"><span class="lineNum">     112</span>              :     len::NTuple{N,Int32}</span>
-<span id="L113"><span class="lineNum">     113</span>              :     tfirst::Int32</span>
-<span id="L114"><span class="lineNum">     114</span>              :     tlast::Int32</span>
-<span id="L115"><span class="lineNum">     115</span>              : end</span>
-<span id="L116"><span class="lineNum">     116</span>              : </span>
-<span id="L117"><span class="lineNum">     117</span>              : struct _DevTerm{N,T}</span>
-<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">        2904 :     block::Int32</span></span>
-<span id="L119"><span class="lineNum">     119</span>              :     first::NTuple{N,Int32}</span>
-<span id="L120"><span class="lineNum">     120</span>              :     step::NTuple{N,Int32}</span>
-<span id="L121"><span class="lineNum">     121</span>              :     weight::T</span>
-<span id="L122"><span class="lineNum">     122</span>              : end</span>
-<span id="L123"><span class="lineNum">     123</span>              : </span>
-<span id="L124"><span class="lineNum">     124</span>              : struct _DeviceSchedule{N,T,VC,VF,VT,VI} &lt;: _AbstractDeviceSchedule</span>
-<span id="L125"><span class="lineNum">     125</span> <span class="tlaGNC">          13 :     copies::VC                       # sorted by normal dim, host order within a dim</span></span>
-<span id="L126"><span class="lineNum">     126</span>              :     copy_offsets::Vector{Int}        # host, length N+1: dim d = offsets[d]+1:offsets[d+1]</span>
-<span id="L127"><span class="lineNum">     127</span>              :     interp::VF</span>
-<span id="L128"><span class="lineNum">     128</span>              :     interp_terms::VT</span>
-<span id="L129"><span class="lineNum">     129</span>              :     interp_maxcells::Int             # host: bounds-mask ndrange for the fill kernel</span>
-<span id="L130"><span class="lineNum">     130</span>              :     restrict::VF</span>
-<span id="L131"><span class="lineNum">     131</span>              :     restrict_terms::VT</span>
-<span id="L132"><span class="lineNum">     132</span>              :     restrict_maxcells::Int</span>
-<span id="L133"><span class="lineNum">     133</span>              :     bcfaces::NTuple{N,NTuple{2,VI}}  # device Int32 leaf lists per (dim, side)</span>
-<span id="L134"><span class="lineNum">     134</span>              :     generation::Int</span>
-<span id="L135"><span class="lineNum">     135</span>              : end</span>
-<span id="L136"><span class="lineNum">     136</span>              : </span>
-<span id="L137"><span class="lineNum">     137</span>              : #--------------------------------------------------------------------------------# Coarse–fine transfer weights</span>
-<span id="L138"><span class="lineNum">     138</span>              : </span>
-<span id="L139"><span class="lineNum">     139</span>              : # Quadratic Lagrange weights on nodes (a, b, c) evaluated at ξ. Quadratic</span>
-<span id="L140"><span class="lineNum">     140</span>              : # exactness of every weight set below is what preserves 2nd-order convergence</span>
-<span id="L141"><span class="lineNum">     141</span>              : # across refinement interfaces; these ARE the multigrid transfer stencils</span>
-<span id="L142"><span class="lineNum">     142</span>              : # (Restriction/Prolongation extract them — issue #11).</span>
-<span id="L143"><span class="lineNum">     143</span>              : function _lagrange3(a, b, c, ξ)</span>
-<span id="L144"><span class="lineNum">     144</span> <span class="tlaGNC">        2441 :     return (</span></span>
-<span id="L145"><span class="lineNum">     145</span>              :         (ξ - b) * (ξ - c) / ((a - b) * (a - c)),</span>
-<span id="L146"><span class="lineNum">     146</span>              :         (ξ - a) * (ξ - c) / ((b - a) * (b - c)),</span>
-<span id="L147"><span class="lineNum">     147</span>              :         (ξ - a) * (ξ - b) / ((c - a) * (c - b)),</span>
-<span id="L148"><span class="lineNum">     148</span>              :     )</span>
-<span id="L149"><span class="lineNum">     149</span>              : end</span>
+<span id="L35"><span class="lineNum">      35</span>              : One coarse–fine ghost sub-slab fill: `dst .= Σₖ wₖ · srcₖ` over the terms</span>
+<span id="L36"><span class="lineNum">      36</span>              : `tfirst:tlast` of its phase's flat term buffer (`interp_terms` / `restrict_terms`</span>
+<span id="L37"><span class="lineNum">      37</span>              : on the [`ExchangeSchedule`](@ref)). The same concrete shape serves both directions</span>
+<span id="L38"><span class="lineNum">      38</span>              : of a 2:1 interface — coarse→fine quadratic interpolation and fine→coarse</span>
+<span id="L39"><span class="lineNum">      39</span>              : flux-matching restriction. Each dst region is written by exactly one descriptor,</span>
+<span id="L40"><span class="lineNum">      40</span>              : so the adjoint is the same-weight scatter-add into every term source followed by</span>
+<span id="L41"><span class="lineNum">      41</span>              : zeroing the dst — forward and adjoint share their weights by construction.</span>
+<span id="L42"><span class="lineNum">      42</span>              : </span>
+<span id="L43"><span class="lineNum">      43</span>              : The terms live CSR-style in one `Vector{SlabTerm}` per phase rather than inside</span>
+<span id="L44"><span class="lineNum">      44</span>              : the fill, so both descriptor vectors have small isbits eltypes (a fill is its dst</span>
+<span id="L45"><span class="lineNum">      45</span>              : box plus a row index pair; a term is one slab window plus a weight) and the host</span>
+<span id="L46"><span class="lineNum">      46</span>              : sweeps walk exactly the layout the device schedule uploads (`_DevFill` /</span>
+<span id="L47"><span class="lineNum">      47</span>              : `_DevTerm`). Row widths are dimension-fixed — see [`_ninterp_terms`](@ref) /</span>
+<span id="L48"><span class="lineNum">      48</span>              : [`_nrestrict_terms`](@ref) — which the emitters assert at close.</span>
+<span id="L49"><span class="lineNum">      49</span>              : </span>
+<span id="L50"><span class="lineNum">      50</span>              : Two shape invariants hold of every row, asserted at close by `_close_fill` and</span>
+<span id="L51"><span class="lineNum">      51</span>              : relied on by both the host sweep and the device kernel:</span>
+<span id="L52"><span class="lineNum">      52</span>              : </span>
+<span id="L53"><span class="lineNum">      53</span>              :   - **Every term window has the dst slab's shape** — cell `I` of the dst reads cell</span>
+<span id="L54"><span class="lineNum">      54</span>              :     `I` of every term — which is what lets the host sweep run one fused gather</span>
+<span id="L55"><span class="lineNum">      55</span>              :     `dst[I] = Σₖ wₖ · srcₖ[I]` per fill (`_run_fills!`) and the device kernel index</span>
+<span id="L56"><span class="lineNum">      56</span>              :     every term by the dst cell's decoded offset (`_fill_kernel!`).</span>
+<span id="L57"><span class="lineNum">      57</span>              :   - **Every term window is disjoint from the dst slab.** dst boxes are ghost layers</span>
+<span id="L58"><span class="lineNum">      58</span>              :     and terms read interiors, so no emitter produces an overlap; the fused gather</span>
+<span id="L59"><span class="lineNum">      59</span>              :     makes it load-bearing, because its term views ride an immutable `Ref` wrapper</span>
+<span id="L60"><span class="lineNum">      60</span>              :     that Base's `broadcast_unalias` never sees.</span>
+<span id="L61"><span class="lineNum">      61</span>              : </span>
+<span id="L62"><span class="lineNum">      62</span>              : A mis-shaped or self-reading emitter therefore fails at schedule build, never as an</span>
+<span id="L63"><span class="lineNum">      63</span>              : out-of-bounds read or a silently wrong ghost value in a sweep.</span>
+<span id="L64"><span class="lineNum">      64</span>              : &quot;&quot;&quot;</span>
+<span id="L65"><span class="lineNum">      65</span>              : struct GhostFill{N}</span>
+<span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">       55482 :     dst_block::Int</span></span>
+<span id="L67"><span class="lineNum">      67</span>              :     dst_ranges::NTuple{N,StepRange{Int,Int}}</span>
+<span id="L68"><span class="lineNum">      68</span>              :     tfirst::Int</span>
+<span id="L69"><span class="lineNum">      69</span>              :     tlast::Int</span>
+<span id="L70"><span class="lineNum">      70</span>              : end</span>
+<span id="L71"><span class="lineNum">      71</span>              : </span>
+<span id="L72"><span class="lineNum">      72</span>              : # The terms of one fill, as a window into its phase's flat term buffer.</span>
+<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">       39024 : _fill_terms(terms::Vector{SlabTerm{N,T}}, f::GhostFill{N}) where {N,T} =</span></span>
+<span id="L74"><span class="lineNum">      74</span>              :     view(terms, f.tfirst:f.tlast)</span>
+<span id="L75"><span class="lineNum">      75</span>              : </span>
+<span id="L76"><span class="lineNum">      76</span>              : &quot;&quot;&quot;</span>
+<span id="L77"><span class="lineNum">      77</span>              :     _ninterp_terms(::Val{N}) -&gt; 1 + 2·3^(N-1)</span>
+<span id="L78"><span class="lineNum">      78</span>              :     _nrestrict_terms(::Val{N}) -&gt; 1 + 2^N</span>
+<span id="L79"><span class="lineNum">      79</span>              : </span>
+<span id="L80"><span class="lineNum">      80</span>              : Term count of every coarse→fine interpolation / fine→coarse restriction</span>
+<span id="L81"><span class="lineNum">      81</span>              : [`GhostFill`](@ref), a function of the dimension only. Interpolation reads the</span>
+<span id="L82"><span class="lineNum">      82</span>              : fine block's own first interior cell plus a 3-point tangential tensor stencil on</span>
+<span id="L83"><span class="lineNum">      83</span>              : each of two coarse layers; restriction reads the coarse first interior layer plus</span>
+<span id="L84"><span class="lineNum">      84</span>              : one (interior, ghost) pair per tangential fine-column parity combination. Both are</span>
+<span id="L85"><span class="lineNum">      85</span>              : fixed by the emitters' `Iterators.product` loops (`_emit_interp!` /</span>
+<span id="L86"><span class="lineNum">      86</span>              : `_emit_restrict!` in transfer.jl), which never branch on topology — a face fill at</span>
+<span id="L87"><span class="lineNum">      87</span>              : a domain boundary or a coarse tangential extreme only changes *which* cells the</span>
+<span id="L88"><span class="lineNum">      88</span>              : terms read (one-sided stencils), never how many. So every CSR row of a phase is</span>
+<span id="L89"><span class="lineNum">      89</span>              : the same width; the emitters assert it, and the explicit `[tfirst, tlast]` on each</span>
+<span id="L90"><span class="lineNum">      90</span>              : fill keeps the sweeps and the device kernel row-width-agnostic regardless.</span>
+<span id="L91"><span class="lineNum">      91</span>              : &quot;&quot;&quot;</span>
+<span id="L92"><span class="lineNum">      92</span> <span class="tlaGNC">       62205 : _ninterp_terms(::Val{N}) where {N} = 1 + 2 * 3^(N - 1)</span></span>
+<span id="L93"><span class="lineNum">      93</span> <span class="tlaGNC">       14571 : _nrestrict_terms(::Val{N}) where {N} = 1 + 2^N</span></span>
+<span id="L94"><span class="lineNum">      94</span>              : </span>
+<span id="L95"><span class="lineNum">      95</span>              : &quot;&quot;&quot;</span>
+<span id="L96"><span class="lineNum">      96</span>              :     CFFluxDescriptor{N}</span>
+<span id="L97"><span class="lineNum">      97</span>              : </span>
+<span id="L98"><span class="lineNum">      98</span>              : One (coarse face × abutting fine child) record of a 2:1 refinement interface —</span>
+<span id="L99"><span class="lineNum">      99</span>              : the topology input of the `Diffusion` coarse-ghost flux rewrite</span>
+<span id="L100"><span class="lineNum">     100</span>              : (`_cf_flux_rewrite!` in operators/diffusion.jl). Emitted by `_emit_restrict!`</span>
+<span id="L101"><span class="lineNum">     101</span>              : from the same child walk as the solution restriction, so the index arithmetic</span>
+<span id="L102"><span class="lineNum">     102</span>              : cannot fork; empty on a uniform forest. Deliberately carries **no weights**: the</span>
+<span id="L103"><span class="lineNum">     103</span>              : κ-dependent face factors are formed per application from the operator's own</span>
+<span id="L104"><span class="lineNum">     104</span>              : coefficient storage, keeping κ on the AD tape (a κ-dependent `SlabTerm.weight`</span>
+<span id="L105"><span class="lineNum">     105</span>              : would be hidden by the halo Enzyme rules, which report zero derivative for</span>
+<span id="L106"><span class="lineNum">     106</span>              : schedule weights — the coefficient-gradient failure mode the package forbids).</span>
+<span id="L107"><span class="lineNum">     107</span>              : Fully isbits, so a loop over `Vector{CFFluxDescriptor}` is a shape Enzyme can</span>
+<span id="L108"><span class="lineNum">     108</span>              : type-analyze inside a differentiated apply (the issue-#26 constraint; the fill</span>
+<span id="L109"><span class="lineNum">     109</span>              : descriptors are isbits too since #42). The per-parity fine boxes are reconstructed</span>
+<span id="L110"><span class="lineNum">     110</span>              : at use from `d`, the layer indices, and the blocksize.</span>
+<span id="L111"><span class="lineNum">     111</span>              : &quot;&quot;&quot;</span>
+<span id="L112"><span class="lineNum">     112</span>              : struct CFFluxDescriptor{N}</span>
+<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC">        3916 :     coarse::Int32</span></span>
+<span id="L114"><span class="lineNum">     114</span>              :     fine::Int32</span>
+<span id="L115"><span class="lineNum">     115</span>              :     d::Int32                              # face-normal dimension</span>
+<span id="L116"><span class="lineNum">     116</span>              :     uf_n::Int32                           # fine interior layer facing the coarse block</span>
+<span id="L117"><span class="lineNum">     117</span>              :     gf_n::Int32                           # fine interp-filled ghost layer facing it</span>
+<span id="L118"><span class="lineNum">     118</span>              :     gC::NTuple{N,StepRange{Int,Int}}      # coarse ghost sub-slab (the rewrite dst)</span>
+<span id="L119"><span class="lineNum">     119</span>              :     u1::NTuple{N,StepRange{Int,Int}}      # coarse first-interior box, same tangential</span>
+<span id="L120"><span class="lineNum">     120</span>              : end</span>
+<span id="L121"><span class="lineNum">     121</span>              : </span>
+<span id="L122"><span class="lineNum">     122</span>              : &quot;&quot;&quot;</span>
+<span id="L123"><span class="lineNum">     123</span>              :     ExchangeSchedule{N,T}</span>
+<span id="L124"><span class="lineNum">     124</span>              : </span>
+<span id="L125"><span class="lineNum">     125</span>              : Halo-exchange plan for one forest generation, replacing every runtime topology</span>
+<span id="L126"><span class="lineNum">     126</span>              : query in [`halo_update!`](@ref) with flat homogeneous descriptor vectors:</span>
+<span id="L127"><span class="lineNum">     127</span>              : `copies` (same-level faces), `interp` (coarse→fine quadratic ghost</span>
+<span id="L128"><span class="lineNum">     128</span>              : interpolation), `restrict` (fine→coarse flux-matching restriction). The forward</span>
+<span id="L129"><span class="lineNum">     129</span>              : sweep runs `copies → interp → restrict` — restriction reads the</span>
+<span id="L130"><span class="lineNum">     130</span>              : interpolation-filled fine ghosts, and no other cross-phase dependency exists.</span>
+<span id="L131"><span class="lineNum">     131</span>              : The adjoint runs the phases, and each phase's descriptors, in exact reverse</span>
+<span id="L132"><span class="lineNum">     132</span>              : order, making it the exact transpose of the forward composition. Each ghost</span>
+<span id="L133"><span class="lineNum">     133</span>              : region is the dst of exactly one descriptor across all three vectors. The</span>
+<span id="L134"><span class="lineNum">     134</span>              : descriptor list is also the send/recv list a future distributed backend</span>
+<span id="L135"><span class="lineNum">     135</span>              : consumes. `cfflux` is not a sweep phase: it is the weight-free</span>
+<span id="L136"><span class="lineNum">     136</span>              : coarse–fine-face topology list ([`CFFluxDescriptor`](@ref)) the `Diffusion`</span>
+<span id="L137"><span class="lineNum">     137</span>              : leaf's κ-weighted coarse-ghost rewrite consumes after the exchange, riding the</span>
+<span id="L138"><span class="lineNum">     138</span>              : same build pass and generation key rather than adding a second schedule. `bcfaces` lists, per dimension and (low, high) side, the leaves whose</span>
+<span id="L139"><span class="lineNum">     139</span>              : face lies on the physical domain boundary — the input of the forest-level</span>
+<span id="L140"><span class="lineNum">     140</span>              : physical-BC passes ([`apply_bc!`](@ref)/[`fold_bc!`](@ref)/</span>
+<span id="L141"><span class="lineNum">     141</span>              : `fill_bc_inhomogeneous!` on a [`BlockField`](@ref)); periodic dimensions stay</span>
+<span id="L142"><span class="lineNum">     142</span>              : empty, their wrap being halo-exchange territory.</span>
+<span id="L143"><span class="lineNum">     143</span>              : </span>
+<span id="L144"><span class="lineNum">     144</span>              : Every descriptor vector has an isbits eltype: the coarse–fine fills keep their</span>
+<span id="L145"><span class="lineNum">     145</span>              : terms CSR-style in the per-phase `interp_terms` / `restrict_terms` buffers (each</span>
+<span id="L146"><span class="lineNum">     146</span>              : [`GhostFill`](@ref) is a dst box plus its `[tfirst, tlast]` row), the same layout</span>
+<span id="L147"><span class="lineNum">     147</span>              : the device twin uploads. Nothing here is parameterized on anything but `(N, T)`,</span>
+<span id="L148"><span class="lineNum">     148</span>              : so the type is concrete from the forest's parameters alone and a</span>
+<span id="L149"><span class="lineNum">     149</span>              : [`BlockForest`](@ref) holds it in a concretely typed `Ref`.</span>
 <span id="L150"><span class="lineNum">     150</span>              : </span>
-<span id="L151"><span class="lineNum">     151</span>              : # Normal-direction parabola of the coarse→fine ghost fill (Martin–Cartwright), in</span>
-<span id="L152"><span class="lineNum">     152</span>              : # coarse-cell units with the interface at 0: through the fine block's own first</span>
-<span id="L153"><span class="lineNum">     153</span>              : # interior cell (−1/4) and the coarse neighbor's first two interior layers</span>
-<span id="L154"><span class="lineNum">     154</span>              : # (1/2, 3/2), evaluated at the fine ghost center (1/4) → (5/21, 5/6, −1/14).</span>
-<span id="L155"><span class="lineNum">     155</span> <span class="tlaGNC">         489 : _cf_normal_weights(::Type{T}) where {T} = _lagrange3(-T(1) / 4, T(1) / 2, T(3) / 2, T(1) / 4)</span></span>
-<span id="L156"><span class="lineNum">     156</span>              : </span>
-<span id="L157"><span class="lineNum">     157</span>              : # Tangential 3-point quadratic at ξ = ±1/4 (a fine column sits a quarter coarse</span>
-<span id="L158"><span class="lineNum">     158</span>              : # cell off its coarse column's center). `offs` are the coarse node offsets:</span>
-<span id="L159"><span class="lineNum">     159</span>              : # (−1, 0, 1) centered in the interior; shifted one-sided at the coarse block's</span>
-<span id="L160"><span class="lineNum">     160</span>              : # tangential extremes so coarse–fine fills only ever read block interiors.</span>
-<span id="L161"><span class="lineNum">     161</span> <span class="tlaGNC">        1952 : _cf_tangential_weights(offs::NTuple{3,Int}, ξ::T) where {T} =</span></span>
-<span id="L162"><span class="lineNum">     162</span>              :     _lagrange3(T(offs[1]), T(offs[2]), T(offs[3]), ξ)</span>
+<span id="L151"><span class="lineNum">     151</span>              : Built by `_build_exchange_schedule` and cached on the grid per regrid generation</span>
+<span id="L152"><span class="lineNum">     152</span>              : by `_exchange_schedule`; a stale schedule is unusable by construction because the</span>
+<span id="L153"><span class="lineNum">     153</span>              : cache keys on the live `forest.generation[]`.</span>
+<span id="L154"><span class="lineNum">     154</span>              : &quot;&quot;&quot;</span>
+<span id="L155"><span class="lineNum">     155</span>              : struct ExchangeSchedule{N,T}</span>
+<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">         518 :     copies::Vector{CopyDescriptor{N}}</span></span>
+<span id="L157"><span class="lineNum">     157</span>              :     interp::Vector{GhostFill{N}}</span>
+<span id="L158"><span class="lineNum">     158</span>              :     interp_terms::Vector{SlabTerm{N,T}}      # CSR rows of `interp`, host fill/term order</span>
+<span id="L159"><span class="lineNum">     159</span>              :     restrict::Vector{GhostFill{N}}</span>
+<span id="L160"><span class="lineNum">     160</span>              :     restrict_terms::Vector{SlabTerm{N,T}}</span>
+<span id="L161"><span class="lineNum">     161</span>              :     cfflux::Vector{CFFluxDescriptor{N}}</span>
+<span id="L162"><span class="lineNum">     162</span>              :     bcfaces::NTuple{N,NTuple{2,Vector{Int}}}</span>
+<span id="L163"><span class="lineNum">     163</span>              :     generation::Int</span>
+<span id="L164"><span class="lineNum">     164</span>              : end</span>
+<span id="L165"><span class="lineNum">     165</span>              : </span>
+<span id="L166"><span class="lineNum">     166</span>              : # Sentinel: generation -1 never matches a live forest generation (construction</span>
+<span id="L167"><span class="lineNum">     167</span>              : # already bumps it to ≥ 1), so the first _exchange_schedule fetch always builds.</span>
+<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">         277 : _empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(</span></span>
+<span id="L169"><span class="lineNum">     169</span>              :     CopyDescriptor{N}[], GhostFill{N}[], SlabTerm{N,T}[], GhostFill{N}[], SlabTerm{N,T}[],</span>
+<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">         277 :     CFFluxDescriptor{N}[], ntuple(_ -&gt; (Int[], Int[]), Val(N)), -1,</span></span>
+<span id="L171"><span class="lineNum">     171</span>              : )</span>
+<span id="L172"><span class="lineNum">     172</span>              : </span>
+<span id="L173"><span class="lineNum">     173</span>              : #--------------------------------------------------------------------------------# Device schedule (flattened descriptor SoA)</span>
+<span id="L174"><span class="lineNum">     174</span>              : </span>
+<span id="L175"><span class="lineNum">     175</span>              : # Flattened, device-resident twin of an ExchangeSchedule for the batched</span>
+<span id="L176"><span class="lineNum">     176</span>              : # single-launch exchange of packed fields on GPU backends (transfer_kernels.jl).</span>
+<span id="L177"><span class="lineNum">     177</span>              : # Isbits AoS records in device vectors — Int32 indices (descriptor metadata is</span>
+<span id="L178"><span class="lineNum">     178</span>              : # bandwidth), ranges flattened to first/step/len scalars, and the per-phase</span>
+<span id="L179"><span class="lineNum">     179</span>              : # fill/term CSR pairs carried over as-is (the host schedule already keeps each</span>
+<span id="L180"><span class="lineNum">     180</span>              : # fill's [tfirst, tlast] row into a flat term buffer). Copy boxes need no shape</span>
+<span id="L181"><span class="lineNum">     181</span>              : # fields: for normal dim d the box is h[d] × the full padded transverse extent,</span>
+<span id="L182"><span class="lineNum">     182</span>              : # recomputed at launch. Built lazily by _device_schedule, cached on the forest</span>
+<span id="L183"><span class="lineNum">     183</span>              : # keyed on generation AND backend; _NoDeviceSchedule is the unbuilt sentinel</span>
+<span id="L184"><span class="lineNum">     184</span>              : # behind the abstract-eltype Ref (only GPU paths ever touch it).</span>
+<span id="L185"><span class="lineNum">     185</span>              : abstract type _AbstractDeviceSchedule end</span>
+<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">         277 : struct _NoDeviceSchedule &lt;: _AbstractDeviceSchedule end</span></span>
+<span id="L187"><span class="lineNum">     187</span>              : </span>
+<span id="L188"><span class="lineNum">     188</span>              : struct _DevCopy{N}</span>
+<span id="L189"><span class="lineNum">     189</span> <span class="tlaGNC">        5872 :     src::Int32</span></span>
+<span id="L190"><span class="lineNum">     190</span>              :     dst::Int32</span>
+<span id="L191"><span class="lineNum">     191</span>              :     src_first::NTuple{N,Int32}</span>
+<span id="L192"><span class="lineNum">     192</span>              :     dst_first::NTuple{N,Int32}</span>
+<span id="L193"><span class="lineNum">     193</span>              : end</span>
+<span id="L194"><span class="lineNum">     194</span>              : </span>
+<span id="L195"><span class="lineNum">     195</span>              : struct _DevFill{N}</span>
+<span id="L196"><span class="lineNum">     196</span> <span class="tlaGNC">        6000 :     dst::Int32</span></span>
+<span id="L197"><span class="lineNum">     197</span>              :     first::NTuple{N,Int32}</span>
+<span id="L198"><span class="lineNum">     198</span>              :     step::NTuple{N,Int32}</span>
+<span id="L199"><span class="lineNum">     199</span>              :     len::NTuple{N,Int32}</span>
+<span id="L200"><span class="lineNum">     200</span>              :     tfirst::Int32</span>
+<span id="L201"><span class="lineNum">     201</span>              :     tlast::Int32</span>
+<span id="L202"><span class="lineNum">     202</span>              : end</span>
+<span id="L203"><span class="lineNum">     203</span>              : </span>
+<span id="L204"><span class="lineNum">     204</span>              : struct _DevTerm{N,T}</span>
+<span id="L205"><span class="lineNum">     205</span> <span class="tlaGNC">      103856 :     block::Int32</span></span>
+<span id="L206"><span class="lineNum">     206</span>              :     first::NTuple{N,Int32}</span>
+<span id="L207"><span class="lineNum">     207</span>              :     step::NTuple{N,Int32}</span>
+<span id="L208"><span class="lineNum">     208</span>              :     weight::T</span>
+<span id="L209"><span class="lineNum">     209</span>              : end</span>
+<span id="L210"><span class="lineNum">     210</span>              : </span>
+<span id="L211"><span class="lineNum">     211</span>              : struct _DeviceSchedule{N,T,VC,VF,VT,VI} &lt;: _AbstractDeviceSchedule</span>
+<span id="L212"><span class="lineNum">     212</span> <span class="tlaGNC">          15 :     copies::VC                       # sorted by normal dim, host order within a dim</span></span>
+<span id="L213"><span class="lineNum">     213</span>              :     copy_offsets::Vector{Int}        # host, length N+1: dim d = offsets[d]+1:offsets[d+1]</span>
+<span id="L214"><span class="lineNum">     214</span>              :     interp::VF</span>
+<span id="L215"><span class="lineNum">     215</span>              :     interp_terms::VT</span>
+<span id="L216"><span class="lineNum">     216</span>              :     interp_maxcells::Int             # host: bounds-mask ndrange for the fill kernel</span>
+<span id="L217"><span class="lineNum">     217</span>              :     restrict::VF</span>
+<span id="L218"><span class="lineNum">     218</span>              :     restrict_terms::VT</span>
+<span id="L219"><span class="lineNum">     219</span>              :     restrict_maxcells::Int</span>
+<span id="L220"><span class="lineNum">     220</span>              :     bcfaces::NTuple{N,NTuple{2,VI}}  # device Int32 leaf lists per (dim, side)</span>
+<span id="L221"><span class="lineNum">     221</span>              :     generation::Int</span>
+<span id="L222"><span class="lineNum">     222</span>              : end</span>
+<span id="L223"><span class="lineNum">     223</span>              : </span>
+<span id="L224"><span class="lineNum">     224</span>              : #--------------------------------------------------------------------------------# Coarse–fine transfer weights</span>
+<span id="L225"><span class="lineNum">     225</span>              : </span>
+<span id="L226"><span class="lineNum">     226</span>              : # Quadratic Lagrange weights on nodes (a, b, c) evaluated at ξ. Quadratic</span>
+<span id="L227"><span class="lineNum">     227</span>              : # exactness of every weight set below is what preserves 2nd-order convergence</span>
+<span id="L228"><span class="lineNum">     228</span>              : # across refinement interfaces; these ARE the multigrid transfer stencils</span>
+<span id="L229"><span class="lineNum">     229</span>              : # (Restriction/Prolongation extract them — issue #11).</span>
+<span id="L230"><span class="lineNum">     230</span>              : function _lagrange3(a, b, c, ξ)</span>
+<span id="L231"><span class="lineNum">     231</span> <span class="tlaGNC">       31537 :     return (</span></span>
+<span id="L232"><span class="lineNum">     232</span>              :         (ξ - b) * (ξ - c) / ((a - b) * (a - c)),</span>
+<span id="L233"><span class="lineNum">     233</span>              :         (ξ - a) * (ξ - c) / ((b - a) * (b - c)),</span>
+<span id="L234"><span class="lineNum">     234</span>              :         (ξ - a) * (ξ - b) / ((c - a) * (c - b)),</span>
+<span id="L235"><span class="lineNum">     235</span>              :     )</span>
+<span id="L236"><span class="lineNum">     236</span>              : end</span>
+<span id="L237"><span class="lineNum">     237</span>              : </span>
+<span id="L238"><span class="lineNum">     238</span>              : # Normal-direction parabola of the coarse→fine ghost fill (Martin–Cartwright), in</span>
+<span id="L239"><span class="lineNum">     239</span>              : # coarse-cell units with the interface at 0: through the fine block's own first</span>
+<span id="L240"><span class="lineNum">     240</span>              : # interior cell (−1/4) and the coarse neighbor's first two interior layers</span>
+<span id="L241"><span class="lineNum">     241</span>              : # (1/2, 3/2), evaluated at the fine ghost center (1/4) → (5/21, 5/6, −1/14).</span>
+<span id="L242"><span class="lineNum">     242</span> <span class="tlaGNC">        3929 : _cf_normal_weights(::Type{T}) where {T} = _lagrange3(-T(1) / 4, T(1) / 2, T(3) / 2, T(1) / 4)</span></span>
+<span id="L243"><span class="lineNum">     243</span>              : </span>
+<span id="L244"><span class="lineNum">     244</span>              : # Tangential 3-point quadratic at ξ = ±1/4 (a fine column sits a quarter coarse</span>
+<span id="L245"><span class="lineNum">     245</span>              : # cell off its coarse column's center). `offs` are the coarse node offsets:</span>
+<span id="L246"><span class="lineNum">     246</span>              : # (−1, 0, 1) centered in the interior; shifted one-sided at the coarse block's</span>
+<span id="L247"><span class="lineNum">     247</span>              : # tangential extremes so coarse–fine fills only ever read block interiors.</span>
+<span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC">       27608 : _cf_tangential_weights(offs::NTuple{3,Int}, ξ::T) where {T} =</span></span>
+<span id="L249"><span class="lineNum">     249</span>              :     _lagrange3(T(offs[1]), T(offs[2]), T(offs[3]), ξ)</span>
+<span id="L250"><span class="lineNum">     250</span>              : </span>
+<span id="L251"><span class="lineNum">     251</span>              : # Fine→coarse flux-matching weight 2/2^(N−1): with H = 2h, equating the coarse</span>
+<span id="L252"><span class="lineNum">     252</span>              : # face flux to the area-weighted sum of the abutting fine fluxes leaves the</span>
+<span id="L253"><span class="lineNum">     253</span>              : # factor h^(N−2)/H^(N−2) = 2^(2−N). Single-sourced so the solution restriction</span>
+<span id="L254"><span class="lineNum">     254</span>              : # (_emit_restrict!) and the Diffusion κ-weighted coarse-ghost rewrite</span>
+<span id="L255"><span class="lineNum">     255</span>              : # (_cf_flux_rewrite!) cannot drift apart — constant κ must reduce one to the other.</span>
+<span id="L256"><span class="lineNum">     256</span> <span class="tlaGNC">       12424 : _cf_flux_weight(::Val{N}, ::Type{T}) where {N,T} = T(2) / (1 &lt;&lt; (N - 1))</span></span>
         </pre>
               </td>
             </tr>

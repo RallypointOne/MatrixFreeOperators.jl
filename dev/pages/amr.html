@@ -71,8 +71,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
-<link href="../pages/multigrid.html" rel="next">
-<link href="../index.html" rel="prev">
+<link href="../pages/benchmark.html" rel="next">
+<link href="../pages/autodiff.html" rel="prev">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
@@ -82,7 +82,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-095245003bb80bd2beb305de39928752.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-3901d0d75e475d87cb004cd3e7ef4c9e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-02a8592a4cf3893cf56a8581db556df5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -189,12 +189,32 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../pages/autodiff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Automatic Differentiation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../pages/amr.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Adaptive Mesh Refinement</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../pages/benchmark.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Niederer Benchmark</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../pages/multigrid.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Geometric Multigrid</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/distributed.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Distributed Multi-GPU Solves</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/internals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Internals</span></a>
   </div>
 </li>
       </ul>
@@ -388,8 +408,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>g  <span class="op">=</span> <span class="fu">CartesianGrid</span>(((<span class="fl">0.0</span>, <span class="fl">1.0</span>), (<span class="fl">0.0</span>, <span class="fl">1.0</span>)), (<span class="fl">8</span>, <span class="fl">8</span>))</span>
 <span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a>bf <span class="op">=</span> <span class="fu">BlockForest</span>(g; blocksize <span class="op">=</span> (<span class="fl">4</span>, <span class="fl">4</span>), maxlevel <span class="op">=</span> <span class="fl">3</span>)   <span class="co"># level 0 ⇒ same 8×8</span></span>
 <span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>u  <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(g),  x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))</span>
-<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>uf <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(bf), x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]))</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>u  <span class="op">=</span> <span class="fu">set!</span>(x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]),  <span class="fu">scalar_field</span>(g))</span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>uf <span class="op">=</span> <span class="fu">set!</span>(x <span class="op">-&gt;</span> <span class="fu">sinpi</span>(x[<span class="fl">1</span>]) <span class="op">*</span> <span class="fu">sinpi</span>(x[<span class="fl">2</span>]), <span class="fu">scalar_field</span>(bf))</span>
 <span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="fu">norm</span>(<span class="fu">flatten</span>(<span class="fu">laplacian</span>(g) <span class="op">*</span> u)) <span class="op">≈</span> <span class="fu">norm</span>(<span class="fu">flatten</span>(<span class="fu">laplacian</span>(bf) <span class="op">*</span> uf))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
@@ -402,14 +422,14 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <h2 class="anchored" data-anchor-id="indicator-driven-regridding">Indicator-driven regridding</h2>
 <p>The center-predicate <code>refine!</code> above is geometric. To adapt to the <em>solution</em>, <code>regrid!</code> evaluates per-block criteria on a live field — each criterion receives the leaf as an ordinary <code>Field</code>, so it is typically a reduction like <code>b -&gt; maximum(abs, interior(b)) &gt; τ</code> — edits the topology in a single pass (refine-marked leaves split, complete fully-marked families coarsen, refine wins conflicts), re-establishes 2:1 balance, and returns freshly allocated fields with the data carried across:</p>
 <div id="8" class="cell" data-execution_count="1">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>bump <span class="op">=</span> <span class="fu">set!</span>(<span class="fu">scalar_field</span>(forest), x <span class="op">-&gt;</span> <span class="fu">exp</span>(<span class="fu">-</span>((x[<span class="fl">1</span>] <span class="op">-</span> <span class="fl">0.5</span>)<span class="op">^</span><span class="fl">2</span> <span class="op">+</span> (x[<span class="fl">2</span>] <span class="op">-</span> <span class="fl">0.5</span>)<span class="op">^</span><span class="fl">2</span>) <span class="op">/</span> <span class="fl">0.01</span>))</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>bump <span class="op">=</span> <span class="fu">set!</span>(x <span class="op">-&gt;</span> <span class="fu">exp</span>(<span class="fu">-</span>((x[<span class="fl">1</span>] <span class="op">-</span> <span class="fl">0.5</span>)<span class="op">^</span><span class="fl">2</span> <span class="op">+</span> (x[<span class="fl">2</span>] <span class="op">-</span> <span class="fl">0.5</span>)<span class="op">^</span><span class="fl">2</span>) <span class="op">/</span> <span class="fl">0.01</span>), <span class="fu">scalar_field</span>(forest))</span>
 <span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>bump <span class="op">=</span> <span class="fu">regrid!</span>(bump; refine <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(abs, <span class="fu">interior</span>(b)) <span class="op">&gt;</span> <span class="fl">0.5</span>)</span>
 <span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="fu">length</span>(<span class="fu">collect</span>(<span class="fu">leaves</span>(forest)))                  <span class="co"># resolution now follows the bump</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-display" data-execution_count="1">
 <pre><code>16</code></pre>
 </div>
 </div>
-<p>The transfer is interior-only and keyed by leaf identity: an unchanged leaf is copied, a refined leaf is filled by per-dimension linear interpolation from its old parent (one-sided at parent-block edges), and a coarsened leaf by the conservative <code>2⁻ᴺ</code> mean of its old children. Ghosts of the returned fields are scratch, refilled by <code>halo_update!</code>/<code>apply_bc!</code> on the next operator application.</p>
+<p>The transfer is interior-only and keyed by leaf identity: an unchanged leaf is copied, a refined leaf is filled by the field’s transfer policy from its old parent, and a coarsened leaf by the conservative <code>2⁻ᴺ</code> mean of its old children. The policy is per field and explicit: the default <code>Interpolated</code> is linear-exact interpolation (right for indicators and coefficients, not mean-preserving), while <code>Conservative</code> and <code>SlopeLimited</code> use a cell-conservative reconstruction that preserves <code>Σ V·u</code> to roundoff across every regrid — mark conserved state with the <code>transfer</code> keyword of <code>scalar_field</code>/<code>vector_field</code> or wrap an existing field with <code>with_transfer(u, Conservative())</code>. Ghosts of the returned fields are scratch, refilled by <code>halo_update!</code>/<code>apply_bc!</code> on the next operator application.</p>
 <p>Because a real regrid invalidates every field allocated on the old leaf set (the generation guards throw on stale use), any field needed afterwards must ride the same call — compute indicator fields <em>before</em> regridding and pass them first:</p>
 <div class="code-copy-outer-scaffold"><div class="sourceCode" id="cb14"><pre class="sourceCode julia code-with-copy"><code class="sourceCode julia"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a>η <span class="op">=</span> <span class="fu">magnitude_of</span>(<span class="fu">gradient</span>(forest) <span class="op">*</span> u)           <span class="co"># indicator, pre-regrid</span></span>
 <span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>η, u <span class="op">=</span> <span class="fu">regrid!</span>(η, u; refine  <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&gt;</span> τ,</span>
@@ -427,6 +447,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>    η, u <span class="op">=</span> <span class="fu">regrid!</span>(η, u; refine <span class="op">=</span> b <span class="op">-&gt;</span> <span class="fu">maximum</span>(<span class="fu">interior</span>(b)) <span class="op">&gt;</span> τ)</span>
 <span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="cf">end</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <p>Two rules keep it honest: the indicator is computed <strong>before</strong> the regrid (its field rides the transfer), and everything tied to the old leaf set — fields, <code>PreparedForest</code>s — is rebuilt after; using stale state throws rather than silently reading wrong-shaped storage.</p>
+<p>For the same loop driving a time-dependent 3D problem, with the adaptive answer checked against an equal-resolution uniform run and an independent code, see the <a href="../pages/benchmark.html">Niederer Benchmark</a>.</p>
 </section>
 <section id="status" class="level2">
 <h2 class="anchored" data-anchor-id="status">Status</h2>
@@ -846,13 +867,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../index.html" class="pagination-link" aria-label="MatrixFreeOperators.jl">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">MatrixFreeOperators.jl</span></span>
+      <a href="../pages/autodiff.html" class="pagination-link" aria-label="Automatic Differentiation">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Automatic Differentiation</span></span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../pages/multigrid.html" class="pagination-link" aria-label="Geometric Multigrid">
-        <span class="nav-page-text"><span class="chapter-title">Geometric Multigrid</span></span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../pages/benchmark.html" class="pagination-link" aria-label="Niederer Benchmark">
+        <span class="nav-page-text"><span class="chapter-title">Niederer Benchmark</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
@@ -863,7 +884,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       &nbsp;
     </div>   
     <div class="nav-footer-center">
-<p>Built on 2026-07-28</p>
+<p>Built on 2026-09-22</p>
 </div>
     <div class="nav-footer-right">
       &nbsp;

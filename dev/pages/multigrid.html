@@ -71,8 +71,8 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <script src="../site_libs/quarto-search/fuse.min.js"></script>
 <script src="../site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="../">
-<link href="../pages/api.html" rel="next">
-<link href="../pages/amr.html" rel="prev">
+<link href="../pages/distributed.html" rel="next">
+<link href="../pages/benchmark.html" rel="prev">
 <script src="../site_libs/quarto-html/quarto.js" type="module"></script>
 <script src="../site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
 <script src="../site_libs/quarto-html/popper.min.js"></script>
@@ -82,7 +82,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 <link href="../site_libs/quarto-html/quarto-syntax-highlighting-095245003bb80bd2beb305de39928752.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="../site_libs/bootstrap/bootstrap.min.js"></script>
 <link href="../site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="../site_libs/bootstrap/bootstrap-3901d0d75e475d87cb004cd3e7ef4c9e.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="../site_libs/bootstrap/bootstrap-02a8592a4cf3893cf56a8581db556df5.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 <script id="quarto-search-options" type="application/json">{
   "location": "sidebar",
   "copy-button": false,
@@ -189,12 +189,32 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../pages/autodiff.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Automatic Differentiation</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../pages/amr.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Adaptive Mesh Refinement</span></a>
   </div>
 </li>
           <li class="sidebar-item">
   <div class="sidebar-item-container"> 
+  <a href="../pages/benchmark.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Niederer Benchmark</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
   <a href="../pages/multigrid.html" class="sidebar-item-text sidebar-link active"><span class="chapter-title">Geometric Multigrid</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/distributed.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Distributed Multi-GPU Solves</span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="../pages/internals.html" class="sidebar-item-text sidebar-link"><span class="chapter-title">Internals</span></a>
   </div>
 </li>
       </ul>
@@ -304,7 +324,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
 </section>
 <section id="coarse-operators-are-rediscretizations" class="level2">
 <h2 class="anchored" data-anchor-id="coarse-operators-are-rediscretizations">Coarse operators are rediscretizations</h2>
-<p>Each level’s operator is the same expression rebuilt on the coarser grid — <code>laplacian(coarsen(g))</code>, not a matrix product. A tree walk rediscretizes any supported operator expression (<code>Laplacian</code>, <code>Derivative</code>, <code>Gradient</code>, <code>Divergence</code>, <code>ScalingOp</code>, <code>IdentityOp</code>, and their <code>+</code>/<code>*</code>/scalar combinations); a <code>ScalingOp</code>’s coefficient field is child-averaged onto the coarse grid. The same boundary-condition objects apply verbatim — coarse levels solve the homogeneous correction equation, which is exactly what <code>apply_bc!</code> enforces.</p>
+<p>Each level’s operator is the same expression rebuilt on the coarser grid — <code>laplacian(coarsen(g))</code>, not a matrix product. A tree walk rediscretizes any supported operator expression (<code>Laplacian</code>, <code>Derivative</code>, <code>Gradient</code>, <code>Divergence</code>, <code>ScalingOp</code>, <code>Diffusion</code>, <code>IdentityOp</code>, and their <code>+</code>/<code>*</code>/scalar combinations); a <code>ScalingOp</code>’s or <code>Diffusion</code>’s coefficient field is child-averaged onto the coarse grid. Note that variable-coefficient diffusion is smoothable only in the <code>diffusion(g, κ)</code> spelling: <code>operator_diagonal</code> of a composition requires <em>both</em> factors to be diagonal, so <code>divergence(g) * scaling(κ) * gradient(g)</code> has no extractable diagonal and no Jacobi or Chebyshev smoother. The same boundary-condition objects apply verbatim — coarse levels solve the homogeneous correction equation, which is exactly what <code>apply_bc!</code> enforces.</p>
 <p>An honest note: for cell-centered transfers the Galerkin product <code>R·A·P</code> is a <em>different</em> consistent coarse operator than the rediscretization — even in the periodic interior their stencils differ, while both are second-order approximations of the same PDE. The test suite checks exactly that (shared nullspace, symmetry, O(h²) agreement of actions) rather than pretending they are equal. The coarsest level is solved exactly with a dense LU factored once at construction, which keeps the whole cycle a fixed linear operator.</p>
 </section>
 <section id="usage" class="level2">
@@ -731,13 +751,13 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
   </script>
 <nav class="page-navigation">
   <div class="nav-page nav-page-previous">
-      <a href="../pages/amr.html" class="pagination-link" aria-label="Adaptive Mesh Refinement">
-        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Adaptive Mesh Refinement</span></span>
+      <a href="../pages/benchmark.html" class="pagination-link" aria-label="Niederer Benchmark">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-title">Niederer Benchmark</span></span>
       </a>          
   </div>
   <div class="nav-page nav-page-next">
-      <a href="../pages/api.html" class="pagination-link" aria-label="API">
-        <span class="nav-page-text"><span class="chapter-title">API</span></span> <i class="bi bi-arrow-right-short"></i>
+      <a href="../pages/distributed.html" class="pagination-link" aria-label="Distributed Multi-GPU Solves">
+        <span class="nav-page-text"><span class="chapter-title">Distributed Multi-GPU Solves</span></span> <i class="bi bi-arrow-right-short"></i>
       </a>
   </div>
 </nav>
@@ -748,7 +768,7 @@ pre > code.sourceCode > span > a:first-child::before { text-decoration: underlin
       &nbsp;
     </div>   
     <div class="nav-footer-center">
-<p>Built on 2026-07-28</p>
+<p>Built on 2026-09-22</p>
 </div>
     <div class="nav-footer-right">
       &nbsp;

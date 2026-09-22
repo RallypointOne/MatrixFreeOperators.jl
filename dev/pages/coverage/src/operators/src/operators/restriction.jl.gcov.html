@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 22:14:58</td>
+            <td class="headerValue">2026-09-22 14:19:45</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -73,7 +73,7 @@
 <span id="L11"><span class="lineNum">      11</span>              : boundary lift is identically zero. Construct with [`restriction`](@ref).</span>
 <span id="L12"><span class="lineNum">      12</span>              : &quot;&quot;&quot;</span>
 <span id="L13"><span class="lineNum">      13</span>              : struct Restriction{GF&lt;:CartesianGrid,GC&lt;:CartesianGrid} &lt;: AbstractOperator</span>
-<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC tlaBgGNC">          63 :     fine::GF</span></span>
+<span id="L14"><span class="lineNum">      14</span> <span class="tlaGNC tlaBgGNC">          65 :     fine::GF</span></span>
 <span id="L15"><span class="lineNum">      15</span>              :     coarse::GC</span>
 <span id="L16"><span class="lineNum">      16</span>              : end</span>
 <span id="L17"><span class="lineNum">      17</span>              : </span>
@@ -94,8 +94,8 @@
 <span id="L32"><span class="lineNum">      32</span>              : See also: [`prolongation`](@ref), [`coarsen`](@ref).</span>
 <span id="L33"><span class="lineNum">      33</span>              : &quot;&quot;&quot;</span>
 <span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">          17 : function restriction(fine::CartesianGrid{N}, coarse::CartesianGrid{N}) where {N}</span></span>
-<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">          58 :     _validate_transfer(fine, coarse)</span></span>
-<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">          55 :     return Restriction(fine, coarse)</span></span>
+<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">          60 :     _validate_transfer(fine, coarse)</span></span>
+<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">          57 :     return Restriction(fine, coarse)</span></span>
 <span id="L37"><span class="lineNum">      37</span>              : end</span>
 <span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC">           6 : restriction(fine::CartesianGrid) = restriction(fine, coarsen(fine))</span></span>
 <span id="L39"><span class="lineNum">      39</span>              : </span>
@@ -110,42 +110,43 @@
 <span id="L48"><span class="lineNum">      48</span> <span class="tlaGNC">          56 : allocate_output(L::Restriction, x::AbstractField) = _field_like(x, L.coarse)</span></span>
 <span id="L49"><span class="lineNum">      49</span> <span class="tlaUNC tlaBgUNC">           0 : allocate_input(L::Restriction, y::AbstractField) = _field_like(y, L.fine)</span></span>
 <span id="L50"><span class="lineNum">      50</span>              : </span>
-<span id="L51"><span class="lineNum">      51</span> <span class="tlaGNC tlaBgGNC">        1996 : _restrict_scale(L::Restriction) = eltype(spacing(L.fine))(2)^(-dimension(L.fine))</span></span>
+<span id="L51"><span class="lineNum">      51</span> <span class="tlaGNC tlaBgGNC">        1998 : _restrict_scale(L::Restriction) = eltype(spacing(L.fine))(2)^(-dimension(L.fine))</span></span>
 <span id="L52"><span class="lineNum">      52</span>              : </span>
 <span id="L53"><span class="lineNum">      53</span>              : # The forward action IS the scaled Pᵀ gather (adjoint_gather! zeroes input</span>
 <span id="L54"><span class="lineNum">      54</span>              : # ghosts and folds the coarse output through its BCs), so ⟨R·x, y⟩ = ⟨x, Rᵀ·y⟩</span>
-<span id="L55"><span class="lineNum">      55</span>              : # holds exactly. The β ≠ 0 path allocates inside adjoint_gather!; the multigrid</span>
-<span id="L56"><span class="lineNum">      56</span>              : # cycle only calls β = 0.</span>
-<span id="L57"><span class="lineNum">      57</span>              : function apply!(y::Field, L::Restriction, x::Field, g::AbstractGrid, α, β)</span>
-<span id="L58"><span class="lineNum">      58</span> <span class="tlaGNC">        1988 :     gather = let hf = halo_width(L.fine),</span></span>
-<span id="L59"><span class="lineNum">      59</span>              :         hc = halo_width(L.coarse),</span>
-<span id="L60"><span class="lineNum">      60</span>              :         w4 = _gather_weights(eltype(spacing(L.fine)))</span>
-<span id="L61"><span class="lineNum">      61</span>              : </span>
-<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">      398068 :         (u, J) -&gt; _transfer_gather(u, J, hf, hc, w4)</span></span>
-<span id="L63"><span class="lineNum">      63</span>              :     end</span>
-<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">        1988 :     return adjoint_gather!(y, x, gather, α * _restrict_scale(L), β)</span></span>
-<span id="L65"><span class="lineNum">      65</span>              : end</span>
-<span id="L66"><span class="lineNum">      66</span>              : </span>
-<span id="L67"><span class="lineNum">      67</span> <span class="tlaUNC tlaBgUNC">           0 : function apply_adjoint!(x̄::Field, L::Restriction, ȳ::Field, g::AbstractGrid, α, β)</span></span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaUNC">           0 :     P = Prolongation(L.coarse, L.fine)</span></span>
-<span id="L69"><span class="lineNum">      69</span> <span class="tlaUNC">           0 :     halo_update!(ȳ, L.coarse)</span></span>
-<span id="L70"><span class="lineNum">      70</span> <span class="tlaUNC">           0 :     apply_bc!(ȳ)</span></span>
-<span id="L71"><span class="lineNum">      71</span> <span class="tlaUNC">           0 :     return _apply_raw!(x̄, P, ȳ, g, α * _restrict_scale(L), β)</span></span>
-<span id="L72"><span class="lineNum">      72</span>              : end</span>
-<span id="L73"><span class="lineNum">      73</span>              : </span>
-<span id="L74"><span class="lineNum">      74</span>              : function adjoint_operator(L::Restriction)</span>
-<span id="L75"><span class="lineNum">      75</span> <span class="tlaGNC tlaBgGNC">           8 :     return Scaled(Prolongation(L.coarse, L.fine), _restrict_scale(L))</span></span>
-<span id="L76"><span class="lineNum">      76</span>              : end</span>
-<span id="L77"><span class="lineNum">      77</span>              : </span>
-<span id="L78"><span class="lineNum">      78</span>              : # Reads no meaningful ghost data (the gather engine zeroes input ghosts), so</span>
-<span id="L79"><span class="lineNum">      79</span>              : # the raw sweep is the ordinary action — and boundary_rhs(R, ·) is exactly zero.</span>
-<span id="L80"><span class="lineNum">      80</span>              : function _apply_raw!(y::Field, L::Restriction, x::Field, g::AbstractGrid, α, β)</span>
-<span id="L81"><span class="lineNum">      81</span> <span class="tlaGNC">           1 :     return apply!(y, L, x, g, α, β)</span></span>
-<span id="L82"><span class="lineNum">      82</span>              : end</span>
-<span id="L83"><span class="lineNum">      83</span>              : </span>
-<span id="L84"><span class="lineNum">      84</span> <span class="tlaUNC tlaBgUNC">           0 : function Adapt.adapt_structure(to, L::Restriction)</span></span>
-<span id="L85"><span class="lineNum">      85</span> <span class="tlaUNC">           0 :     return Restriction(Adapt.adapt(to, L.fine), Adapt.adapt(to, L.coarse))</span></span>
-<span id="L86"><span class="lineNum">      86</span>              : end</span>
+<span id="L55"><span class="lineNum">      55</span>              : # holds exactly — which also means the forward path inherits the gather's ghost</span>
+<span id="L56"><span class="lineNum">      56</span>              : # contract: β ≠ 0 accumulates the whole padded coarse field, physical-BC ghosts</span>
+<span id="L57"><span class="lineNum">      57</span>              : # included, and leaves them folded away.</span>
+<span id="L58"><span class="lineNum">      58</span>              : function apply!(y::Field, L::Restriction, x::Field, g::AbstractGrid, α, β)</span>
+<span id="L59"><span class="lineNum">      59</span> <span class="tlaGNC">        1990 :     gather = let hf = halo_width(L.fine),</span></span>
+<span id="L60"><span class="lineNum">      60</span>              :         hc = halo_width(L.coarse),</span>
+<span id="L61"><span class="lineNum">      61</span>              :         w4 = _gather_weights(eltype(spacing(L.fine)))</span>
+<span id="L62"><span class="lineNum">      62</span>              : </span>
+<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">      398190 :         (u, J) -&gt; _transfer_gather(u, J, hf, hc, w4)</span></span>
+<span id="L64"><span class="lineNum">      64</span>              :     end</span>
+<span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">        1990 :     return adjoint_gather!(y, x, gather, α * _restrict_scale(L), β)</span></span>
+<span id="L66"><span class="lineNum">      66</span>              : end</span>
+<span id="L67"><span class="lineNum">      67</span>              : </span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaUNC tlaBgUNC">           0 : function apply_adjoint!(x̄::Field, L::Restriction, ȳ::Field, g::AbstractGrid, α, β)</span></span>
+<span id="L69"><span class="lineNum">      69</span> <span class="tlaUNC">           0 :     P = Prolongation(L.coarse, L.fine)</span></span>
+<span id="L70"><span class="lineNum">      70</span> <span class="tlaUNC">           0 :     halo_update!(ȳ, L.coarse)</span></span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaUNC">           0 :     apply_bc!(ȳ)</span></span>
+<span id="L72"><span class="lineNum">      72</span> <span class="tlaUNC">           0 :     return _apply_raw!(x̄, P, ȳ, g, α * _restrict_scale(L), β)</span></span>
+<span id="L73"><span class="lineNum">      73</span>              : end</span>
+<span id="L74"><span class="lineNum">      74</span>              : </span>
+<span id="L75"><span class="lineNum">      75</span>              : function adjoint_operator(L::Restriction)</span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC tlaBgGNC">           8 :     return Scaled(Prolongation(L.coarse, L.fine), _restrict_scale(L))</span></span>
+<span id="L77"><span class="lineNum">      77</span>              : end</span>
+<span id="L78"><span class="lineNum">      78</span>              : </span>
+<span id="L79"><span class="lineNum">      79</span>              : # Reads no meaningful ghost data (the gather engine zeroes input ghosts), so</span>
+<span id="L80"><span class="lineNum">      80</span>              : # the raw sweep is the ordinary action — and boundary_rhs(R, ·) is exactly zero.</span>
+<span id="L81"><span class="lineNum">      81</span>              : function _apply_raw!(y::Field, L::Restriction, x::Field, g::AbstractGrid, α, β)</span>
+<span id="L82"><span class="lineNum">      82</span> <span class="tlaGNC">           1 :     return apply!(y, L, x, g, α, β)</span></span>
+<span id="L83"><span class="lineNum">      83</span>              : end</span>
+<span id="L84"><span class="lineNum">      84</span>              : </span>
+<span id="L85"><span class="lineNum">      85</span> <span class="tlaUNC tlaBgUNC">           0 : function Adapt.adapt_structure(to, L::Restriction)</span></span>
+<span id="L86"><span class="lineNum">      86</span> <span class="tlaUNC">           0 :     return Restriction(Adapt.adapt(to, L.fine), Adapt.adapt(to, L.coarse))</span></span>
+<span id="L87"><span class="lineNum">      87</span>              : end</span>
         </pre>
               </td>
             </tr>

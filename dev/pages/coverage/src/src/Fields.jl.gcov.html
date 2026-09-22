@@ -31,13 +31,13 @@
             <td class="headerValue">on branch main</td>
             <td></td>
             <td class="headerItem">Lines:</td>
-            <td class="headerCovTableEntryHi">98.2&nbsp;%</td>
-            <td class="headerCovTableEntry">55</td>
-            <td class="headerCovTableEntry">54</td>
+            <td class="headerCovTableEntryLo">71.3&nbsp;%</td>
+            <td class="headerCovTableEntry">87</td>
+            <td class="headerCovTableEntry">62</td>
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-07-28 22:14:58</td>
+            <td class="headerValue">2026-09-22 14:19:45</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -70,226 +70,419 @@
 <span id="L8"><span class="lineNum">       8</span>              : &quot;&quot;&quot;</span>
 <span id="L9"><span class="lineNum">       9</span>              : struct Center end</span>
 <span id="L10"><span class="lineNum">      10</span>              : </span>
-<span id="L11"><span class="lineNum">      11</span>              : &quot;&quot;&quot;</span>
-<span id="L12"><span class="lineNum">      12</span>              :     AbstractField</span>
-<span id="L13"><span class="lineNum">      13</span>              : </span>
-<span id="L14"><span class="lineNum">      14</span>              : Supertype for fields the operator algebra and solver boundary act on. [`Field`](@ref)</span>
-<span id="L15"><span class="lineNum">      15</span>              : is the single-grid case; [`BlockField`](@ref) is the block-structured (forest) case.</span>
-<span id="L16"><span class="lineNum">      16</span>              : The shared contract is `similar`/`zero_ghosts!` and the flat-vector boundary</span>
-<span id="L17"><span class="lineNum">      17</span>              : (`flatten`/`flat_to_interior!`/`interior_to_flat!`/`flat_length`); operators are</span>
-<span id="L18"><span class="lineNum">      18</span>              : otherwise written against single-grid `Field`s and reused per block.</span>
-<span id="L19"><span class="lineNum">      19</span>              : &quot;&quot;&quot;</span>
-<span id="L20"><span class="lineNum">      20</span>              : abstract type AbstractField end</span>
-<span id="L21"><span class="lineNum">      21</span>              : </span>
-<span id="L22"><span class="lineNum">      22</span>              : &quot;&quot;&quot;</span>
-<span id="L23"><span class="lineNum">      23</span>              :     Field(data, grid)</span>
-<span id="L24"><span class="lineNum">      24</span>              :     Field{L}(data, grid)</span>
+<span id="L11"><span class="lineNum">      11</span>              : #--------------------------------------------------------------------------------# Regrid-transfer policies</span>
+<span id="L12"><span class="lineNum">      12</span>              : </span>
+<span id="L13"><span class="lineNum">      13</span>              : &quot;&quot;&quot;</span>
+<span id="L14"><span class="lineNum">      14</span>              :     Interpolated()</span>
+<span id="L15"><span class="lineNum">      15</span>              : </span>
+<span id="L16"><span class="lineNum">      16</span>              : Regrid-transfer policy trait (the default): refined leaves are filled by the</span>
+<span id="L17"><span class="lineNum">      17</span>              : linear-exact per-dimension interpolation of the old parent. Second-order and</span>
+<span id="L18"><span class="lineNum">      18</span>              : exact on linears, but **not** mean-preserving — the two children of an interior</span>
+<span id="L19"><span class="lineNum">      19</span>              : parent cell use side-biased slopes, leaving the child mean off by `⅛·δ²u` per</span>
+<span id="L20"><span class="lineNum">      20</span>              : dimension. The right transfer for smooth, non-conserved fields (geometric</span>
+<span id="L21"><span class="lineNum">      21</span>              : indicators, coefficients). Attach a policy at construction</span>
+<span id="L22"><span class="lineNum">      22</span>              : ([`scalar_field`](@ref)/[`vector_field`](@ref)'s `transfer` keyword) or with</span>
+<span id="L23"><span class="lineNum">      23</span>              : [`with_transfer`](@ref); [`regrid!`](@ref) resolves it per field at transfer</span>
+<span id="L24"><span class="lineNum">      24</span>              : time, so nothing on an operator hot path ever consults it.</span>
 <span id="L25"><span class="lineNum">      25</span>              : </span>
-<span id="L26"><span class="lineNum">      26</span>              : Halo-padded field on `grid` with location trait `L` (default [`Center`](@ref)).</span>
-<span id="L27"><span class="lineNum">      27</span>              : `data` must have size [`padded_size`](@ref)`(grid)`. The element type carries the</span>
-<span id="L28"><span class="lineNum">      28</span>              : tensor rank: a scalar field stores numbers, a vector field stores `SVector`s — see</span>
-<span id="L29"><span class="lineNum">      29</span>              : [`scalar_field`](@ref) and [`vector_field`](@ref).</span>
-<span id="L30"><span class="lineNum">      30</span>              : </span>
-<span id="L31"><span class="lineNum">      31</span>              : ### Examples</span>
+<span id="L26"><span class="lineNum">      26</span>              : See also: [`Conservative`](@ref), [`SlopeLimited`](@ref).</span>
+<span id="L27"><span class="lineNum">      27</span>              : &quot;&quot;&quot;</span>
+<span id="L28"><span class="lineNum">      28</span> <span class="tlaGNC tlaBgGNC">        4924 : struct Interpolated end</span></span>
+<span id="L29"><span class="lineNum">      29</span>              : </span>
+<span id="L30"><span class="lineNum">      30</span>              : &quot;&quot;&quot;</span>
+<span id="L31"><span class="lineNum">      31</span>              :     Conservative()</span>
 <span id="L32"><span class="lineNum">      32</span>              : </span>
-<span id="L33"><span class="lineNum">      33</span>              : ```julia</span>
-<span id="L34"><span class="lineNum">      34</span>              : g = CartesianGrid(((0.0, 1.0),), (64,))</span>
-<span id="L35"><span class="lineNum">      35</span>              : u = Field(zeros(padded_size(g)), g)</span>
-<span id="L36"><span class="lineNum">      36</span>              : ```</span>
-<span id="L37"><span class="lineNum">      37</span>              : &quot;&quot;&quot;</span>
-<span id="L38"><span class="lineNum">      38</span>              : struct Field{L,A&lt;:AbstractArray,G&lt;:AbstractGrid} &lt;: AbstractField</span>
-<span id="L39"><span class="lineNum">      39</span>              :     data::A</span>
-<span id="L40"><span class="lineNum">      40</span>              :     grid::G</span>
-<span id="L41"><span class="lineNum">      41</span>              : </span>
-<span id="L42"><span class="lineNum">      42</span> <span class="tlaGNC tlaBgGNC">          11 :     function Field{L}(data::A, grid::G) where {L,A&lt;:AbstractArray,G&lt;:AbstractGrid}</span></span>
-<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">      778113 :         if size(data) != padded_size(grid)</span></span>
-<span id="L44"><span class="lineNum">      44</span> <span class="tlaGNC">          23 :             throw(</span></span>
-<span id="L45"><span class="lineNum">      45</span>              :                 DimensionMismatch(</span>
-<span id="L46"><span class="lineNum">      46</span>              :                     &quot;field data size $(size(data)) must equal padded grid size $(padded_size(grid))&quot;,</span>
-<span id="L47"><span class="lineNum">      47</span>              :                 ),</span>
-<span id="L48"><span class="lineNum">      48</span>              :             )</span>
-<span id="L49"><span class="lineNum">      49</span>              :         end</span>
-<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">      389172 :         return new{L,A,G}(data, grid)</span></span>
-<span id="L51"><span class="lineNum">      51</span>              :     end</span>
-<span id="L52"><span class="lineNum">      52</span>              : end</span>
-<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">        4405 : Field(data::AbstractArray, grid::AbstractGrid) = Field{Center}(data, grid)</span></span>
-<span id="L54"><span class="lineNum">      54</span>              : </span>
-<span id="L55"><span class="lineNum">      55</span>              : &quot;&quot;&quot;</span>
-<span id="L56"><span class="lineNum">      56</span>              :     scalar_field(g::AbstractGrid, T=eltype(spacing(g))) -&gt; Field</span>
-<span id="L57"><span class="lineNum">      57</span>              : </span>
-<span id="L58"><span class="lineNum">      58</span>              : Allocate a zeroed cell-centered scalar field on the grid's device.</span>
-<span id="L59"><span class="lineNum">      59</span>              : </span>
-<span id="L60"><span class="lineNum">      60</span>              : ### Examples</span>
-<span id="L61"><span class="lineNum">      61</span>              : </span>
-<span id="L62"><span class="lineNum">      62</span>              : ```julia</span>
-<span id="L63"><span class="lineNum">      63</span>              : g = CartesianGrid(((0.0, 1.0),), (64,))</span>
-<span id="L64"><span class="lineNum">      64</span>              : u = scalar_field(g)</span>
-<span id="L65"><span class="lineNum">      65</span>              : v = scalar_field(g, Float32)</span>
-<span id="L66"><span class="lineNum">      66</span>              : ```</span>
-<span id="L67"><span class="lineNum">      67</span>              : </span>
-<span id="L68"><span class="lineNum">      68</span>              : See also: [`vector_field`](@ref), [`set!`](@ref).</span>
-<span id="L69"><span class="lineNum">      69</span>              : &quot;&quot;&quot;</span>
-<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">         855 : function scalar_field(g::AbstractGrid, ::Type{T}=eltype(spacing(g))) where {T&lt;:Number}</span></span>
-<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">        2836 :     data = KernelAbstractions.zeros(KernelAbstractions.get_backend(g), T, padded_size(g)...)</span></span>
-<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">        2411 :     return Field(data, g)</span></span>
-<span id="L73"><span class="lineNum">      73</span>              : end</span>
-<span id="L74"><span class="lineNum">      74</span>              : </span>
+<span id="L33"><span class="lineNum">      33</span>              : Mean-preserving regrid-transfer policy: refined leaves are filled by the</span>
+<span id="L34"><span class="lineNum">      34</span>              : cell-conservative linear reconstruction `u_child = u_parent + Σ_d ξ_d·σ_d`</span>
+<span id="L35"><span class="lineNum">      35</span>              : (`ξ_d = ∓¼`), one shared slope per parent cell per dimension — centered in the</span>
+<span id="L36"><span class="lineNum">      36</span>              : block interior, one-sided difference at parent-block edges. The volume-weighted</span>
+<span id="L37"><span class="lineNum">      37</span>              : mean of the `2ᴺ` children equals the parent exactly for *any* slope, including</span>
+<span id="L38"><span class="lineNum">      38</span>              : at block and physical boundaries, so `Σ V·u` is preserved to roundoff across</span>
+<span id="L39"><span class="lineNum">      39</span>              : [`regrid!`](@ref) (coarsening already is: the `2⁻ᴺ` child mean). Exact on</span>
+<span id="L40"><span class="lineNum">      40</span>              : linears and second-order like [`Interpolated`](@ref). The policy for conserved</span>
+<span id="L41"><span class="lineNum">      41</span>              : state on smooth solutions.</span>
+<span id="L42"><span class="lineNum">      42</span>              : </span>
+<span id="L43"><span class="lineNum">      43</span>              : See also: [`SlopeLimited`](@ref), [`with_transfer`](@ref).</span>
+<span id="L44"><span class="lineNum">      44</span>              : &quot;&quot;&quot;</span>
+<span id="L45"><span class="lineNum">      45</span> <span class="tlaGNC">          59 : struct Conservative end</span></span>
+<span id="L46"><span class="lineNum">      46</span>              : </span>
+<span id="L47"><span class="lineNum">      47</span>              : &quot;&quot;&quot;</span>
+<span id="L48"><span class="lineNum">      48</span>              :     SlopeLimited()</span>
+<span id="L49"><span class="lineNum">      49</span>              : </span>
+<span id="L50"><span class="lineNum">      50</span>              : Mean-preserving *and* bounds-preserving regrid-transfer policy: the same</span>
+<span id="L51"><span class="lineNum">      51</span>              : cell-conservative reconstruction as [`Conservative`](@ref) with the per-dim</span>
+<span id="L52"><span class="lineNum">      52</span>              : slope minmod-limited, and dropped to zero at parent-block edges (the transfer</span>
+<span id="L53"><span class="lineNum">      53</span>              : is interior-only, so no second slope exists there to limit against). Children</span>
+<span id="L54"><span class="lineNum">      54</span>              : never leave the hull of the parent's neighborhood — no new extrema across a</span>
+<span id="L55"><span class="lineNum">      55</span>              : regrid — at the price of first-order transfer at extrema and block edges. Note</span>
+<span id="L56"><span class="lineNum">      56</span>              : the edge cost scales with the block: every parent cell on a block face is</span>
+<span id="L57"><span class="lineNum">      57</span>              : injected, so a `4×4` block reconstructs only its inner `2×2` and larger blocks</span>
+<span id="L58"><span class="lineNum">      58</span>              : shrink that fraction. The policy for conserved state with steep fronts or</span>
+<span id="L59"><span class="lineNum">      59</span>              : discontinuities.</span>
+<span id="L60"><span class="lineNum">      60</span>              : </span>
+<span id="L61"><span class="lineNum">      61</span>              : See also: [`Conservative`](@ref), [`with_transfer`](@ref).</span>
+<span id="L62"><span class="lineNum">      62</span>              : &quot;&quot;&quot;</span>
+<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">          56 : struct SlopeLimited end</span></span>
+<span id="L64"><span class="lineNum">      64</span>              : </span>
+<span id="L65"><span class="lineNum">      65</span>              : const RegridTransferPolicy = Union{Interpolated,Conservative,SlopeLimited}</span>
+<span id="L66"><span class="lineNum">      66</span>              : </span>
+<span id="L67"><span class="lineNum">      67</span>              : &quot;&quot;&quot;</span>
+<span id="L68"><span class="lineNum">      68</span>              :     AbstractField</span>
+<span id="L69"><span class="lineNum">      69</span>              : </span>
+<span id="L70"><span class="lineNum">      70</span>              : Supertype for fields the operator algebra and solver boundary act on. [`Field`](@ref)</span>
+<span id="L71"><span class="lineNum">      71</span>              : is the single-grid case; [`BlockField`](@ref) is the block-structured (forest) case.</span>
+<span id="L72"><span class="lineNum">      72</span>              : The shared contract is `similar`/`zero_ghosts!` and the flat-vector boundary</span>
+<span id="L73"><span class="lineNum">      73</span>              : (`flatten`/`flat_to_interior!`/`interior_to_flat!`/`flat_length`); operators are</span>
+<span id="L74"><span class="lineNum">      74</span>              : otherwise written against single-grid `Field`s and reused per block.</span>
 <span id="L75"><span class="lineNum">      75</span>              : &quot;&quot;&quot;</span>
-<span id="L76"><span class="lineNum">      76</span>              :     vector_field(g::AbstractGrid{N}, T=eltype(spacing(g))) -&gt; Field</span>
+<span id="L76"><span class="lineNum">      76</span>              : abstract type AbstractField end</span>
 <span id="L77"><span class="lineNum">      77</span>              : </span>
-<span id="L78"><span class="lineNum">      78</span>              : Allocate a zeroed cell-centered vector field with element type `SVector{N,T}`.</span>
-<span id="L79"><span class="lineNum">      79</span>              : Operators written generically over the element type act componentwise on it.</span>
-<span id="L80"><span class="lineNum">      80</span>              : </span>
-<span id="L81"><span class="lineNum">      81</span>              : ### Examples</span>
-<span id="L82"><span class="lineNum">      82</span>              : </span>
-<span id="L83"><span class="lineNum">      83</span>              : ```julia</span>
-<span id="L84"><span class="lineNum">      84</span>              : g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (32, 32))</span>
-<span id="L85"><span class="lineNum">      85</span>              : v = vector_field(g)        # eltype SVector{2,Float64}</span>
-<span id="L86"><span class="lineNum">      86</span>              : ```</span>
-<span id="L87"><span class="lineNum">      87</span>              : </span>
-<span id="L88"><span class="lineNum">      88</span>              : See also: [`scalar_field`](@ref), [`component`](@ref).</span>
-<span id="L89"><span class="lineNum">      89</span>              : &quot;&quot;&quot;</span>
-<span id="L90"><span class="lineNum">      90</span> <span class="tlaGNC">          45 : function vector_field(g::AbstractGrid{N}, ::Type{T}=eltype(spacing(g))) where {N,T&lt;:Number}</span></span>
-<span id="L91"><span class="lineNum">      91</span> <span class="tlaGNC">          96 :     data = KernelAbstractions.zeros(</span></span>
-<span id="L92"><span class="lineNum">      92</span>              :         KernelAbstractions.get_backend(g), SVector{N,T}, padded_size(g)...</span>
-<span id="L93"><span class="lineNum">      93</span>              :     )</span>
-<span id="L94"><span class="lineNum">      94</span> <span class="tlaGNC">          49 :     return Field(data, g)</span></span>
-<span id="L95"><span class="lineNum">      95</span>              : end</span>
-<span id="L96"><span class="lineNum">      96</span>              : </span>
-<span id="L97"><span class="lineNum">      97</span>              : #--------------------------------------------------------------------------------# Field interface</span>
-<span id="L98"><span class="lineNum">      98</span>              : </span>
-<span id="L99"><span class="lineNum">      99</span>              : &quot;&quot;&quot;</span>
-<span id="L100"><span class="lineNum">     100</span>              :     interior(f::Field) -&gt; SubArray</span>
-<span id="L101"><span class="lineNum">     101</span>              : </span>
-<span id="L102"><span class="lineNum">     102</span>              : View of the interior (owned, non-halo) cells of the field.</span>
-<span id="L103"><span class="lineNum">     103</span>              : &quot;&quot;&quot;</span>
-<span id="L104"><span class="lineNum">     104</span> <span class="tlaGNC">      313279 : interior(f::Field) = view(f.data, interior(f.grid))</span></span>
-<span id="L105"><span class="lineNum">     105</span>              : </span>
-<span id="L106"><span class="lineNum">     106</span>              : &quot;&quot;&quot;</span>
-<span id="L107"><span class="lineNum">     107</span>              :     set!(f::Field, fun) -&gt; f</span>
-<span id="L108"><span class="lineNum">     108</span>              : </span>
-<span id="L109"><span class="lineNum">     109</span>              : Set the interior of `f` to `fun(x)` evaluated at cell centers, where `x` is the</span>
-<span id="L110"><span class="lineNum">     110</span>              : `SVector` of physical coordinates.</span>
-<span id="L111"><span class="lineNum">     111</span>              : </span>
-<span id="L112"><span class="lineNum">     112</span>              : ### Examples</span>
-<span id="L113"><span class="lineNum">     113</span>              : </span>
-<span id="L114"><span class="lineNum">     114</span>              : ```julia</span>
-<span id="L115"><span class="lineNum">     115</span>              : g = CartesianGrid(((0.0, 2π),), (64,))</span>
-<span id="L116"><span class="lineNum">     116</span>              : u = set!(scalar_field(g), x -&gt; sin(x[1]))</span>
-<span id="L117"><span class="lineNum">     117</span>              : ```</span>
-<span id="L118"><span class="lineNum">     118</span>              : &quot;&quot;&quot;</span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">        4476 : function set!(f::Field, fun::F) where {F}</span></span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">        8902 :     interior(f) .= fun.(cell_center.(Ref(f.grid), interior(f.grid)))</span></span>
-<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">        4476 :     return f</span></span>
-<span id="L122"><span class="lineNum">     122</span>              : end</span>
-<span id="L123"><span class="lineNum">     123</span>              : </span>
-<span id="L124"><span class="lineNum">     124</span>              : &quot;&quot;&quot;</span>
-<span id="L125"><span class="lineNum">     125</span>              :     ncomponents(f::Field) -&gt; Int</span>
-<span id="L126"><span class="lineNum">     126</span>              : </span>
-<span id="L127"><span class="lineNum">     127</span>              : Number of components of the field's element type: 1 for scalar fields, `N` for</span>
-<span id="L128"><span class="lineNum">     128</span>              : `SVector{N}`-valued fields.</span>
-<span id="L129"><span class="lineNum">     129</span>              : &quot;&quot;&quot;</span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">         453 : ncomponents(f::Field) = _ncomponents(eltype(f.data))</span></span>
-<span id="L131"><span class="lineNum">     131</span> <span class="tlaUNC tlaBgUNC">           0 : _ncomponents(::Type{&lt;:Number}) = 1</span></span>
-<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC tlaBgGNC">         444 : _ncomponents(::Type{SVector{M,T}}) where {M,T} = M</span></span>
-<span id="L133"><span class="lineNum">     133</span>              : </span>
-<span id="L134"><span class="lineNum">     134</span> <span class="tlaGNC">        1851 : _scalar_eltype(::Type{T}) where {T&lt;:Number} = T</span></span>
-<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">         390 : _scalar_eltype(::Type{SVector{M,T}}) where {M,T} = T</span></span>
-<span id="L136"><span class="lineNum">     136</span>              : </span>
-<span id="L137"><span class="lineNum">     137</span>              : &quot;&quot;&quot;</span>
-<span id="L138"><span class="lineNum">     138</span>              :     component(f::Field, d::Integer) -&gt; Field</span>
-<span id="L139"><span class="lineNum">     139</span>              : </span>
-<span id="L140"><span class="lineNum">     140</span>              : Extract component `d` of a vector field as a new (allocated) scalar field.</span>
-<span id="L141"><span class="lineNum">     141</span>              : &quot;&quot;&quot;</span>
-<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">          15 : function component(f::Field{L}, d::Integer) where {L}</span></span>
-<span id="L143"><span class="lineNum">     143</span> <span class="tlaGNC">          16 :     1 &lt;= d &lt;= ncomponents(f) ||</span></span>
-<span id="L144"><span class="lineNum">     144</span>              :         throw(ArgumentError(&quot;component $d out of range for $(ncomponents(f)) components&quot;))</span>
-<span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">          14 :     return Field{L}(getindex.(f.data, d), f.grid)</span></span>
-<span id="L146"><span class="lineNum">     146</span>              : end</span>
-<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">           2 : component(f::Field{L,&lt;:AbstractArray{&lt;:Number}}, d::Integer) where {L} =</span></span>
-<span id="L148"><span class="lineNum">     148</span>              :     d == 1 ? Field{L}(copy(f.data), f.grid) : throw(ArgumentError(&quot;scalar field has only component 1&quot;))</span>
-<span id="L149"><span class="lineNum">     149</span>              : </span>
-<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">         928 : Base.eltype(f::Field) = eltype(f.data)</span></span>
-<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">        3662 : Base.similar(f::Field{L}) where {L} = Field{L}(similar(f.data), f.grid)</span></span>
-<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">        1144 : Base.similar(f::Field{L}, ::Type{E}) where {L,E} = Field{L}(similar(f.data, E), f.grid)</span></span>
-<span id="L153"><span class="lineNum">     153</span> <span class="tlaGNC">          61 : Base.copy(f::Field{L}) where {L} = Field{L}(copy(f.data), f.grid)</span></span>
+<span id="L78"><span class="lineNum">      78</span>              : &quot;&quot;&quot;</span>
+<span id="L79"><span class="lineNum">      79</span>              :     Field(data, grid)</span>
+<span id="L80"><span class="lineNum">      80</span>              :     Field{L}(data, grid)</span>
+<span id="L81"><span class="lineNum">      81</span>              : </span>
+<span id="L82"><span class="lineNum">      82</span>              : Halo-padded field on `grid` with location trait `L` (default [`Center`](@ref)).</span>
+<span id="L83"><span class="lineNum">      83</span>              : `data` must have size [`padded_size`](@ref)`(grid)`. The element type carries the</span>
+<span id="L84"><span class="lineNum">      84</span>              : tensor rank: a scalar field stores numbers, a vector field stores `SVector`s — see</span>
+<span id="L85"><span class="lineNum">      85</span>              : [`scalar_field`](@ref) and [`vector_field`](@ref).</span>
+<span id="L86"><span class="lineNum">      86</span>              : </span>
+<span id="L87"><span class="lineNum">      87</span>              : ### Examples</span>
+<span id="L88"><span class="lineNum">      88</span>              : </span>
+<span id="L89"><span class="lineNum">      89</span>              : ```julia</span>
+<span id="L90"><span class="lineNum">      90</span>              : g = CartesianGrid(((0.0, 1.0),), (64,))</span>
+<span id="L91"><span class="lineNum">      91</span>              : u = Field(zeros(padded_size(g)), g)</span>
+<span id="L92"><span class="lineNum">      92</span>              : ```</span>
+<span id="L93"><span class="lineNum">      93</span>              : &quot;&quot;&quot;</span>
+<span id="L94"><span class="lineNum">      94</span>              : struct Field{L,A&lt;:AbstractArray,G&lt;:AbstractGrid} &lt;: AbstractField</span>
+<span id="L95"><span class="lineNum">      95</span>              :     data::A</span>
+<span id="L96"><span class="lineNum">      96</span>              :     grid::G</span>
+<span id="L97"><span class="lineNum">      97</span>              : </span>
+<span id="L98"><span class="lineNum">      98</span> <span class="tlaGNC">          14 :     function Field{L}(data::A, grid::G) where {L,A&lt;:AbstractArray,G&lt;:AbstractGrid}</span></span>
+<span id="L99"><span class="lineNum">      99</span> <span class="tlaGNC">     2085946 :         if size(data) != padded_size(grid)</span></span>
+<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC">         137 :             throw(</span></span>
+<span id="L101"><span class="lineNum">     101</span>              :                 DimensionMismatch(</span>
+<span id="L102"><span class="lineNum">     102</span>              :                     &quot;field data size $(size(data)) must equal padded grid size $(padded_size(grid))&quot;,</span>
+<span id="L103"><span class="lineNum">     103</span>              :                 ),</span>
+<span id="L104"><span class="lineNum">     104</span>              :             )</span>
+<span id="L105"><span class="lineNum">     105</span>              :         end</span>
+<span id="L106"><span class="lineNum">     106</span> <span class="tlaGNC">     1043172 :         return new{L,A,G}(data, grid)</span></span>
+<span id="L107"><span class="lineNum">     107</span>              :     end</span>
+<span id="L108"><span class="lineNum">     108</span>              : end</span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">       16003 : Field(data::AbstractArray, grid::AbstractGrid) = Field{Center}(data, grid)</span></span>
+<span id="L110"><span class="lineNum">     110</span>              : </span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">        8358 : getgrid(ϕ::AbstractField) = ϕ.grid</span></span>
+<span id="L112"><span class="lineNum">     112</span>              : </span>
+<span id="L113"><span class="lineNum">     113</span>              : &quot;&quot;&quot;</span>
+<span id="L114"><span class="lineNum">     114</span>              :     scalar_field(g::AbstractGrid, T=eltype(spacing(g))) -&gt; Field</span>
+<span id="L115"><span class="lineNum">     115</span>              : </span>
+<span id="L116"><span class="lineNum">     116</span>              : Allocate a zeroed cell-centered scalar field on the grid's device.</span>
+<span id="L117"><span class="lineNum">     117</span>              : </span>
+<span id="L118"><span class="lineNum">     118</span>              : ### Examples</span>
+<span id="L119"><span class="lineNum">     119</span>              : </span>
+<span id="L120"><span class="lineNum">     120</span>              : ```julia</span>
+<span id="L121"><span class="lineNum">     121</span>              : g = CartesianGrid(((0.0, 1.0),), (64,))</span>
+<span id="L122"><span class="lineNum">     122</span>              : u = scalar_field(g)</span>
+<span id="L123"><span class="lineNum">     123</span>              : v = scalar_field(g, Float32)</span>
+<span id="L124"><span class="lineNum">     124</span>              : ```</span>
+<span id="L125"><span class="lineNum">     125</span>              : </span>
+<span id="L126"><span class="lineNum">     126</span>              : See also: [`vector_field`](@ref), [`set!`](@ref).</span>
+<span id="L127"><span class="lineNum">     127</span>              : &quot;&quot;&quot;</span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        3216 : function scalar_field(g::AbstractGrid, ::Type{T}=eltype(spacing(g))) where {T&lt;:Number}</span></span>
+<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">        7936 :     data = KernelAbstractions.zeros(KernelAbstractions.get_backend(g), T, padded_size(g)...)</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">        7434 :     return Field(data, g)</span></span>
+<span id="L131"><span class="lineNum">     131</span>              : end</span>
+<span id="L132"><span class="lineNum">     132</span>              : </span>
+<span id="L133"><span class="lineNum">     133</span>              : &quot;&quot;&quot;</span>
+<span id="L134"><span class="lineNum">     134</span>              :     vector_field(g::AbstractGrid{N}, T=eltype(spacing(g))) -&gt; Field</span>
+<span id="L135"><span class="lineNum">     135</span>              : </span>
+<span id="L136"><span class="lineNum">     136</span>              : Allocate a zeroed cell-centered vector field with element type `SVector{N,T}`.</span>
+<span id="L137"><span class="lineNum">     137</span>              : Operators written generically over the element type act componentwise on it.</span>
+<span id="L138"><span class="lineNum">     138</span>              : </span>
+<span id="L139"><span class="lineNum">     139</span>              : ### Examples</span>
+<span id="L140"><span class="lineNum">     140</span>              : </span>
+<span id="L141"><span class="lineNum">     141</span>              : ```julia</span>
+<span id="L142"><span class="lineNum">     142</span>              : g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (32, 32))</span>
+<span id="L143"><span class="lineNum">     143</span>              : v = vector_field(g)        # eltype SVector{2,Float64}</span>
+<span id="L144"><span class="lineNum">     144</span>              : ```</span>
+<span id="L145"><span class="lineNum">     145</span>              : </span>
+<span id="L146"><span class="lineNum">     146</span>              : See also: [`scalar_field`](@ref), [`component`](@ref).</span>
+<span id="L147"><span class="lineNum">     147</span>              : &quot;&quot;&quot;</span>
+<span id="L148"><span class="lineNum">     148</span> <span class="tlaGNC">          59 : function vector_field(g::AbstractGrid{N}, ::Type{T}=eltype(spacing(g))) where {N,T&lt;:Number}</span></span>
+<span id="L149"><span class="lineNum">     149</span> <span class="tlaGNC">         130 :     data = KernelAbstractions.zeros(</span></span>
+<span id="L150"><span class="lineNum">     150</span>              :         KernelAbstractions.get_backend(g), SVector{N,T}, padded_size(g)...</span>
+<span id="L151"><span class="lineNum">     151</span>              :     )</span>
+<span id="L152"><span class="lineNum">     152</span> <span class="tlaGNC">          66 :     return Field(data, g)</span></span>
+<span id="L153"><span class="lineNum">     153</span>              : end</span>
 <span id="L154"><span class="lineNum">     154</span>              : </span>
-<span id="L155"><span class="lineNum">     155</span> <span class="tlaGNC">       88905 : apply_bc!(f::Field) = (apply_bc!(f.data, f.grid); f)</span></span>
-<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">       32241 : fold_bc!(f::Field) = (fold_bc!(f.data, f.grid); f)</span></span>
-<span id="L157"><span class="lineNum">     157</span> <span class="tlaGNC">       49430 : zero_ghosts!(f::Field) = (zero_ghosts!(f.data, f.grid); f)</span></span>
-<span id="L158"><span class="lineNum">     158</span>              : </span>
-<span id="L159"><span class="lineNum">     159</span> <span class="tlaGNC">          11 : function Adapt.adapt_structure(to, f::Field{L}) where {L}</span></span>
-<span id="L160"><span class="lineNum">     160</span> <span class="tlaGNC">          11 :     return Field{L}(Adapt.adapt(to, f.data), Adapt.adapt(to, f.grid))</span></span>
-<span id="L161"><span class="lineNum">     161</span>              : end</span>
-<span id="L162"><span class="lineNum">     162</span>              : </span>
-<span id="L163"><span class="lineNum">     163</span>              : #--------------------------------------------------------------------------------# Flat-vector boundary (interior DOFs only)</span>
-<span id="L164"><span class="lineNum">     164</span>              : </span>
-<span id="L165"><span class="lineNum">     165</span>              : # Reshape a flat interior vector of scalars into the field's element type without</span>
-<span id="L166"><span class="lineNum">     166</span>              : # copying: identity for scalar eltypes, reinterpret for SVector eltypes.</span>
-<span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">      176351 : _as_eltype(::Type{E}, v::AbstractVector{E}, dims) where {E} = reshape(v, dims)</span></span>
-<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">           3 : function _as_eltype(::Type{SVector{M,T}}, v::AbstractVector{T}, dims) where {M,T}</span></span>
-<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">         411 :     return reshape(reinterpret(SVector{M,T}, v), dims)</span></span>
-<span id="L170"><span class="lineNum">     170</span>              : end</span>
+<span id="L155"><span class="lineNum">     155</span>              : #--------------------------------------------------------------------------------# Field interface</span>
+<span id="L156"><span class="lineNum">     156</span>              : </span>
+<span id="L157"><span class="lineNum">     157</span>              : &quot;&quot;&quot;</span>
+<span id="L158"><span class="lineNum">     158</span>              :     interior(f::Field) -&gt; SubArray</span>
+<span id="L159"><span class="lineNum">     159</span>              : </span>
+<span id="L160"><span class="lineNum">     160</span>              : View of the interior (owned, non-halo) cells of the field.</span>
+<span id="L161"><span class="lineNum">     161</span>              : &quot;&quot;&quot;</span>
+<span id="L162"><span class="lineNum">     162</span> <span class="tlaGNC">      910297 : interior(f::Field) = view(f.data, interior(f.grid))</span></span>
+<span id="L163"><span class="lineNum">     163</span>              : </span>
+<span id="L164"><span class="lineNum">     164</span>              : &quot;&quot;&quot;</span>
+<span id="L165"><span class="lineNum">     165</span>              :     set!(fun, ϕ::AbstractField) -&gt; ϕ</span>
+<span id="L166"><span class="lineNum">     166</span>              : </span>
+<span id="L167"><span class="lineNum">     167</span>              : Set the interior of `ϕ` to `fun(x)` evaluated at cell centers, where `x` is the</span>
+<span id="L168"><span class="lineNum">     168</span>              : `SVector` of physical coordinates. Ghost cells are left untouched. On a forest</span>
+<span id="L169"><span class="lineNum">     169</span>              : field the sweep runs block by block, so `ϕ` must be current with its forest</span>
+<span id="L170"><span class="lineNum">     170</span>              : (see [`regrid!`](@ref)).</span>
 <span id="L171"><span class="lineNum">     171</span>              : </span>
-<span id="L172"><span class="lineNum">     172</span>              : &quot;&quot;&quot;</span>
-<span id="L173"><span class="lineNum">     173</span>              :     flatten(f::Field) -&gt; AbstractVector</span>
-<span id="L174"><span class="lineNum">     174</span>              : </span>
-<span id="L175"><span class="lineNum">     175</span>              : Copy the interior of `f` into a flat vector of scalars — the Krylov-facing</span>
-<span id="L176"><span class="lineNum">     176</span>              : representation. Spans interior DOFs only (ghost cells are never solver unknowns);</span>
-<span id="L177"><span class="lineNum">     177</span>              : `SVector` elements are flattened component-fastest.</span>
-<span id="L178"><span class="lineNum">     178</span>              : </span>
-<span id="L179"><span class="lineNum">     179</span>              : See also: [`flat_to_interior!`](@ref), [`interior_to_flat!`](@ref).</span>
-<span id="L180"><span class="lineNum">     180</span>              : &quot;&quot;&quot;</span>
-<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">         108 : function flatten(f::Field)</span></span>
-<span id="L182"><span class="lineNum">     182</span> <span class="tlaGNC">         772 :     data_int = f.data[interior(f.grid)]</span></span>
-<span id="L183"><span class="lineNum">     183</span> <span class="tlaGNC">         116 :     return _flat_vector(vec(data_int))</span></span>
-<span id="L184"><span class="lineNum">     184</span>              : end</span>
-<span id="L185"><span class="lineNum">     185</span> <span class="tlaGNC">         111 : _flat_vector(v::AbstractVector{&lt;:Number}) = v</span></span>
-<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">           5 : _flat_vector(v::AbstractVector{SVector{M,T}}) where {M,T} = copy(vec(reinterpret(T, v)))</span></span>
-<span id="L187"><span class="lineNum">     187</span>              : </span>
-<span id="L188"><span class="lineNum">     188</span>              : &quot;&quot;&quot;</span>
-<span id="L189"><span class="lineNum">     189</span>              :     flat_length(f::AbstractField) -&gt; Int</span>
-<span id="L190"><span class="lineNum">     190</span>              : </span>
-<span id="L191"><span class="lineNum">     191</span>              : Number of interior scalar DOFs in the flat (Krylov) representation of `f`:</span>
-<span id="L192"><span class="lineNum">     192</span>              : `prod(local_size) * ncomponents`, summed over blocks for a block field.</span>
-<span id="L193"><span class="lineNum">     193</span>              : &quot;&quot;&quot;</span>
-<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         282 : flat_length(f::Field) = prod(local_size(f.grid)) * ncomponents(f)</span></span>
-<span id="L195"><span class="lineNum">     195</span>              : </span>
-<span id="L196"><span class="lineNum">     196</span>              : &quot;&quot;&quot;</span>
-<span id="L197"><span class="lineNum">     197</span>              :     flat_to_interior!(f::Field, v::AbstractVector, α=true, β=false) -&gt; f</span>
-<span id="L198"><span class="lineNum">     198</span>              : </span>
-<span id="L199"><span class="lineNum">     199</span>              : Fused axpby copy-in of the flat interior vector `v` (as produced by</span>
-<span id="L200"><span class="lineNum">     200</span>              : [`flatten`](@ref)) into the interior of `f`: `interior(f) = α * v + β * interior(f)`</span>
-<span id="L201"><span class="lineNum">     201</span>              : in one broadcast. Ghost cells are untouched — the mirror of</span>
-<span id="L202"><span class="lineNum">     202</span>              : [`interior_to_flat!`](@ref), and the reason the distributed path can stage</span>
-<span id="L203"><span class="lineNum">     203</span>              : exchanged ghosts before a local apply.</span>
-<span id="L204"><span class="lineNum">     204</span>              : &quot;&quot;&quot;</span>
-<span id="L205"><span class="lineNum">     205</span> <span class="tlaGNC">       88183 : function flat_to_interior!(f::Field, v::AbstractVector, α::Number=true, β::Number=false)</span></span>
-<span id="L206"><span class="lineNum">     206</span> <span class="tlaGNC">      167776 :     vi = _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
-<span id="L207"><span class="lineNum">     207</span> <span class="tlaGNC">       83860 :     fi = interior(f)</span></span>
-<span id="L208"><span class="lineNum">     208</span> <span class="tlaGNC">       83860 :     if iszero(β)</span></span>
-<span id="L209"><span class="lineNum">     209</span> <span class="tlaGNC">      166592 :         fi .= α .* vi</span></span>
-<span id="L210"><span class="lineNum">     210</span>              :     else</span>
-<span id="L211"><span class="lineNum">     211</span> <span class="tlaGNC">           1 :         fi .= α .* vi .+ β .* fi</span></span>
-<span id="L212"><span class="lineNum">     212</span>              :     end</span>
-<span id="L213"><span class="lineNum">     213</span> <span class="tlaGNC">       83860 :     return f</span></span>
-<span id="L214"><span class="lineNum">     214</span>              : end</span>
-<span id="L215"><span class="lineNum">     215</span>              : </span>
-<span id="L216"><span class="lineNum">     216</span>              : &quot;&quot;&quot;</span>
-<span id="L217"><span class="lineNum">     217</span>              :     interior_to_flat!(v::AbstractVector, f::Field, α=true, β=false) -&gt; v</span>
-<span id="L218"><span class="lineNum">     218</span>              : </span>
-<span id="L219"><span class="lineNum">     219</span>              : Fused axpby copy-out of the field interior into the flat vector:</span>
-<span id="L220"><span class="lineNum">     220</span>              : `v = α * interior(f) + β * v` in one broadcast.</span>
-<span id="L221"><span class="lineNum">     221</span>              : &quot;&quot;&quot;</span>
-<span id="L222"><span class="lineNum">     222</span> <span class="tlaGNC">       89843 : function interior_to_flat!(v::AbstractVector, f::Field, α::Number=true, β::Number=false)</span></span>
-<span id="L223"><span class="lineNum">     223</span> <span class="tlaGNC">       94202 :     vi = _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
-<span id="L224"><span class="lineNum">     224</span> <span class="tlaGNC">       86560 :     if iszero(β)</span></span>
-<span id="L225"><span class="lineNum">     225</span> <span class="tlaGNC">      171546 :         vi .= α .* interior(f)</span></span>
-<span id="L226"><span class="lineNum">     226</span>              :     else</span>
-<span id="L227"><span class="lineNum">     227</span> <span class="tlaGNC">         224 :         vi .= α .* interior(f) .+ β .* vi</span></span>
-<span id="L228"><span class="lineNum">     228</span>              :     end</span>
-<span id="L229"><span class="lineNum">     229</span> <span class="tlaGNC">       86560 :     return v</span></span>
-<span id="L230"><span class="lineNum">     230</span>              : end</span>
+<span id="L172"><span class="lineNum">     172</span>              : `fun` runs on the field's device, so it must be device-compatible: plain</span>
+<span id="L173"><span class="lineNum">     173</span>              : arithmetic on the coordinate `SVector`, with no captured host arrays. The</span>
+<span id="L174"><span class="lineNum">     174</span>              : function comes first so the `do`-block form reads naturally.</span>
+<span id="L175"><span class="lineNum">     175</span>              : </span>
+<span id="L176"><span class="lineNum">     176</span>              : ### Examples</span>
+<span id="L177"><span class="lineNum">     177</span>              : </span>
+<span id="L178"><span class="lineNum">     178</span>              : ```julia</span>
+<span id="L179"><span class="lineNum">     179</span>              : g = CartesianGrid(((0.0, 2π),), (64,))</span>
+<span id="L180"><span class="lineNum">     180</span>              : u = set!(x -&gt; sin(x[1]), scalar_field(g))</span>
+<span id="L181"><span class="lineNum">     181</span>              : v = set!(scalar_field(g)) do x</span>
+<span id="L182"><span class="lineNum">     182</span>              :     exp(-x[1]^2)</span>
+<span id="L183"><span class="lineNum">     183</span>              : end</span>
+<span id="L184"><span class="lineNum">     184</span>              : ```</span>
+<span id="L185"><span class="lineNum">     185</span>              : </span>
+<span id="L186"><span class="lineNum">     186</span>              : See also: [`op!`](@ref), [`cell_center`](@ref).</span>
+<span id="L187"><span class="lineNum">     187</span>              : &quot;&quot;&quot;</span>
+<span id="L188"><span class="lineNum">     188</span> <span class="tlaGNC">        1562 : function set!(f::F, ϕ::Field) where {F}</span></span>
+<span id="L189"><span class="lineNum">     189</span> <span class="tlaGNC">        7993 :     g = getgrid(ϕ)</span></span>
+<span id="L190"><span class="lineNum">     190</span> <span class="tlaGNC">       20524 :     map!(interior(ϕ), interior(g)) do idx</span></span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">      391688 :         x = cell_center(g, idx)</span></span>
+<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">      391688 :         f(x)</span></span>
+<span id="L193"><span class="lineNum">     193</span>              :     end</span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">        7993 :     return ϕ</span></span>
+<span id="L195"><span class="lineNum">     195</span>              : end</span>
+<span id="L196"><span class="lineNum">     196</span>              : </span>
+<span id="L197"><span class="lineNum">     197</span>              : &quot;&quot;&quot;</span>
+<span id="L198"><span class="lineNum">     198</span>              :     op!(fun, ϕ::AbstractField, ϕs::AbstractField...; check=true) -&gt; ϕ</span>
+<span id="L199"><span class="lineNum">     199</span>              : </span>
+<span id="L200"><span class="lineNum">     200</span>              : Pointwise update in place: set every interior cell of `ϕ` to</span>
+<span id="L201"><span class="lineNum">     201</span>              : `fun(x, ϕ[I], ϕs[1][I], ϕs[2][I], …)`, where `x` is the `SVector` of the cell's</span>
+<span id="L202"><span class="lineNum">     202</span>              : physical coordinates and the remaining arguments are the current values of `ϕ`</span>
+<span id="L203"><span class="lineNum">     203</span>              : and of each field in `ϕs` at that cell. Ghost cells are left untouched. Like</span>
+<span id="L204"><span class="lineNum">     204</span>              : [`set!`](@ref), `fun` runs on the device and the function comes first so the</span>
+<span id="L205"><span class="lineNum">     205</span>              : `do`-block form reads naturally.</span>
+<span id="L206"><span class="lineNum">     206</span>              : </span>
+<span id="L207"><span class="lineNum">     207</span>              : With `check=true` (the default) every field is first verified to live on the</span>
+<span id="L208"><span class="lineNum">     208</span>              : same grid as `ϕ` via [`check_compatible`](@ref); pass `check=false` only from a</span>
+<span id="L209"><span class="lineNum">     209</span>              : caller that has already checked. On forest fields the check runs once on the</span>
+<span id="L210"><span class="lineNum">     210</span>              : whole forest and the sweep then runs block by block.</span>
+<span id="L211"><span class="lineNum">     211</span>              : </span>
+<span id="L212"><span class="lineNum">     212</span>              : ### Examples</span>
+<span id="L213"><span class="lineNum">     213</span>              : </span>
+<span id="L214"><span class="lineNum">     214</span>              : ```julia</span>
+<span id="L215"><span class="lineNum">     215</span>              : g = CartesianGrid(((0.0, 1.0),), (64,))</span>
+<span id="L216"><span class="lineNum">     216</span>              : u = set!(x -&gt; sin(x[1]), scalar_field(g))</span>
+<span id="L217"><span class="lineNum">     217</span>              : v = set!(x -&gt; cos(x[1]), scalar_field(g))</span>
+<span id="L218"><span class="lineNum">     218</span>              : op!((x, a, b) -&gt; a + x[1] * b, u, v)     # u ← u + x⋅v, cell by cell</span>
+<span id="L219"><span class="lineNum">     219</span>              : ```</span>
+<span id="L220"><span class="lineNum">     220</span>              : </span>
+<span id="L221"><span class="lineNum">     221</span>              : See also: [`set!`](@ref), [`compatible`](@ref).</span>
+<span id="L222"><span class="lineNum">     222</span>              : &quot;&quot;&quot;</span>
+<span id="L223"><span class="lineNum">     223</span> <span class="tlaUNC tlaBgUNC">           0 : function op!(f::F, ϕ::Field, ϕs::Field...; check::Bool=true) where {F}</span></span>
+<span id="L224"><span class="lineNum">     224</span> <span class="tlaUNC">           0 :     check &amp;&amp; check_compatible(ϕ, ϕs...)</span></span>
+<span id="L225"><span class="lineNum">     225</span> <span class="tlaUNC">           0 :     g = getgrid(ϕ)</span></span>
+<span id="L226"><span class="lineNum">     226</span> <span class="tlaUNC">           0 :     map!(interior(ϕ), interior(g), interior(ϕ), map(interior, ϕs)...) do idx, a, b...</span></span>
+<span id="L227"><span class="lineNum">     227</span> <span class="tlaUNC">           0 :         x = cell_center(g, idx)</span></span>
+<span id="L228"><span class="lineNum">     228</span> <span class="tlaUNC">           0 :         f(x, a, b...)</span></span>
+<span id="L229"><span class="lineNum">     229</span>              :     end</span>
+<span id="L230"><span class="lineNum">     230</span> <span class="tlaUNC">           0 :     return ϕ</span></span>
+<span id="L231"><span class="lineNum">     231</span>              : end</span>
+<span id="L232"><span class="lineNum">     232</span>              : </span>
+<span id="L233"><span class="lineNum">     233</span>              : &quot;&quot;&quot;</span>
+<span id="L234"><span class="lineNum">     234</span>              :     ncomponents(f::Field) -&gt; Int</span>
+<span id="L235"><span class="lineNum">     235</span>              : </span>
+<span id="L236"><span class="lineNum">     236</span>              : Number of components of the field's element type: 1 for scalar fields, `N` for</span>
+<span id="L237"><span class="lineNum">     237</span>              : `SVector{N}`-valued fields.</span>
+<span id="L238"><span class="lineNum">     238</span>              : &quot;&quot;&quot;</span>
+<span id="L239"><span class="lineNum">     239</span> <span class="tlaGNC tlaBgGNC">        1478 : ncomponents(f::Field) = _ncomponents(eltype(f.data))</span></span>
+<span id="L240"><span class="lineNum">     240</span> <span class="tlaUNC tlaBgUNC">           0 : _ncomponents(::Type{&lt;:Number}) = 1</span></span>
+<span id="L241"><span class="lineNum">     241</span> <span class="tlaGNC tlaBgGNC">       25372 : _ncomponents(::Type{SVector{M,T}}) where {M,T} = M</span></span>
+<span id="L242"><span class="lineNum">     242</span>              : </span>
+<span id="L243"><span class="lineNum">     243</span> <span class="tlaGNC">       14840 : _scalar_eltype(::Type{T}) where {T&lt;:Number} = T</span></span>
+<span id="L244"><span class="lineNum">     244</span> <span class="tlaGNC">        1136 : _scalar_eltype(::Type{SVector{M,T}}) where {M,T} = T</span></span>
+<span id="L245"><span class="lineNum">     245</span>              : </span>
+<span id="L246"><span class="lineNum">     246</span>              : &quot;&quot;&quot;</span>
+<span id="L247"><span class="lineNum">     247</span>              :     component(f::Field, d::Integer) -&gt; Field</span>
+<span id="L248"><span class="lineNum">     248</span>              : </span>
+<span id="L249"><span class="lineNum">     249</span>              : Extract component `d` of a vector field as a new (allocated) scalar field.</span>
+<span id="L250"><span class="lineNum">     250</span>              : &quot;&quot;&quot;</span>
+<span id="L251"><span class="lineNum">     251</span> <span class="tlaGNC">          19 : function component(f::Field{L}, d::Integer) where {L}</span></span>
+<span id="L252"><span class="lineNum">     252</span> <span class="tlaGNC">          20 :     1 &lt;= d &lt;= ncomponents(f) ||</span></span>
+<span id="L253"><span class="lineNum">     253</span>              :         throw(ArgumentError(&quot;component $d out of range for $(ncomponents(f)) components&quot;))</span>
+<span id="L254"><span class="lineNum">     254</span> <span class="tlaGNC">          18 :     return Field{L}(getindex.(f.data, d), f.grid)</span></span>
+<span id="L255"><span class="lineNum">     255</span>              : end</span>
+<span id="L256"><span class="lineNum">     256</span> <span class="tlaGNC">           2 : component(f::Field{L,&lt;:AbstractArray{&lt;:Number}}, d::Integer) where {L} =</span></span>
+<span id="L257"><span class="lineNum">     257</span>              :     d == 1 ? Field{L}(copy(f.data), f.grid) : throw(ArgumentError(&quot;scalar field has only component 1&quot;))</span>
+<span id="L258"><span class="lineNum">     258</span>              : </span>
+<span id="L259"><span class="lineNum">     259</span> <span class="tlaGNC">       24849 : Base.eltype(f::Field) = eltype(f.data)</span></span>
+<span id="L260"><span class="lineNum">     260</span> <span class="tlaGNC">       12505 : Base.similar(f::Field{L}) where {L} = Field{L}(similar(f.data), f.grid)</span></span>
+<span id="L261"><span class="lineNum">     261</span> <span class="tlaGNC">        2277 : Base.similar(f::Field{L}, ::Type{E}) where {L,E} = Field{L}(similar(f.data, E), f.grid)</span></span>
+<span id="L262"><span class="lineNum">     262</span> <span class="tlaGNC">        3331 : Base.copy(f::Field{L}) where {L} = Field{L}(copy(f.data), f.grid)</span></span>
+<span id="L263"><span class="lineNum">     263</span>              : </span>
+<span id="L264"><span class="lineNum">     264</span> <span class="tlaGNC">      241061 : apply_bc!(f::Field) = (apply_bc!(f.data, f.grid); f)</span></span>
+<span id="L265"><span class="lineNum">     265</span> <span class="tlaGNC">       90272 : fold_bc!(f::Field) = (fold_bc!(f.data, f.grid); f)</span></span>
+<span id="L266"><span class="lineNum">     266</span> <span class="tlaGNC">      177007 : zero_ghosts!(f::Field) = (zero_ghosts!(f.data, f.grid); f)</span></span>
+<span id="L267"><span class="lineNum">     267</span> <span class="tlaGNC">        2937 : zero_bc_ghosts!(f::Field) = (zero_bc_ghosts!(f.data, f.grid); f)</span></span>
+<span id="L268"><span class="lineNum">     268</span>              : </span>
+<span id="L269"><span class="lineNum">     269</span> <span class="tlaGNC">          14 : function Adapt.adapt_structure(to, f::Field{L}) where {L}</span></span>
+<span id="L270"><span class="lineNum">     270</span> <span class="tlaGNC">          14 :     return Field{L}(Adapt.adapt(to, f.data), Adapt.adapt(to, f.grid))</span></span>
+<span id="L271"><span class="lineNum">     271</span>              : end</span>
+<span id="L272"><span class="lineNum">     272</span>              : </span>
+<span id="L273"><span class="lineNum">     273</span>              : #--------------------------------------------------------------------------------# Flat-vector boundary (interior DOFs only)</span>
+<span id="L274"><span class="lineNum">     274</span>              : </span>
+<span id="L275"><span class="lineNum">     275</span>              : # Reshape a flat interior vector of scalars into the field's element type without</span>
+<span id="L276"><span class="lineNum">     276</span>              : # copying: identity for scalar eltypes, reinterpret for SVector eltypes.</span>
+<span id="L277"><span class="lineNum">     277</span> <span class="tlaGNC">      496186 : _as_eltype(::Type{E}, v::AbstractVector{E}, dims) where {E} = reshape(v, dims)</span></span>
+<span id="L278"><span class="lineNum">     278</span> <span class="tlaGNC">           3 : function _as_eltype(::Type{SVector{M,T}}, v::AbstractVector{T}, dims) where {M,T}</span></span>
+<span id="L279"><span class="lineNum">     279</span> <span class="tlaGNC">       12906 :     return reshape(reinterpret(SVector{M,T}, v), dims)</span></span>
+<span id="L280"><span class="lineNum">     280</span>              : end</span>
+<span id="L281"><span class="lineNum">     281</span>              : </span>
+<span id="L282"><span class="lineNum">     282</span>              : &quot;&quot;&quot;</span>
+<span id="L283"><span class="lineNum">     283</span>              :     flatten(f::Field) -&gt; AbstractVector</span>
+<span id="L284"><span class="lineNum">     284</span>              : </span>
+<span id="L285"><span class="lineNum">     285</span>              : Copy the interior of `f` into a flat vector of scalars — the Krylov-facing</span>
+<span id="L286"><span class="lineNum">     286</span>              : representation. Spans interior DOFs only (ghost cells are never solver unknowns);</span>
+<span id="L287"><span class="lineNum">     287</span>              : `SVector` elements are flattened component-fastest.</span>
+<span id="L288"><span class="lineNum">     288</span>              : </span>
+<span id="L289"><span class="lineNum">     289</span>              : See also: [`flat_to_interior!`](@ref), [`interior_to_flat!`](@ref).</span>
+<span id="L290"><span class="lineNum">     290</span>              : &quot;&quot;&quot;</span>
+<span id="L291"><span class="lineNum">     291</span> <span class="tlaGNC">         410 : function flatten(f::Field)</span></span>
+<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">        1355 :     data_int = f.data[interior(f.grid)]</span></span>
+<span id="L293"><span class="lineNum">     293</span> <span class="tlaGNC">         419 :     return _flat_vector(vec(data_int))</span></span>
+<span id="L294"><span class="lineNum">     294</span>              : end</span>
+<span id="L295"><span class="lineNum">     295</span> <span class="tlaGNC">         414 : _flat_vector(v::AbstractVector{&lt;:Number}) = v</span></span>
+<span id="L296"><span class="lineNum">     296</span> <span class="tlaGNC">           5 : _flat_vector(v::AbstractVector{SVector{M,T}}) where {M,T} = copy(vec(reinterpret(T, v)))</span></span>
+<span id="L297"><span class="lineNum">     297</span>              : </span>
+<span id="L298"><span class="lineNum">     298</span>              : &quot;&quot;&quot;</span>
+<span id="L299"><span class="lineNum">     299</span>              :     flat_length(f::AbstractField) -&gt; Int</span>
+<span id="L300"><span class="lineNum">     300</span>              : </span>
+<span id="L301"><span class="lineNum">     301</span>              : Number of interior scalar DOFs in the flat (Krylov) representation of `f`:</span>
+<span id="L302"><span class="lineNum">     302</span>              : `prod(local_size) * ncomponents`, summed over blocks for a block field.</span>
+<span id="L303"><span class="lineNum">     303</span>              : &quot;&quot;&quot;</span>
+<span id="L304"><span class="lineNum">     304</span> <span class="tlaGNC">         856 : flat_length(f::Field) = prod(local_size(f.grid)) * ncomponents(f)</span></span>
+<span id="L305"><span class="lineNum">     305</span>              : </span>
+<span id="L306"><span class="lineNum">     306</span>              : &quot;&quot;&quot;</span>
+<span id="L307"><span class="lineNum">     307</span>              :     flat_to_interior!(f::Field, v::AbstractVector, α=true, β=false) -&gt; f</span>
+<span id="L308"><span class="lineNum">     308</span>              : </span>
+<span id="L309"><span class="lineNum">     309</span>              : Fused axpby copy-in of the flat interior vector `v` (as produced by</span>
+<span id="L310"><span class="lineNum">     310</span>              : [`flatten`](@ref)) into the interior of `f`: `interior(f) = α * v + β * interior(f)`</span>
+<span id="L311"><span class="lineNum">     311</span>              : in one broadcast. Ghost cells are untouched — the mirror of</span>
+<span id="L312"><span class="lineNum">     312</span>              : [`interior_to_flat!`](@ref), and the reason the distributed path can stage</span>
+<span id="L313"><span class="lineNum">     313</span>              : exchanged ghosts before a local apply.</span>
+<span id="L314"><span class="lineNum">     314</span>              : &quot;&quot;&quot;</span>
+<span id="L315"><span class="lineNum">     315</span> <span class="tlaGNC">      261274 : function flat_to_interior!(f::Field, v::AbstractVector, α::Number=true, β::Number=false)</span></span>
+<span id="L316"><span class="lineNum">     316</span> <span class="tlaGNC">      445194 :     vi = _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
+<span id="L317"><span class="lineNum">     317</span> <span class="tlaGNC">      222485 :     fi = interior(f)</span></span>
+<span id="L318"><span class="lineNum">     318</span> <span class="tlaGNC">      222485 :     if iszero(β)</span></span>
+<span id="L319"><span class="lineNum">     319</span> <span class="tlaGNC">      443469 :         fi .= α .* vi</span></span>
+<span id="L320"><span class="lineNum">     320</span>              :     else</span>
+<span id="L321"><span class="lineNum">     321</span> <span class="tlaGNC">          13 :         fi .= α .* vi .+ β .* fi</span></span>
+<span id="L322"><span class="lineNum">     322</span>              :     end</span>
+<span id="L323"><span class="lineNum">     323</span> <span class="tlaGNC">      222485 :     return f</span></span>
+<span id="L324"><span class="lineNum">     324</span>              : end</span>
+<span id="L325"><span class="lineNum">     325</span>              : </span>
+<span id="L326"><span class="lineNum">     326</span>              : &quot;&quot;&quot;</span>
+<span id="L327"><span class="lineNum">     327</span>              :     interior_to_flat!(v::AbstractVector, f::Field, α=true, β=false) -&gt; v</span>
+<span id="L328"><span class="lineNum">     328</span>              : </span>
+<span id="L329"><span class="lineNum">     329</span>              : Fused axpby copy-out of the field interior into the flat vector:</span>
+<span id="L330"><span class="lineNum">     330</span>              : `v = α * interior(f) + β * v` in one broadcast.</span>
+<span id="L331"><span class="lineNum">     331</span>              : &quot;&quot;&quot;</span>
+<span id="L332"><span class="lineNum">     332</span> <span class="tlaGNC">      262499 : function interior_to_flat!(v::AbstractVector, f::Field, α::Number=true, β::Number=false)</span></span>
+<span id="L333"><span class="lineNum">     333</span> <span class="tlaGNC">      281038 :     vi = _as_eltype(eltype(f.data), v, local_size(f.grid))</span></span>
+<span id="L334"><span class="lineNum">     334</span> <span class="tlaGNC">      234259 :     if iszero(β)</span></span>
+<span id="L335"><span class="lineNum">     335</span> <span class="tlaGNC">      466577 :         vi .= α .* interior(f)</span></span>
+<span id="L336"><span class="lineNum">     336</span>              :     else</span>
+<span id="L337"><span class="lineNum">     337</span> <span class="tlaGNC">         253 :         vi .= α .* interior(f) .+ β .* vi</span></span>
+<span id="L338"><span class="lineNum">     338</span>              :     end</span>
+<span id="L339"><span class="lineNum">     339</span> <span class="tlaGNC">      234259 :     return v</span></span>
+<span id="L340"><span class="lineNum">     340</span>              : end</span>
+<span id="L341"><span class="lineNum">     341</span>              : </span>
+<span id="L342"><span class="lineNum">     342</span> <span class="tlaUNC tlaBgUNC">           0 : block(ϕ::Field, ::Integer, lg=ϕ.grid) = ϕ</span></span>
+<span id="L343"><span class="lineNum">     343</span> <span class="tlaUNC">           0 : _block_array(ϕ::Field, ::Integer) = ϕ.data</span></span>
+<span id="L344"><span class="lineNum">     344</span> <span class="tlaUNC">           0 : _require_current(::Field) = nothing</span></span>
+<span id="L345"><span class="lineNum">     345</span>              : </span>
+<span id="L346"><span class="lineNum">     346</span>              : # A `Field` is exactly as compatible as its grid.</span>
+<span id="L347"><span class="lineNum">     347</span> <span class="tlaUNC">           0 : @inline _field_mismatch(a::Field, b::Field) = _grid_mismatch(a.grid, b.grid)</span></span>
+<span id="L348"><span class="lineNum">     348</span> <span class="tlaUNC">           0 : @inline _field_layout_mismatch(a::Field, b::Field) = _layout_mismatch(a.grid, b.grid)</span></span>
+<span id="L349"><span class="lineNum">     349</span>              : </span>
+<span id="L350"><span class="lineNum">     350</span>              : # `Field` vs. forest field, or two forest fields of different storage layout</span>
+<span id="L351"><span class="lineNum">     351</span>              : # (`BlockField` vs. `PackedBlockField`): the per-block sweep can still pair them</span>
+<span id="L352"><span class="lineNum">     352</span>              : # through `_block_array`, so layout is *not* refused on the field type — only the</span>
+<span id="L353"><span class="lineNum">     353</span>              : # grid decides.  (Change these to `:type` if a function needs identical storage.)</span>
+<span id="L354"><span class="lineNum">     354</span> <span class="tlaUNC">           0 : _field_mismatch(::AbstractField, ::AbstractField) = :type</span></span>
+<span id="L355"><span class="lineNum">     355</span> <span class="tlaUNC">           0 : _field_layout_mismatch(::AbstractField, ::AbstractField) = :type</span></span>
+<span id="L356"><span class="lineNum">     356</span>              : </span>
+<span id="L357"><span class="lineNum">     357</span>              : &quot;&quot;&quot;</span>
+<span id="L358"><span class="lineNum">     358</span>              :     compatible(a::AbstractField, b::AbstractField...) -&gt; Bool</span>
+<span id="L359"><span class="lineNum">     359</span>              : </span>
+<span id="L360"><span class="lineNum">     360</span>              : Whether every field lives on a grid `==` to `a`'s grid. Forest fields must</span>
+<span id="L361"><span class="lineNum">     361</span>              : also be current — allocated on the forest's present leaf set (see</span>
+<span id="L362"><span class="lineNum">     362</span>              : [`regrid!`](@ref)); a stale field is never compatible with anything.</span>
+<span id="L363"><span class="lineNum">     363</span>              : </span>
+<span id="L364"><span class="lineNum">     364</span>              : ### Examples</span>
+<span id="L365"><span class="lineNum">     365</span>              : </span>
+<span id="L366"><span class="lineNum">     366</span>              : ```julia</span>
+<span id="L367"><span class="lineNum">     367</span>              : g = CartesianGrid(((0.0, 1.0),), (64,))</span>
+<span id="L368"><span class="lineNum">     368</span>              : u = scalar_field(g); v = scalar_field(g)</span>
+<span id="L369"><span class="lineNum">     369</span>              : compatible(u, v)                       # true — same grid object, one `===`</span>
+<span id="L370"><span class="lineNum">     370</span>              : compatible(u, scalar_field(coarsen(g)))  # false</span>
+<span id="L371"><span class="lineNum">     371</span>              : ```</span>
+<span id="L372"><span class="lineNum">     372</span>              : </span>
+<span id="L373"><span class="lineNum">     373</span>              : See also: [`check_compatible`](@ref), [`same_layout`](@ref).</span>
+<span id="L374"><span class="lineNum">     374</span>              : &quot;&quot;&quot;</span>
+<span id="L375"><span class="lineNum">     375</span> <span class="tlaUNC">           0 : @inline compatible(::AbstractField) = true</span></span>
+<span id="L376"><span class="lineNum">     376</span> <span class="tlaUNC">           0 : @inline compatible(a::AbstractField, b::AbstractField, rest::AbstractField...) =</span></span>
+<span id="L377"><span class="lineNum">     377</span>              :     isnothing(_field_mismatch(a, b)) &amp;&amp; compatible(a, rest...)</span>
+<span id="L378"><span class="lineNum">     378</span>              : </span>
+<span id="L379"><span class="lineNum">     379</span>              : &quot;&quot;&quot;</span>
+<span id="L380"><span class="lineNum">     380</span>              :     check_compatible(a::AbstractField, b::AbstractField...) -&gt; nothing</span>
+<span id="L381"><span class="lineNum">     381</span>              :     check_compatible(a::AbstractGrid, b::AbstractGrid...) -&gt; nothing</span>
+<span id="L382"><span class="lineNum">     382</span>              : </span>
+<span id="L383"><span class="lineNum">     383</span>              : Throw an `ArgumentError` naming the first property on which any argument differs</span>
+<span id="L384"><span class="lineNum">     384</span>              : from `a` (grid `==`, plus regrid currency for forest fields).</span>
+<span id="L385"><span class="lineNum">     385</span>              : Return `nothing` otherwise. The guard for a multi-field function:</span>
+<span id="L386"><span class="lineNum">     386</span>              : </span>
+<span id="L387"><span class="lineNum">     387</span>              : ```julia</span>
+<span id="L388"><span class="lineNum">     388</span>              : function fma!(y::AbstractField, α, x::AbstractField, z::AbstractField)</span>
+<span id="L389"><span class="lineNum">     389</span>              :     check_compatible(y, x, z)</span>
+<span id="L390"><span class="lineNum">     390</span>              :     ...</span>
+<span id="L391"><span class="lineNum">     391</span>              : end</span>
+<span id="L392"><span class="lineNum">     392</span>              : ```</span>
+<span id="L393"><span class="lineNum">     393</span>              : </span>
+<span id="L394"><span class="lineNum">     394</span>              : The identity fast path makes this free when all fields share one grid object;</span>
+<span id="L395"><span class="lineNum">     395</span>              : the throw is out of line, so the check inlines into the caller.</span>
+<span id="L396"><span class="lineNum">     396</span>              : </span>
+<span id="L397"><span class="lineNum">     397</span>              : See also: [`check_layout`](@ref), [`compatible`](@ref).</span>
+<span id="L398"><span class="lineNum">     398</span>              : &quot;&quot;&quot;</span>
+<span id="L399"><span class="lineNum">     399</span>              : # Recursion over the argument tuple rather than `foreach` with a closure: the</span>
+<span id="L400"><span class="lineNum">     400</span>              : # closure form allocates ~1 KB per call from three fields up under</span>
+<span id="L401"><span class="lineNum">     401</span>              : # `--check-bounds=yes`; the recursive form measures 0 B for Field and BlockField.</span>
+<span id="L402"><span class="lineNum">     402</span> <span class="tlaUNC">           0 : @inline check_compatible(::AbstractField) = nothing</span></span>
+<span id="L403"><span class="lineNum">     403</span> <span class="tlaUNC">           0 : @inline function check_compatible(a::AbstractField, b::AbstractField, rest::AbstractField...)</span></span>
+<span id="L404"><span class="lineNum">     404</span> <span class="tlaUNC">           0 :     _check_pair(_field_mismatch(a, b), a, b, &quot;grid&quot;)</span></span>
+<span id="L405"><span class="lineNum">     405</span> <span class="tlaUNC">           0 :     return check_compatible(a, rest...)</span></span>
+<span id="L406"><span class="lineNum">     406</span>              : end</span>
+<span id="L407"><span class="lineNum">     407</span>              : </span>
+<span id="L408"><span class="lineNum">     408</span>              : &quot;&quot;&quot;</span>
+<span id="L409"><span class="lineNum">     409</span>              :     check_layout(a::AbstractField, b::AbstractField...) -&gt; nothing</span>
+<span id="L410"><span class="lineNum">     410</span>              :     check_layout(a::AbstractGrid, b::AbstractGrid...) -&gt; nothing</span>
+<span id="L411"><span class="lineNum">     411</span>              : </span>
+<span id="L412"><span class="lineNum">     412</span>              : The [`same_layout`](@ref) counterpart of [`check_compatible`](@ref): throw an</span>
+<span id="L413"><span class="lineNum">     413</span>              : `ArgumentError` unless every argument has `a`'s padded storage shape (and, for</span>
+<span id="L414"><span class="lineNum">     414</span>              : forest fields, is current). For pointwise kernels that never read spacing or</span>
+<span id="L415"><span class="lineNum">     415</span>              : boundary conditions.</span>
+<span id="L416"><span class="lineNum">     416</span>              : &quot;&quot;&quot;</span>
+<span id="L417"><span class="lineNum">     417</span> <span class="tlaUNC">           0 : @inline check_layout(::AbstractField) = nothing</span></span>
+<span id="L418"><span class="lineNum">     418</span> <span class="tlaUNC">           0 : @inline function check_layout(a::AbstractField, b::AbstractField, rest::AbstractField...)</span></span>
+<span id="L419"><span class="lineNum">     419</span> <span class="tlaUNC">           0 :     _check_pair(_field_layout_mismatch(a, b), a, b, &quot;layout&quot;)</span></span>
+<span id="L420"><span class="lineNum">     420</span> <span class="tlaUNC">           0 :     return check_layout(a, rest...)</span></span>
+<span id="L421"><span class="lineNum">     421</span>              : end</span>
+<span id="L422"><span class="lineNum">     422</span>              : </span>
+<span id="L423"><span class="lineNum">     423</span>              : nleaves(ϕ::Field) = nleaves(getgrid(ϕ))</span>
         </pre>
               </td>
             </tr>
