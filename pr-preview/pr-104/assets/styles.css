@@ -1,0 +1,68 @@
+/* Sidebar section spacing */
+.sidebar-item-section {
+    margin-top: 2rem !important;
+}
+
+.sidebar-item-section > .sidebar-item-container > .sidebar-item-text {
+    font-weight: bold;
+}
+
+.sidebar-item-section .collapse {
+    display: block !important;
+}
+
+.sidebar-item-toggle {
+    display: none !important;
+}
+
+
+
+/* Fix heading inline code */
+h1 code, h2 code, h3 code, h4 code {
+    background: none;
+    color: inherit;
+}
+
+/* Larger search results panel */
+.aa-Panel,
+#quarto-search-results .aa-Panel {
+    max-width: 600px;
+    font-size: 1rem;
+}
+
+/* Navbar bottom line and logo */
+.navbar {
+    border-bottom: 1px solid #EFF0F6;
+}
+
+.navbar .nav-link:hover {
+    color: #B02102 !important;
+}
+
+.navbar .navbar-logo {
+    height: 2.5rem !important;
+    max-height: 2.5rem !important;
+    margin-right: 0.75rem;
+}
+
+/* API item card headers */
+.api-item-header {
+    background-color: var(--bs-primary) !important;
+}
+
+.api-item-header h4 {
+    margin: 0 !important;
+    color: white !important;
+    font-size: 1rem;
+}
+
+.api-item-header h4 code {
+    color: white !important;
+    background: none !important;
+}
+
+/* Responsive images */
+img {
+    max-width: 100%;
+    height: auto;
+}
