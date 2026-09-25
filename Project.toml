@@ -1,9 +1,10 @@
 name = "MatrixFreeOperators"
 uuid = "bf251007-91fc-422b-8727-f8d5215c1c76"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Kyle Beggs <beggskw@gmail.com>"]
 
 [deps]
+AcceleratedKernels = "6a4ca0a5-0e36-4168-a932-d9be78d558f1"
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -18,17 +19,13 @@ MultiDeviceLinearAlgebra = "32bb5913-70e1-44ea-8d43-6c4dc56badf2"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 
 [extensions]
-# Keyed on EnzymeCore, not Enzyme: EnzymeRules lives in EnzymeCore, which is a
-# tiny LLVM-free package, so loading the rules costs nothing extra for anyone who
-# already has Enzyme, and nothing at all for anyone who does not.
 MatrixFreeOperatorsEnzymeCoreExt = "EnzymeCore"
-# Keyed on full Enzyme: an AD-powered Jacobian needs `autodiff`, not just the rule
-# interface. Loading Enzyme pulls EnzymeCore, so both extensions activate together.
 MatrixFreeOperatorsEnzymeExt = "Enzyme"
 MatrixFreeOperatorsMDLAExt = ["MultiDeviceLinearAlgebra", "Krylov", "CUDA"]
 MatrixFreeOperatorsReactantExt = "Reactant"
 
 [compat]
+AcceleratedKernels = "0.4.3"
 Adapt = "4"
 CUDA = "5, 6.2"
 Enzyme = "0.13"
@@ -36,10 +33,6 @@ EnzymeCore = "0.8"
 KernelAbstractions = "0.9"
 Krylov = "0.10"
 LinearAlgebra = "1"
-# Pinned to one exact patch on purpose: MatrixFreeOperatorsMDLAExt reaches into
-# MDLA internals (_empty_mdv, copy_exchange, spec.ranges/len/ndevices,
-# ghost.local_x) and replays its ghost-section ordering rule, none of which are
-# public API.
 MultiDeviceLinearAlgebra = "0.0.1"
 Reactant = "0.2"
 StaticArrays = "1"

@@ -5,6 +5,7 @@ using LinearAlgebra: LinearAlgebra, diag, dot, issuccess, ldiv!, lu, mul!, norm
 using StaticArrays: SVector
 import KernelAbstractions
 using KernelAbstractions: @Const, @index, @kernel
+import AcceleratedKernels as AK
 
 export AbstractGrid, CartesianGrid, getgrid
 export dimension, spacing, local_size, halo_width, boundary_conditions
