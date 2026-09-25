@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-22 14:19:45</td>
+            <td class="headerValue">2026-09-25 16:57:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -366,7 +366,7 @@
 <span id="L304"><span class="lineNum">     304</span> <span class="tlaGNC">        2162 :     end</span></span>
 <span id="L305"><span class="lineNum">     305</span> <span class="tlaGNC">          14 :     fact = lu(Ad; check=false)</span></span>
 <span id="L306"><span class="lineNum">     306</span> <span class="tlaGNC">          28 :     dU = abs.(diag(fact.factors))</span></span>
-<span id="L307"><span class="lineNum">     307</span> <span class="tlaGNC">          27 :     if !issuccess(fact) || minimum(dU) &lt;= sqrt(eps(T)) * maximum(dU)</span></span>
+<span id="L307"><span class="lineNum">     307</span> <span class="tlaGNC">          28 :     if !issuccess(fact) || minimum(dU) &lt;= sqrt(eps(T)) * maximum(dU)</span></span>
 <span id="L308"><span class="lineNum">     308</span> <span class="tlaGNC">           1 :         throw(</span></span>
 <span id="L309"><span class="lineNum">     309</span>              :             ArgumentError(</span>
 <span id="L310"><span class="lineNum">     310</span>              :                 &quot;the operator is singular at the coarsest multigrid level — an &quot; *</span>

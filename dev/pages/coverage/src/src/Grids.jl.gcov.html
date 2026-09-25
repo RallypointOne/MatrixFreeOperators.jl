@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-22 14:19:45</td>
+            <td class="headerValue">2026-09-25 16:57:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -183,7 +183,7 @@
 <span id="L121"><span class="lineNum">     121</span>              : </span>
 <span id="L122"><span class="lineNum">     122</span>              : Ghost-layer width per dimension.</span>
 <span id="L123"><span class="lineNum">     123</span>              : &quot;&quot;&quot;</span>
-<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">     8004747 : halo_width(g::CartesianGrid) = g.halo</span></span>
+<span id="L124"><span class="lineNum">     124</span> <span class="tlaGNC">     8004771 : halo_width(g::CartesianGrid) = g.halo</span></span>
 <span id="L125"><span class="lineNum">     125</span>              : </span>
 <span id="L126"><span class="lineNum">     126</span>              : &quot;&quot;&quot;</span>
 <span id="L127"><span class="lineNum">     127</span>              :     boundary_conditions(g::AbstractGrid) -&gt; NTuple{N,Tuple}</span>
@@ -282,7 +282,7 @@
 <span id="L220"><span class="lineNum">     220</span>              :     )</span>
 <span id="L221"><span class="lineNum">     221</span>              : end</span>
 <span id="L222"><span class="lineNum">     222</span>              : </span>
-<span id="L223"><span class="lineNum">     223</span> <span class="tlaGNC">        5534 : KernelAbstractions.get_backend(g::CartesianGrid) = g.device</span></span>
+<span id="L223"><span class="lineNum">     223</span> <span class="tlaGNC">       13527 : KernelAbstractions.get_backend(g::CartesianGrid) = g.device</span></span>
 <span id="L224"><span class="lineNum">     224</span>              : </span>
 <span id="L225"><span class="lineNum">     225</span> <span class="tlaGNC">      207390 : _inv_spacing(g::AbstractGrid{N}) where {N} = ntuple(d -&gt; inv(spacing(g)[d]), Val(N))</span></span>
 <span id="L226"><span class="lineNum">     226</span> <span class="tlaGNC">      476006 : _inv_spacing2(g::AbstractGrid{N}) where {N} = ntuple(d -&gt; inv(spacing(g)[d]^2), Val(N))</span></span>
