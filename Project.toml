@@ -1,6 +1,6 @@
 name = "MatrixFreeOperators"
 uuid = "bf251007-91fc-422b-8727-f8d5215c1c76"
-version = "0.2.1"
+version = "0.2.0"
 authors = ["Kyle Beggs <beggskw@gmail.com>"]
 
 [deps]
