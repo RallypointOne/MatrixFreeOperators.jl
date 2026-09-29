@@ -234,7 +234,7 @@ _prepare_tree(L::AbstractOperator, ::AbstractField) = L
 # fallback. Sound because these leaves are isconstant; staleness after a regrid
 # is caught by the PreparedForest generation guard. (Packed coefficients under a
 # BlockField prototype need no conversion — block views serve the fallback.)
-_prepare_tree(S::ScalingOp{<:BlockField}, ::PackedBlockField) = ScalingOp(pack(S.coeff))
+_prepare_tree(S::CoeffScaling{<:BlockField}, ::PackedBlockField) = CoeffScaling(pack(_coeff(S)))
 _prepare_tree(L::Advection{<:BlockForest,<:BlockField}, ::PackedBlockField) =
     Advection(L.grid, pack(L.velocity))
 # `pack` copies padded storage verbatim, so the coefficient ghosts the leaf already carries

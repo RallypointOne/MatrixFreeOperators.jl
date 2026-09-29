@@ -31,7 +31,7 @@ let M = MatrixFreeOperators
         (_leaves(L.a, keep)..., _leaves(L.b, keep)...)
     _leaves(L::M.AbstractOperator, keep) = keep(L) ? (L,) : ()
 end
-_scaling_leaves(L) = _leaves(L, Base.Fix2(isa, MatrixFreeOperators.ScalingOp{<:Field}))
+_scaling_leaves(L) = _leaves(L, Base.Fix2(isa, MatrixFreeOperators.CoeffScaling{<:Field}))
 _diffusion_leaves(L) = _leaves(L, Base.Fix2(isa, MatrixFreeOperators.Diffusion))
 
 function dist_apply_emulated(L, g, parts, ghost_globals, plans, xflat)
@@ -757,9 +757,9 @@ end
             clean = dist_mul(D, x)
             for pre in D.prepared
                 for S in _scaling_leaves(pre.op)
-                    saved = copy(interior(S.coeff))
-                    fill!(S.coeff.data, NaN)      # poison every ghost
-                    interior(S.coeff) .= saved
+                    saved = copy(interior(only(S.args)))
+                    fill!(only(S.args).data, NaN)      # poison every ghost
+                    interior(only(S.args)) .= saved
                 end
             end
             @test dist_mul(D, x) == clean
@@ -802,7 +802,7 @@ end
             p == 1 && continue                       # partition 1's window is right
             shifted = ntuple(d -> d == 2 ? lp.local_range[d] .- 1 : lp.local_range[d], 2)
             for S in _scaling_leaves(Dbad.prepared[p].op)
-                interior(S.coeff) .= view(interior(κ), shifted...)
+                interior(only(S.args)) .= view(interior(κ), shifted...)
             end
         end
         @test dist_mul(Dbad, x) != good

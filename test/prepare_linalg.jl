@@ -260,7 +260,7 @@
         # (label, operator, input prototype, expected twin type of P.op)
         cases = (
             ("Laplacian leaf", Lap, scalar_field(g), MFO.Laplacian),
-            ("ScalingOp leaf (diagonal, self-adjoint)", S, scalar_field(g), MFO.ScalingOp),
+            ("ScalingOp leaf (diagonal, self-adjoint)", S, scalar_field(g), MFO.CoeffScaling),
             ("Scaled", 2.5 * Lap, scalar_field(g), Scaled),
             ("Added", Lap + S, scalar_field(g), Added),
             ("Added with LinearizedOp (not constant)", Lap - 0.1 * J, scalar_field(g), Added),
@@ -313,7 +313,7 @@
         @test !isselfadjoint(prepare(adjoint(Adv)))
         @test !isselfadjoint(prepare(adjoint(D1)))
         @test prepare(adjoint(D1)).op isa MFO.PreparedAdjoint
-        @test prepare(MFO.AdjointOp(D1 * S)).op.a isa MFO.ScalingOp
+        @test prepare(MFO.AdjointOp(D1 * S)).op.a isa MFO.CoeffScaling
         @test prepare(MFO.AdjointOp(D1 * S)).op.b isa MFO.PreparedAdjoint
         @test !isselfadjoint(prepare(laplacian(bf) + adjoint(Df)))
 
@@ -332,11 +332,11 @@
         packed = pack(scalar_field(bf))
         # (label, operator, expected type of P.op, packed coefficient inside P.op)
         packed_cases = (
-            ("packed ScalingOp leaf", Sf, MFO.ScalingOp, L -> L.coeff),
+            ("packed ScalingOp leaf", Sf, MFO.CoeffScaling, L -> only(L.args)),
             ("packed Diffusion leaf", Dif, Diffusion, L -> L.κ),
             ("packed Advection leaf", Af, Advection, L -> L.velocity),
             ("packed Composed lap∘κ → PreparedComposed", laplacian(bf) * Sf,
-                MFO.PreparedComposed, L -> L.b.coeff),
+                MFO.PreparedComposed, L -> only(L.b.args)),
             ("packed Added(Diffusion, PreparedAdjoint)", Dif + adjoint(Df), Added, L -> L.a.κ),
             ("packed Scaled Advection", 0.5 * Af, Scaled, L -> L.op.velocity),
         )
@@ -433,7 +433,7 @@
         @test collect(interior(boundary_rhs(3 * L, g))) ≈ 3 .* bL
         @test collect(interior(boundary_rhs(L + L, g))) ≈ 2 .* bL
         @test collect(interior(boundary_rhs(S * L, g))) ≈
-            collect(interior(S.coeff)) .* bL                          # S has zero lift
+            collect(interior(only(S.args))) .* bL                          # S has zero lift
         @test_throws ArgumentError boundary_rhs(advection(g, SelfAdvection()), g)
     end
 end

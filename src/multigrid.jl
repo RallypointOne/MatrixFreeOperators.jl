@@ -188,9 +188,9 @@ _rediscretize(L::Derivative, gc::CartesianGrid) = Derivative(gc, L.dim, L.order)
 _rediscretize(::Gradient, gc::CartesianGrid) = Gradient(gc)
 _rediscretize(::Divergence, gc::CartesianGrid) = Divergence(gc)
 _rediscretize(L::IdentityOp, ::CartesianGrid) = L
-_rediscretize(L::ScalingOp{<:Number}, ::CartesianGrid) = L
-function _rediscretize(L::ScalingOp{<:Field}, gc::CartesianGrid)
-    return ScalingOp(_average_to_coarse(L.coeff, gc))
+_rediscretize(L::CoeffScaling{<:Number}, ::CartesianGrid) = L
+function _rediscretize(L::CoeffScaling{<:Field}, gc::CartesianGrid)
+    return CoeffScaling(_average_to_coarse(_coeff(L), gc))
 end
 # The coarse coefficient goes through the child mean, not Restriction — see
 # _average_to_coarse. check=false: the fine κ was already validated at construction, and

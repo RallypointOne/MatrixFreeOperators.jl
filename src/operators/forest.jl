@@ -60,7 +60,7 @@ end
 # ordinary single-grid operators whose coefficient is the leaf's block view.
 # block() re-checks the coefficient field's generation on every slice.
 @inline _leaf_op(L::AbstractOperator, i, lg) = L
-@inline _leaf_op(S::ScalingOp{<:AbstractBlockField}, i, lg) = ScalingOp(block(S.coeff, i, lg))
+@inline _leaf_op(S::CoeffScaling{<:AbstractBlockField}, i, lg) = CoeffScaling(block(_coeff(S), i, lg))
 @inline function _leaf_op(A::Advection{<:BlockForest,<:AbstractBlockField}, i, lg)
     return Advection(lg, block(A.velocity, i, lg))
 end

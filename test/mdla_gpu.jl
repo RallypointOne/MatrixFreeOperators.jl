@@ -417,8 +417,8 @@ mdla_coeff(x) = 1.5 + x[2] + 0.3 * x[1] * x[2] + 0.2 * x[2]^2
         for d in 1:2
             # Composed(laplacian, scaling) ⇒ the inner factor `b` is the scaling
             Sd = P.tree.b.ops[d]
-            @test Sd isa MatrixFreeOperators.ScalingOp
-            κd = Sd.coeff
+            @test Sd isa MatrixFreeOperators.CoeffScaling
+            κd = only(Sd.args)
             @test κd.data isa CuArray
             @test size(κd.data) == MatrixFreeOperators.padded_size(locals[d])
             @test Array(interior(κd)) == collect(view(interior(κ), locals[d].local_range...))

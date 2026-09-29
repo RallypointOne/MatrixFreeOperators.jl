@@ -22,7 +22,7 @@ export islinear, isconstant, isselfadjoint, isdiagonal, shares_exchange, operato
 export Laplacian, laplacian, laplacian_stencil, laplacian_7pt_noflux
 export Derivative, derivative, derivative_stencil
 export Gradient, gradient, Divergence, divergence
-export ScalingOp, scaling, IdentityOp, identity_op
+export ScalingOp, CoeffScaling, scaling, IdentityOp, identity_op
 export Diffusion, diffusion, diffusion_stencil, fill_coefficient_ghosts!
 export ArithmeticMean, HarmonicMean
 export Advection, advection, SelfAdvection

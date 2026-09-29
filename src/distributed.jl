@@ -28,9 +28,10 @@ _distributable(::Laplacian) = true
 # so it is what makes an AdjointOp node reachable at all.
 _distributable(::Derivative) = true
 _distributable(::IdentityOp) = true
-_distributable(::ScalingOp{<:Number}) = true
-_distributable(S::ScalingOp{<:Field}) = _partitionable_coeff(S.coeff)
-# An AbstractBlockField coefficient belongs to a forest, not to a slab.
+_distributable(::CoeffScaling{<:Number}) = true
+_distributable(S::CoeffScaling{<:Field}) = _partitionable_coeff(_coeff(S))
+# An AbstractBlockField coefficient belongs to a forest, not to a slab; a general
+# `ScalingOp(func, args)` is not distributable yet.
 _distributable(::ScalingOp) = false
 # Same coefficient requirement as ScalingOp, for the same two reasons — and the
 # face averaging needs κ one cell PAST the cut as well, which the padded window
@@ -108,7 +109,7 @@ _undistributable_reason(::Restriction) =
     "transfer operators compose grids that would each need their own consistent partitioning"
 _undistributable_reason(::Prolongation) =
     "transfer operators compose grids that would each need their own consistent partitioning"
-_undistributable_reason(S::ScalingOp) =
+_undistributable_reason(S::CoeffScaling) =
     "its coefficient must be a Number or a real-eltype Field on an undistributed " *
     "CartesianGrid: real because the distributed vectors are, undistributed so it " *
     "can be sliced onto the slabs"
@@ -236,7 +237,7 @@ reports the global one, so re-checking a localized tree would reject it. Check
 once, before rewriting.
 """
 _slab_op(L::AbstractOperator, ::AbstractGrid) = L
-_slab_op(S::ScalingOp{<:Field}, lg::AbstractGrid) = ScalingOp(_slab_field(S.coeff, lg))
+_slab_op(S::CoeffScaling{<:Field}, lg::AbstractGrid) = CoeffScaling(_slab_field(_coeff(S), lg))
 # The INNER constructor, deliberately: `diffusion(g, κ)` refuses Interface faces,
 # and this is the seam its docstring reserves for supplying cross-block
 # coefficient ghosts. The validation it skips already ran on the global operator.
