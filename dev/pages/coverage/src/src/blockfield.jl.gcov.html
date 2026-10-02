@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-28 22:26:14</td>
+            <td class="headerValue">2026-10-02 17:38:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -97,7 +97,7 @@
 <span id="L35"><span class="lineNum">      35</span>              : </span>
 <span id="L36"><span class="lineNum">      36</span>              : Layout tag for vector-of-blocks storage: `store[i]` is leaf `i`'s padded array.</span>
 <span id="L37"><span class="lineNum">      37</span>              : &quot;&quot;&quot;</span>
-<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC tlaBgGNC">       46204 : struct BlocksLayout &lt;: BlockLayout end</span></span>
+<span id="L38"><span class="lineNum">      38</span> <span class="tlaGNC tlaBgGNC">       46212 : struct BlocksLayout &lt;: BlockLayout end</span></span>
 <span id="L39"><span class="lineNum">      39</span>              : </span>
 <span id="L40"><span class="lineNum">      40</span>              : &quot;&quot;&quot;</span>
 <span id="L41"><span class="lineNum">      41</span>              :     PackedLayout()</span>
@@ -126,8 +126,8 @@
 <span id="L64"><span class="lineNum">      64</span>              : # Storage-level twins of `_block_array`/`_block_view`, indexing raw storage by</span>
 <span id="L65"><span class="lineNum">      65</span>              : # layout. The field-level accessors are defined in terms of these, so the two can</span>
 <span id="L66"><span class="lineNum">      66</span>              : # never drift apart.</span>
-<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">      211127 : @inline _leaf_array(store, ::BlocksLayout, i::Integer) = store[i]</span></span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">     7406255 : @inline _leaf_view(store, ::BlocksLayout, i::Integer, ranges) = view(store[i], ranges...)</span></span>
+<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">      211159 : @inline _leaf_array(store, ::BlocksLayout, i::Integer) = store[i]</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">     7406319 : @inline _leaf_view(store, ::BlocksLayout, i::Integer, ranges) = view(store[i], ranges...)</span></span>
 <span id="L69"><span class="lineNum">      69</span>              : </span>
 <span id="L70"><span class="lineNum">      70</span>              : &quot;&quot;&quot;</span>
 <span id="L71"><span class="lineNum">      71</span>              :     BlockField{L,P}(blocks, grid[, generation])</span>
@@ -148,14 +148,14 @@
 <span id="L86"><span class="lineNum">      86</span>              : See also: [`scalar_field`](@ref), [`vector_field`](@ref), [`block`](@ref).</span>
 <span id="L87"><span class="lineNum">      87</span>              : &quot;&quot;&quot;</span>
 <span id="L88"><span class="lineNum">      88</span>              : struct BlockField{L,P&lt;:RegridTransferPolicy,A&lt;:AbstractArray,G&lt;:BlockForest} &lt;: AbstractBlockField</span>
-<span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">       10926 :     blocks::Vector{A}</span></span>
+<span id="L89"><span class="lineNum">      89</span> <span class="tlaGNC">       10934 :     blocks::Vector{A}</span></span>
 <span id="L90"><span class="lineNum">      90</span>              :     grid::G</span>
 <span id="L91"><span class="lineNum">      91</span>              :     generation::Int</span>
 <span id="L92"><span class="lineNum">      92</span>              : end</span>
 <span id="L93"><span class="lineNum">      93</span> <span class="tlaGNC">          13 : function BlockField{L,P}(</span></span>
 <span id="L94"><span class="lineNum">      94</span>              :     blocks::Vector{&lt;:AbstractArray}, grid::BlockForest, generation::Int=grid.forest.generation[]</span>
 <span id="L95"><span class="lineNum">      95</span>              : ) where {L,P}</span>
-<span id="L96"><span class="lineNum">      96</span> <span class="tlaGNC">       15882 :     return BlockField{L,P,eltype(blocks),typeof(grid)}(blocks, grid, generation)</span></span>
+<span id="L96"><span class="lineNum">      96</span> <span class="tlaGNC">       15894 :     return BlockField{L,P,eltype(blocks),typeof(grid)}(blocks, grid, generation)</span></span>
 <span id="L97"><span class="lineNum">      97</span>              : end</span>
 <span id="L98"><span class="lineNum">      98</span> <span class="tlaUNC tlaBgUNC">           0 : BlockField{L}(blocks::Vector{&lt;:AbstractArray}, grid::BlockForest) where {L} =</span></span>
 <span id="L99"><span class="lineNum">      99</span>              :     BlockField{L,Interpolated}(blocks, grid)</span>
@@ -178,30 +178,30 @@
 <span id="L116"><span class="lineNum">     116</span>              :     BlockField{L,P}(f.blocks, f.grid, f.generation)</span>
 <span id="L117"><span class="lineNum">     117</span>              : </span>
 <span id="L118"><span class="lineNum">     118</span>              : # Per-layout storage accessors behind which everything else is layout-agnostic.</span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">       32900 : _storage(f::BlockField) = f.blocks</span></span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">       32900 : _layout(::BlockField) = BlocksLayout()</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">       32908 : _storage(f::BlockField) = f.blocks</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">       32908 : _layout(::BlockField) = BlocksLayout()</span></span>
 <span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">       13245 : _block_array(f::BlockField, i::Integer) = _leaf_array(f.blocks, BlocksLayout(), i)</span></span>
 <span id="L122"><span class="lineNum">     122</span> <span class="tlaUNC tlaBgUNC">           0 : _block_view(f::BlockField, i::Integer, ranges) = _leaf_view(f.blocks, BlocksLayout(), i, ranges)</span></span>
 <span id="L123"><span class="lineNum">     123</span> <span class="tlaGNC tlaBgGNC">        3531 : _flat_similar(f::BlockField, ::Type{T}, len::Int) where {T} = similar(first(f.blocks), T, len)</span></span>
 <span id="L124"><span class="lineNum">     124</span>              : </span>
 <span id="L125"><span class="lineNum">     125</span>              : # Regrid guard: block storage is tied to the leaf set the field was allocated on.</span>
 <span id="L126"><span class="lineNum">     126</span> <span class="tlaGNC">          36 : function _require_current(f::AbstractBlockField)</span></span>
-<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">     1072044 :     f.generation == f.grid.forest.generation[] || throw(</span></span>
+<span id="L127"><span class="lineNum">     127</span> <span class="tlaGNC">     1072176 :     f.generation == f.grid.forest.generation[] || throw(</span></span>
 <span id="L128"><span class="lineNum">     128</span>              :         ArgumentError(</span>
 <span id="L129"><span class="lineNum">     129</span>              :             &quot;this $(nameof(typeof(f))) was allocated before the forest was regridded &quot; *</span>
 <span id="L130"><span class="lineNum">     130</span>              :             &quot;(refine!/coarsen!/balance!); allocate a fresh field on the current forest&quot;,</span>
 <span id="L131"><span class="lineNum">     131</span>              :         ),</span>
 <span id="L132"><span class="lineNum">     132</span>              :     )</span>
-<span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">     1071942 :     return nothing</span></span>
+<span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">     1072074 :     return nothing</span></span>
 <span id="L134"><span class="lineNum">     134</span>              : end</span>
 <span id="L135"><span class="lineNum">     135</span>              : </span>
-<span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC">        9558 : function scalar_field(</span></span>
+<span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC">        9566 : function scalar_field(</span></span>
 <span id="L137"><span class="lineNum">     137</span>              :     bf::BlockForest, ::Type{T}=eltype(bf.spacing0); transfer::RegridTransferPolicy=Interpolated()</span>
 <span id="L138"><span class="lineNum">     138</span>              : ) where {T&lt;:Number}</span>
-<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">        4782 :     backend = KernelAbstractions.get_backend(bf)</span></span>
-<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">        4782 :     psize = bf.blocksize .+ 2 .* bf.halo</span></span>
-<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">        4782 :     blocks = [KernelAbstractions.zeros(backend, T, psize...) for _ in 1:nleaves(bf)]</span></span>
-<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">        4782 :     return BlockField{Center,typeof(transfer)}(blocks, bf)</span></span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaGNC">        4786 :     backend = KernelAbstractions.get_backend(bf)</span></span>
+<span id="L140"><span class="lineNum">     140</span> <span class="tlaGNC">        4786 :     psize = bf.blocksize .+ 2 .* bf.halo</span></span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaGNC">        4786 :     blocks = [KernelAbstractions.zeros(backend, T, psize...) for _ in 1:nleaves(bf)]</span></span>
+<span id="L142"><span class="lineNum">     142</span> <span class="tlaGNC">        4786 :     return BlockField{Center,typeof(transfer)}(blocks, bf)</span></span>
 <span id="L143"><span class="lineNum">     143</span>              : end</span>
 <span id="L144"><span class="lineNum">     144</span>              : </span>
 <span id="L145"><span class="lineNum">     145</span> <span class="tlaGNC">         202 : function vector_field(</span></span>
@@ -223,12 +223,12 @@
 <span id="L161"><span class="lineNum">     161</span>              : leaf shares one concrete all-`Interface` grid type).</span>
 <span id="L162"><span class="lineNum">     162</span>              : &quot;&quot;&quot;</span>
 <span id="L163"><span class="lineNum">     163</span> <span class="tlaGNC">        6254 : function block(f::BlockField{L}, i::Integer, leaf_grid) where {L}</span></span>
-<span id="L164"><span class="lineNum">     164</span> <span class="tlaGNC">      999848 :     _require_current(f)</span></span>
-<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">     1597892 :     return Field{L}(f.blocks[i], leaf_grid)</span></span>
+<span id="L164"><span class="lineNum">     164</span> <span class="tlaGNC">      999968 :     _require_current(f)</span></span>
+<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">     1598084 :     return Field{L}(f.blocks[i], leaf_grid)</span></span>
 <span id="L166"><span class="lineNum">     166</span>              : end</span>
-<span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">      407828 : block(f::AbstractBlockField, i::Integer) = block(f, i, leaf_grid(f.grid, i))</span></span>
+<span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">      407876 : block(f::AbstractBlockField, i::Integer) = block(f, i, leaf_grid(f.grid, i))</span></span>
 <span id="L168"><span class="lineNum">     168</span>              : </span>
-<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">      682054 : Base.eltype(::BlockField{L,P,A}) where {L,P,A} = eltype(A)</span></span>
+<span id="L169"><span class="lineNum">     169</span> <span class="tlaGNC">      682056 : Base.eltype(::BlockField{L,P,A}) where {L,P,A} = eltype(A)</span></span>
 <span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">      677381 : ncomponents(f::AbstractBlockField) = _ncomponents(eltype(f))</span></span>
 <span id="L171"><span class="lineNum">     171</span>              : </span>
 <span id="L172"><span class="lineNum">     172</span> <span class="tlaGNC">           6 : function component(f::BlockField{L,P}, d::Integer) where {L,P}</span></span>
@@ -240,7 +240,7 @@
 <span id="L178"><span class="lineNum">     178</span>              : </span>
 <span id="L179"><span class="lineNum">     179</span>              : # Derived fields inherit the source's generation: a copy of a stale field is</span>
 <span id="L180"><span class="lineNum">     180</span>              : # equally stale — stamping the current generation would bless wrong-size storage.</span>
-<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">        4767 : Base.similar(f::BlockField{L,P}) where {L,P} =</span></span>
+<span id="L181"><span class="lineNum">     181</span> <span class="tlaGNC">        4771 : Base.similar(f::BlockField{L,P}) where {L,P} =</span></span>
 <span id="L182"><span class="lineNum">     182</span>              :     BlockField{L,P}([similar(b) for b in f.blocks], f.grid, f.generation)</span>
 <span id="L183"><span class="lineNum">     183</span> <span class="tlaGNC">           6 : function Base.similar(f::BlockField{L,P}, ::Type{E}) where {L,P,E}</span></span>
 <span id="L184"><span class="lineNum">     184</span> <span class="tlaGNC">          75 :     blocks = [similar(b, E) for b in f.blocks]</span></span>
@@ -249,11 +249,11 @@
 <span id="L187"><span class="lineNum">     187</span> <span class="tlaGNC">        1100 : Base.copy(f::BlockField{L,P}) where {L,P} =</span></span>
 <span id="L188"><span class="lineNum">     188</span>              :     BlockField{L,P}([copy(b) for b in f.blocks], f.grid, f.generation)</span>
 <span id="L189"><span class="lineNum">     189</span>              : </span>
-<span id="L190"><span class="lineNum">     190</span> <span class="tlaGNC">         337 : function set!(f::F, ϕ::AbstractBlockField) where {F}</span></span>
-<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">         365 :     for i in 1:nleaves(getgrid(ϕ))</span></span>
-<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">        6791 :         set!(f, block(ϕ, i))</span></span>
-<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC">       13213 :     end</span></span>
-<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         361 :     return ϕ</span></span>
+<span id="L190"><span class="lineNum">     190</span> <span class="tlaGNC">         369 : function set!(f::F, ϕ::AbstractBlockField) where {F}</span></span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">         369 :     for i in 1:nleaves(getgrid(ϕ))</span></span>
+<span id="L192"><span class="lineNum">     192</span> <span class="tlaGNC">        6807 :         set!(f, block(ϕ, i))</span></span>
+<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC">       13241 :     end</span></span>
+<span id="L194"><span class="lineNum">     194</span> <span class="tlaGNC">         365 :     return ϕ</span></span>
 <span id="L195"><span class="lineNum">     195</span>              : end</span>
 <span id="L196"><span class="lineNum">     196</span>              : </span>
 <span id="L197"><span class="lineNum">     197</span> <span class="tlaUNC tlaBgUNC">           0 : function op!(f::F, ϕ::AbstractBlockField, ϕs::AbstractBlockField...; check::Bool=true) where {F}</span></span>
@@ -265,10 +265,10 @@
 <span id="L203"><span class="lineNum">     203</span>              : end</span>
 <span id="L204"><span class="lineNum">     204</span>              : </span>
 <span id="L205"><span class="lineNum">     205</span> <span class="tlaGNC tlaBgGNC">         363 : function zero_ghosts!(f::AbstractBlockField)</span></span>
-<span id="L206"><span class="lineNum">     206</span> <span class="tlaGNC">        5011 :     for i in 1:nleaves(f.grid)</span></span>
-<span id="L207"><span class="lineNum">     207</span> <span class="tlaGNC">       46318 :         zero_ghosts!(block(f, i))</span></span>
-<span id="L208"><span class="lineNum">     208</span> <span class="tlaGNC">       87648 :     end</span></span>
-<span id="L209"><span class="lineNum">     209</span> <span class="tlaGNC">        4986 :     return f</span></span>
+<span id="L206"><span class="lineNum">     206</span> <span class="tlaGNC">        5015 :     for i in 1:nleaves(f.grid)</span></span>
+<span id="L207"><span class="lineNum">     207</span> <span class="tlaGNC">       46334 :         zero_ghosts!(block(f, i))</span></span>
+<span id="L208"><span class="lineNum">     208</span> <span class="tlaGNC">       87676 :     end</span></span>
+<span id="L209"><span class="lineNum">     209</span> <span class="tlaGNC">        4990 :     return f</span></span>
 <span id="L210"><span class="lineNum">     210</span>              : end</span>
 <span id="L211"><span class="lineNum">     211</span>              : </span>
 <span id="L212"><span class="lineNum">     212</span>              : # Zero every entry (interior and ghosts) of every block.</span>

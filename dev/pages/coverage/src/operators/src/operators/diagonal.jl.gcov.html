@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-28 22:26:14</td>
+            <td class="headerValue">2026-10-02 17:38:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -66,7 +66,7 @@
 <span id="L4"><span class="lineNum">       4</span>              : # never mutated; results are fresh Fields with zero ghosts.</span>
 <span id="L5"><span class="lineNum">       5</span>              : </span>
 <span id="L6"><span class="lineNum">       6</span> <span class="tlaGNC tlaBgGNC">           1 : _diag_scale(α::Number, d::Number) = α * d</span></span>
-<span id="L7"><span class="lineNum">       7</span> <span class="tlaGNC">          34 : _diag_scale(α::Number, d::Field) = Field(α .* d.data, d.grid)</span></span>
+<span id="L7"><span class="lineNum">       7</span> <span class="tlaGNC">          36 : _diag_scale(α::Number, d::Field) = Field(α .* d.data, d.grid)</span></span>
 <span id="L8"><span class="lineNum">       8</span>              : </span>
 <span id="L9"><span class="lineNum">       9</span> <span class="tlaUNC tlaBgUNC">           0 : _diag_conj(d::Number) = conj(d)</span></span>
 <span id="L10"><span class="lineNum">      10</span> <span class="tlaUNC">           0 : _diag_conj(d::Field) = Field(conj.(d.data), d.grid)</span></span>
@@ -78,10 +78,10 @@
 <span id="L16"><span class="lineNum">      16</span> <span class="tlaUNC">           0 :     return d</span></span>
 <span id="L17"><span class="lineNum">      17</span>              : end</span>
 <span id="L18"><span class="lineNum">      18</span> <span class="tlaUNC">           0 : _diag_add(a::Field, b::Number) = _diag_add(b, a)</span></span>
-<span id="L19"><span class="lineNum">      19</span> <span class="tlaGNC tlaBgGNC">           2 : function _diag_add(a::Field, b::Field)</span></span>
-<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC">           2 :     a.grid === b.grid ||</span></span>
+<span id="L19"><span class="lineNum">      19</span> <span class="tlaGNC tlaBgGNC">           4 : function _diag_add(a::Field, b::Field)</span></span>
+<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC">           4 :     a.grid === b.grid ||</span></span>
 <span id="L21"><span class="lineNum">      21</span>              :         throw(ArgumentError(&quot;cannot combine diagonals bound to different grids&quot;))</span>
-<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">           2 :     return Field(a.data .+ b.data, a.grid)</span></span>
+<span id="L22"><span class="lineNum">      22</span> <span class="tlaGNC">           4 :     return Field(a.data .+ b.data, a.grid)</span></span>
 <span id="L23"><span class="lineNum">      23</span>              : end</span>
 <span id="L24"><span class="lineNum">      24</span>              : </span>
 <span id="L25"><span class="lineNum">      25</span> <span class="tlaGNC">           2 : _diag_mul(a::Number, b) = _diag_scale(a, b)</span></span>
@@ -107,46 +107,46 @@
 <span id="L45"><span class="lineNum">      45</span>              : # Laplacian: the interior value is -2·Σ_d h_d⁻² (weight −1 on both faces of every</span>
 <span id="L46"><span class="lineNum">      46</span>              : # dimension); a face-adjacent cell is corrected by (weight + 1)·h_d⁻² on that face. Under</span>
 <span id="L47"><span class="lineNum">      47</span>              : # all-periodic BCs every cell sees the same faces, so the diagonal is a uniform Number.</span>
-<span id="L48"><span class="lineNum">      48</span> <span class="tlaGNC">          47 : function operator_diagonal(L::Laplacian)</span></span>
-<span id="L49"><span class="lineNum">      49</span> <span class="tlaGNC">          48 :     g = L.grid</span></span>
-<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">          48 :     g isa CartesianGrid || throw(</span></span>
+<span id="L48"><span class="lineNum">      48</span> <span class="tlaGNC">          49 : function operator_diagonal(L::Laplacian)</span></span>
+<span id="L49"><span class="lineNum">      49</span> <span class="tlaGNC">          50 :     g = L.grid</span></span>
+<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">          50 :     g isa CartesianGrid || throw(</span></span>
 <span id="L51"><span class="lineNum">      51</span>              :         ArgumentError(</span>
 <span id="L52"><span class="lineNum">      52</span>              :             &quot;operator_diagonal(::Laplacian) supports CartesianGrid only, got $(nameof(typeof(g)))&quot;,</span>
 <span id="L53"><span class="lineNum">      53</span>              :         ),</span>
 <span id="L54"><span class="lineNum">      54</span>              :     )</span>
-<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">          86 :     _has_interface(g) &amp;&amp; throw(</span></span>
+<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">          88 :     _has_interface(g) &amp;&amp; throw(</span></span>
 <span id="L56"><span class="lineNum">      56</span>              :         ArgumentError(</span>
 <span id="L57"><span class="lineNum">      57</span>              :             &quot;operator_diagonal(::Laplacian) does not support Interface faces (forest leaves)&quot;,</span>
 <span id="L58"><span class="lineNum">      58</span>              :         ),</span>
 <span id="L59"><span class="lineNum">      59</span>              :     )</span>
-<span id="L60"><span class="lineNum">      60</span> <span class="tlaGNC">          48 :     N = dimension(g)</span></span>
-<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">          48 :     inv_h2 = _inv_spacing2(g)</span></span>
-<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">          48 :     bcs = boundary_conditions(g)</span></span>
-<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">          48 :     n = local_size(g)</span></span>
-<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">         114 :     if all(pair -&gt; pair[1] isa Periodic, bcs)</span></span>
+<span id="L60"><span class="lineNum">      60</span> <span class="tlaGNC">          50 :     N = dimension(g)</span></span>
+<span id="L61"><span class="lineNum">      61</span> <span class="tlaGNC">          50 :     inv_h2 = _inv_spacing2(g)</span></span>
+<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">          50 :     bcs = boundary_conditions(g)</span></span>
+<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">          50 :     n = local_size(g)</span></span>
+<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">         118 :     if all(pair -&gt; pair[1] isa Periodic, bcs)</span></span>
 <span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">          24 :         return sum(d -&gt; 2 * _diag_face_weight(bcs[d][1], n[d]) * inv_h2[d], 1:N)</span></span>
 <span id="L66"><span class="lineNum">      66</span>              :     end</span>
-<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">          74 :     d = scalar_field(g)</span></span>
-<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">          37 :     di = interior(d)</span></span>
-<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">          77 :     di .= -2 * sum(inv_h2)</span></span>
-<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">          37 :     _diag_bc_adjust!(di, n, Val(1), bcs, inv_h2)</span></span>
-<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">          37 :     return d</span></span>
+<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">          78 :     d = scalar_field(g)</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">          39 :     di = interior(d)</span></span>
+<span id="L69"><span class="lineNum">      69</span> <span class="tlaGNC">          81 :     di .= -2 * sum(inv_h2)</span></span>
+<span id="L70"><span class="lineNum">      70</span> <span class="tlaGNC">          39 :     _diag_bc_adjust!(di, n, Val(1), bcs, inv_h2)</span></span>
+<span id="L71"><span class="lineNum">      71</span> <span class="tlaGNC">          39 :     return d</span></span>
 <span id="L72"><span class="lineNum">      72</span>              : end</span>
 <span id="L73"><span class="lineNum">      73</span>              : </span>
 <span id="L74"><span class="lineNum">      74</span> <span class="tlaGNC">           5 : function _diag_bc_adjust!(di, n, ::Val{D}, bcs::Tuple, inv_h2) where {D}</span></span>
-<span id="L75"><span class="lineNum">      75</span> <span class="tlaGNC">          73 :     lo, hi = first(bcs)</span></span>
-<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">          73 :     nd = n[D]</span></span>
-<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">          73 :     _diag_bc_face!(di, Val(D), 1:1, (_diag_face_weight(lo, nd) + 1) * inv_h2[D])</span></span>
-<span id="L78"><span class="lineNum">      78</span> <span class="tlaGNC">          73 :     _diag_bc_face!(di, Val(D), nd:nd, (_diag_face_weight(hi, nd) + 1) * inv_h2[D])</span></span>
-<span id="L79"><span class="lineNum">      79</span> <span class="tlaGNC">          73 :     return _diag_bc_adjust!(di, n, Val(D + 1), Base.tail(bcs), inv_h2)</span></span>
+<span id="L75"><span class="lineNum">      75</span> <span class="tlaGNC">          77 :     lo, hi = first(bcs)</span></span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaGNC">          77 :     nd = n[D]</span></span>
+<span id="L77"><span class="lineNum">      77</span> <span class="tlaGNC">          77 :     _diag_bc_face!(di, Val(D), 1:1, (_diag_face_weight(lo, nd) + 1) * inv_h2[D])</span></span>
+<span id="L78"><span class="lineNum">      78</span> <span class="tlaGNC">          77 :     _diag_bc_face!(di, Val(D), nd:nd, (_diag_face_weight(hi, nd) + 1) * inv_h2[D])</span></span>
+<span id="L79"><span class="lineNum">      79</span> <span class="tlaGNC">          77 :     return _diag_bc_adjust!(di, n, Val(D + 1), Base.tail(bcs), inv_h2)</span></span>
 <span id="L80"><span class="lineNum">      80</span>              : end</span>
-<span id="L81"><span class="lineNum">      81</span> <span class="tlaGNC">          37 : _diag_bc_adjust!(di, n, ::Val, ::Tuple{}, inv_h2) = nothing</span></span>
+<span id="L81"><span class="lineNum">      81</span> <span class="tlaGNC">          39 : _diag_bc_adjust!(di, n, ::Val, ::Tuple{}, inv_h2) = nothing</span></span>
 <span id="L82"><span class="lineNum">      82</span>              : </span>
-<span id="L83"><span class="lineNum">      83</span> <span class="tlaGNC">         146 : function _diag_bc_face!(di, dim::Val, r, δ)</span></span>
-<span id="L84"><span class="lineNum">      84</span> <span class="tlaGNC">         146 :     iszero(δ) &amp;&amp; return nothing</span></span>
-<span id="L85"><span class="lineNum">      85</span> <span class="tlaGNC">         142 :     slab = _dimslice(di, dim, r)</span></span>
-<span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">         282 :     slab .+= δ</span></span>
-<span id="L87"><span class="lineNum">      87</span> <span class="tlaGNC">         142 :     return nothing</span></span>
+<span id="L83"><span class="lineNum">      83</span> <span class="tlaGNC">         154 : function _diag_bc_face!(di, dim::Val, r, δ)</span></span>
+<span id="L84"><span class="lineNum">      84</span> <span class="tlaGNC">         154 :     iszero(δ) &amp;&amp; return nothing</span></span>
+<span id="L85"><span class="lineNum">      85</span> <span class="tlaGNC">         150 :     slab = _dimslice(di, dim, r)</span></span>
+<span id="L86"><span class="lineNum">      86</span> <span class="tlaGNC">         298 :     slab .+= δ</span></span>
+<span id="L87"><span class="lineNum">      87</span> <span class="tlaGNC">         150 :     return nothing</span></span>
 <span id="L88"><span class="lineNum">      88</span>              : end</span>
 <span id="L89"><span class="lineNum">      89</span>              : </span>
 <span id="L90"><span class="lineNum">      90</span>              : # Diffusion: every face carries its own coefficient, so unlike the Laplacian there is no</span>
@@ -217,14 +217,14 @@
 <span id="L155"><span class="lineNum">     155</span>              : end</span>
 <span id="L156"><span class="lineNum">     156</span>              : </span>
 <span id="L157"><span class="lineNum">     157</span>              : # May alias operator state — treat as read-only.</span>
-<span id="L158"><span class="lineNum">     158</span> <span class="tlaGNC">           9 : operator_diagonal(S::ScalingOp) = S.coeff</span></span>
+<span id="L158"><span class="lineNum">     158</span> <span class="tlaGNC">          10 : operator_diagonal(S::CoeffScaling) = _coeff(S)</span></span>
 <span id="L159"><span class="lineNum">     159</span>              : </span>
 <span id="L160"><span class="lineNum">     160</span> <span class="tlaUNC tlaBgUNC">           0 : operator_diagonal(::IdentityOp) = true</span></span>
 <span id="L161"><span class="lineNum">     161</span>              : </span>
 <span id="L162"><span class="lineNum">     162</span>              : #--------------------------------------------------------------------------------# Combinator propagation</span>
 <span id="L163"><span class="lineNum">     163</span>              : </span>
-<span id="L164"><span class="lineNum">     164</span> <span class="tlaGNC tlaBgGNC">          33 : operator_diagonal(L::Scaled) = _diag_scale(L.α, operator_diagonal(L.op))</span></span>
-<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">           2 : operator_diagonal(L::Added) = _diag_add(operator_diagonal(L.a), operator_diagonal(L.b))</span></span>
+<span id="L164"><span class="lineNum">     164</span> <span class="tlaGNC tlaBgGNC">          35 : operator_diagonal(L::Scaled) = _diag_scale(L.α, operator_diagonal(L.op))</span></span>
+<span id="L165"><span class="lineNum">     165</span> <span class="tlaGNC">           4 : operator_diagonal(L::Added) = _diag_add(operator_diagonal(L.a), operator_diagonal(L.b))</span></span>
 <span id="L166"><span class="lineNum">     166</span> <span class="tlaGNC">           3 : function operator_diagonal(L::Composed)</span></span>
 <span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">           3 :     isdiagonal(L) || throw(</span></span>
 <span id="L168"><span class="lineNum">     168</span>              :         ArgumentError(</span>

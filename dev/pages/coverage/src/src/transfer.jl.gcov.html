@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-28 22:26:14</td>
+            <td class="headerValue">2026-10-02 17:38:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -69,18 +69,18 @@
 <span id="L7"><span class="lineNum">       7</span>              : # neighbor's low-interior slab [h+1:2h]. Build-time only — the schedule stores the</span>
 <span id="L8"><span class="lineNum">       8</span>              : # resolved ranges, so the hot path never recomputes this.</span>
 <span id="L9"><span class="lineNum">       9</span>              : @inline function _face_slabs(side::Int, h::Int, n::Int)</span>
-<span id="L10"><span class="lineNum">      10</span> <span class="tlaGNC tlaBgGNC">       65462 :     if side == -1</span></span>
-<span id="L11"><span class="lineNum">      11</span> <span class="tlaGNC">       32739 :         return (1:h, (n + 1):(n + h))                  # (this ghost, neighbor source)</span></span>
+<span id="L10"><span class="lineNum">      10</span> <span class="tlaGNC tlaBgGNC">       65470 :     if side == -1</span></span>
+<span id="L11"><span class="lineNum">      11</span> <span class="tlaGNC">       32743 :         return (1:h, (n + 1):(n + h))                  # (this ghost, neighbor source)</span></span>
 <span id="L12"><span class="lineNum">      12</span>              :     else</span>
-<span id="L13"><span class="lineNum">      13</span> <span class="tlaGNC">       32739 :         return ((h + n + 1):(2h + n), (h + 1):(2h))</span></span>
+<span id="L13"><span class="lineNum">      13</span> <span class="tlaGNC">       32743 :         return ((h + n + 1):(2h + n), (h + 1):(2h))</span></span>
 <span id="L14"><span class="lineNum">      14</span>              :     end</span>
 <span id="L15"><span class="lineNum">      15</span>              : end</span>
 <span id="L16"><span class="lineNum">      16</span>              : </span>
 <span id="L17"><span class="lineNum">      17</span>              : # Full padded box for a same-level face slab: range `r` along dim `d`, the full</span>
 <span id="L18"><span class="lineNum">      18</span>              : # padded extent transversely (matching the retired `_dimslice` Colon). The corner</span>
 <span id="L19"><span class="lineNum">      19</span>              : # cells it spans are not read by axis-aligned (Laplacian/Derivative) stencils.</span>
-<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC">      166012 : _face_box(d::Int, r::UnitRange{Int}, h::NTuple{N,Int}, n::NTuple{N,Int}) where {N} =</span></span>
-<span id="L21"><span class="lineNum">      21</span> <span class="tlaGNC">      456698 :     ntuple(t -&gt; t == d ? r : (1:(n[t] + 2h[t])), Val(N))</span></span>
+<span id="L20"><span class="lineNum">      20</span> <span class="tlaGNC">      166024 : _face_box(d::Int, r::UnitRange{Int}, h::NTuple{N,Int}, n::NTuple{N,Int}) where {N} =</span></span>
+<span id="L21"><span class="lineNum">      21</span> <span class="tlaGNC">      456734 :     ntuple(t -&gt; t == d ? r : (1:(n[t] + 2h[t])), Val(N))</span></span>
 <span id="L22"><span class="lineNum">      22</span>              : </span>
 <span id="L23"><span class="lineNum">      23</span>              : #--------------------------------------------------------------------------------# Coarse–fine descriptor emission</span>
 <span id="L24"><span class="lineNum">      24</span>              : </span>
@@ -342,23 +342,23 @@
 <span id="L280"><span class="lineNum">     280</span>              : # region is the dst of exactly one descriptor;</span>
 <span id="L281"><span class="lineNum">     281</span>              : # same-level iteration order (Morton leaf, dim, side) matches the retired `Val{D}`</span>
 <span id="L282"><span class="lineNum">     282</span>              : # sweep's execution order, so uniform-forest behavior is bit-identical.</span>
-<span id="L283"><span class="lineNum">     283</span> <span class="tlaGNC">         243 : function _build_exchange_schedule(bf::BlockForest{N,T}) where {N,T}</span></span>
-<span id="L284"><span class="lineNum">     284</span> <span class="tlaGNC">         243 :     forest, h, n = bf.forest, bf.halo, bf.blocksize</span></span>
-<span id="L285"><span class="lineNum">     285</span> <span class="tlaGNC">         344 :     forest.uniform[] || _validate_coarse_fine(bf)</span></span>
-<span id="L286"><span class="lineNum">     286</span> <span class="tlaGNC">         241 :     copies = CopyDescriptor{N}[]</span></span>
-<span id="L287"><span class="lineNum">     287</span> <span class="tlaGNC">         241 :     interp, interp_terms = GhostFill{N}[], SlabTerm{N,T}[]</span></span>
-<span id="L288"><span class="lineNum">     288</span> <span class="tlaGNC">         241 :     restrict, restrict_terms = GhostFill{N}[], SlabTerm{N,T}[]</span></span>
-<span id="L289"><span class="lineNum">     289</span> <span class="tlaGNC">         241 :     cfflux = CFFluxDescriptor{N}[]</span></span>
-<span id="L290"><span class="lineNum">     290</span> <span class="tlaGNC">         495 :     bcfaces = ntuple(_ -&gt; (Int[], Int[]), Val(N))</span></span>
-<span id="L291"><span class="lineNum">     291</span> <span class="tlaGNC">         241 :     for (i, K) in enumerate(forest.leaves), d in 1:N, side in (-1, 1)</span></span>
-<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">      116720 :         nbr = face_neighbor(forest, K, d, side)</span></span>
-<span id="L293"><span class="lineNum">     293</span> <span class="tlaGNC">       60479 :         if nbr === nothing</span></span>
-<span id="L294"><span class="lineNum">     294</span> <span class="tlaGNC">        4238 :             push!(bcfaces[d][side == -1 ? 1 : 2], i)</span></span>
-<span id="L295"><span class="lineNum">     295</span> <span class="tlaGNC">        4238 :             continue</span></span>
+<span id="L283"><span class="lineNum">     283</span> <span class="tlaGNC">         244 : function _build_exchange_schedule(bf::BlockForest{N,T}) where {N,T}</span></span>
+<span id="L284"><span class="lineNum">     284</span> <span class="tlaGNC">         244 :     forest, h, n = bf.forest, bf.halo, bf.blocksize</span></span>
+<span id="L285"><span class="lineNum">     285</span> <span class="tlaGNC">         345 :     forest.uniform[] || _validate_coarse_fine(bf)</span></span>
+<span id="L286"><span class="lineNum">     286</span> <span class="tlaGNC">         242 :     copies = CopyDescriptor{N}[]</span></span>
+<span id="L287"><span class="lineNum">     287</span> <span class="tlaGNC">         242 :     interp, interp_terms = GhostFill{N}[], SlabTerm{N,T}[]</span></span>
+<span id="L288"><span class="lineNum">     288</span> <span class="tlaGNC">         242 :     restrict, restrict_terms = GhostFill{N}[], SlabTerm{N,T}[]</span></span>
+<span id="L289"><span class="lineNum">     289</span> <span class="tlaGNC">         242 :     cfflux = CFFluxDescriptor{N}[]</span></span>
+<span id="L290"><span class="lineNum">     290</span> <span class="tlaGNC">         497 :     bcfaces = ntuple(_ -&gt; (Int[], Int[]), Val(N))</span></span>
+<span id="L291"><span class="lineNum">     291</span> <span class="tlaGNC">         242 :     for (i, K) in enumerate(forest.leaves), d in 1:N, side in (-1, 1)</span></span>
+<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">      116744 :         nbr = face_neighbor(forest, K, d, side)</span></span>
+<span id="L293"><span class="lineNum">     293</span> <span class="tlaGNC">       60495 :         if nbr === nothing</span></span>
+<span id="L294"><span class="lineNum">     294</span> <span class="tlaGNC">        4246 :             push!(bcfaces[d][side == -1 ? 1 : 2], i)</span></span>
+<span id="L295"><span class="lineNum">     295</span> <span class="tlaGNC">        4246 :             continue</span></span>
 <span id="L296"><span class="lineNum">     296</span>              :         end</span>
-<span id="L297"><span class="lineNum">     297</span> <span class="tlaGNC">       56254 :         if is_leaf(forest, nbr)</span></span>
-<span id="L298"><span class="lineNum">     298</span> <span class="tlaGNC">       51125 :             ghost, source = _face_slabs(side, h[d], n[d])</span></span>
-<span id="L299"><span class="lineNum">     299</span> <span class="tlaGNC">       51125 :             push!(</span></span>
+<span id="L297"><span class="lineNum">     297</span> <span class="tlaGNC">       56262 :         if is_leaf(forest, nbr)</span></span>
+<span id="L298"><span class="lineNum">     298</span> <span class="tlaGNC">       51133 :             ghost, source = _face_slabs(side, h[d], n[d])</span></span>
+<span id="L299"><span class="lineNum">     299</span> <span class="tlaGNC">       51133 :             push!(</span></span>
 <span id="L300"><span class="lineNum">     300</span>              :                 copies,</span>
 <span id="L301"><span class="lineNum">     301</span>              :                 CopyDescriptor{N}(</span>
 <span id="L302"><span class="lineNum">     302</span>              :                     leaf_index(forest, nbr), i,</span>
@@ -374,8 +374,8 @@
 <span id="L312"><span class="lineNum">     312</span> <span class="tlaGNC">        1226 :                 _emit_restrict!(restrict, restrict_terms, cfflux, bf, i, K, d, side, nbr)</span></span>
 <span id="L313"><span class="lineNum">     313</span>              :             end</span>
 <span id="L314"><span class="lineNum">     314</span>              :         end</span>
-<span id="L315"><span class="lineNum">     315</span> <span class="tlaGNC">       71530 :     end</span></span>
-<span id="L316"><span class="lineNum">     316</span> <span class="tlaGNC">         241 :     return ExchangeSchedule{N,T}(</span></span>
+<span id="L315"><span class="lineNum">     315</span> <span class="tlaGNC">       71549 :     end</span></span>
+<span id="L316"><span class="lineNum">     316</span> <span class="tlaGNC">         242 :     return ExchangeSchedule{N,T}(</span></span>
 <span id="L317"><span class="lineNum">     317</span>              :         copies, interp, interp_terms, restrict, restrict_terms, cfflux, bcfaces,</span>
 <span id="L318"><span class="lineNum">     318</span>              :         forest.generation[],</span>
 <span id="L319"><span class="lineNum">     319</span>              :     )</span>
@@ -387,11 +387,11 @@
 <span id="L325"><span class="lineNum">     325</span>              : # generation guard (prepared operators). Single-threaded per solve by package</span>
 <span id="L326"><span class="lineNum">     326</span>              : # contract; the build is deterministic, so a benign race writes identical schedules.</span>
 <span id="L327"><span class="lineNum">     327</span> <span class="tlaGNC">          71 : function _exchange_schedule(bf::BlockForest)</span></span>
-<span id="L328"><span class="lineNum">     328</span> <span class="tlaGNC">       30716 :     sched = bf.schedule[]</span></span>
-<span id="L329"><span class="lineNum">     329</span> <span class="tlaGNC">       30716 :     sched.generation == bf.forest.generation[] &amp;&amp; return sched</span></span>
-<span id="L330"><span class="lineNum">     330</span> <span class="tlaGNC">         265 :     sched = _build_exchange_schedule(bf)</span></span>
-<span id="L331"><span class="lineNum">     331</span> <span class="tlaGNC">         263 :     bf.schedule[] = sched</span></span>
-<span id="L332"><span class="lineNum">     332</span> <span class="tlaGNC">         263 :     return sched</span></span>
+<span id="L328"><span class="lineNum">     328</span> <span class="tlaGNC">       30724 :     sched = bf.schedule[]</span></span>
+<span id="L329"><span class="lineNum">     329</span> <span class="tlaGNC">       30724 :     sched.generation == bf.forest.generation[] &amp;&amp; return sched</span></span>
+<span id="L330"><span class="lineNum">     330</span> <span class="tlaGNC">         266 :     sched = _build_exchange_schedule(bf)</span></span>
+<span id="L331"><span class="lineNum">     331</span> <span class="tlaGNC">         264 :     bf.schedule[] = sched</span></span>
+<span id="L332"><span class="lineNum">     332</span> <span class="tlaGNC">         264 :     return sched</span></span>
 <span id="L333"><span class="lineNum">     333</span>              : end</span>
 <span id="L334"><span class="lineNum">     334</span>              : </span>
 <span id="L335"><span class="lineNum">     335</span>              : #--------------------------------------------------------------------------------# Halo sweeps</span>
@@ -412,19 +412,19 @@
 <span id="L350"><span class="lineNum">     350</span>              : per-dim launches let the last dim win where the host order interleaves), which</span>
 <span id="L351"><span class="lineNum">     351</span>              : no axis-aligned stencil reads and adjoints require to be zero.</span>
 <span id="L352"><span class="lineNum">     352</span>              : &quot;&quot;&quot;</span>
-<span id="L353"><span class="lineNum">     353</span> <span class="tlaGNC">       10603 : function halo_update!(x::AbstractBlockField, g::BlockForest)</span></span>
-<span id="L354"><span class="lineNum">     354</span> <span class="tlaGNC">       10627 :     _require_current(x)</span></span>
-<span id="L355"><span class="lineNum">     355</span> <span class="tlaGNC">       10720 :     _run_exchange!(x, g, _exchange_schedule(g))</span></span>
-<span id="L356"><span class="lineNum">     356</span> <span class="tlaGNC">       10601 :     return x</span></span>
+<span id="L353"><span class="lineNum">     353</span> <span class="tlaGNC">       10607 : function halo_update!(x::AbstractBlockField, g::BlockForest)</span></span>
+<span id="L354"><span class="lineNum">     354</span> <span class="tlaGNC">       10631 :     _require_current(x)</span></span>
+<span id="L355"><span class="lineNum">     355</span> <span class="tlaGNC">       10725 :     _run_exchange!(x, g, _exchange_schedule(g))</span></span>
+<span id="L356"><span class="lineNum">     356</span> <span class="tlaGNC">       10605 :     return x</span></span>
 <span id="L357"><span class="lineNum">     357</span>              : end</span>
 <span id="L358"><span class="lineNum">     358</span>              : </span>
 <span id="L359"><span class="lineNum">     359</span>              : # Forward-exchange execution seam — device layouts override per (layout, backend)</span>
 <span id="L360"><span class="lineNum">     360</span>              : # with batched descriptor kernels (transfer_kernels.jl); the reference runs</span>
 <span id="L361"><span class="lineNum">     361</span>              : # per-descriptor broadcasts.</span>
-<span id="L362"><span class="lineNum">     362</span> <span class="tlaGNC">       10255 : _run_exchange!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =</span></span>
+<span id="L362"><span class="lineNum">     362</span> <span class="tlaGNC">       10259 : _run_exchange!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =</span></span>
 <span id="L363"><span class="lineNum">     363</span>              :     _run_exchange_host!(x, sched)</span>
 <span id="L364"><span class="lineNum">     364</span>              : </span>
-<span id="L365"><span class="lineNum">     365</span> <span class="tlaGNC">       10617 : _run_exchange_host!(x::AbstractBlockField, sched::ExchangeSchedule) =</span></span>
+<span id="L365"><span class="lineNum">     365</span> <span class="tlaGNC">       10621 : _run_exchange_host!(x::AbstractBlockField, sched::ExchangeSchedule) =</span></span>
 <span id="L366"><span class="lineNum">     366</span>              :     _exchange_storage!(_storage(x), _layout(x), sched)</span>
 <span id="L367"><span class="lineNum">     367</span>              : </span>
 <span id="L368"><span class="lineNum">     368</span>              : &quot;&quot;&quot;</span>
@@ -441,27 +441,27 @@
 <span id="L379"><span class="lineNum">     379</span>              : other cross-phase dependency exists.</span>
 <span id="L380"><span class="lineNum">     380</span>              : &quot;&quot;&quot;</span>
 <span id="L381"><span class="lineNum">     381</span> <span class="tlaGNC">          27 : function _exchange_storage!(store, lay::BlockLayout, sched::ExchangeSchedule{N}) where {N}</span></span>
-<span id="L382"><span class="lineNum">     382</span> <span class="tlaGNC">       10631 :     _run_copies!(store, lay, sched.copies)</span></span>
-<span id="L383"><span class="lineNum">     383</span> <span class="tlaGNC">       10631 :     _run_fills!(store, lay, sched.interp, sched.interp_terms, _interp_width(Val(N)))</span></span>
-<span id="L384"><span class="lineNum">     384</span> <span class="tlaGNC">       10631 :     _run_fills!(store, lay, sched.restrict, sched.restrict_terms, _restrict_width(Val(N)))</span></span>
-<span id="L385"><span class="lineNum">     385</span> <span class="tlaGNC">       10631 :     return nothing</span></span>
+<span id="L382"><span class="lineNum">     382</span> <span class="tlaGNC">       10635 :     _run_copies!(store, lay, sched.copies)</span></span>
+<span id="L383"><span class="lineNum">     383</span> <span class="tlaGNC">       10635 :     _run_fills!(store, lay, sched.interp, sched.interp_terms, _interp_width(Val(N)))</span></span>
+<span id="L384"><span class="lineNum">     384</span> <span class="tlaGNC">       10635 :     _run_fills!(store, lay, sched.restrict, sched.restrict_terms, _restrict_width(Val(N)))</span></span>
+<span id="L385"><span class="lineNum">     385</span> <span class="tlaGNC">       10635 :     return nothing</span></span>
 <span id="L386"><span class="lineNum">     386</span>              : end</span>
 <span id="L387"><span class="lineNum">     387</span>              : </span>
 <span id="L388"><span class="lineNum">     388</span>              : # Function barrier: specializing on the concrete storage type and layout singleton</span>
 <span id="L389"><span class="lineNum">     389</span>              : # makes each `_leaf_view` one concrete SubArray, so the loop is dispatch- and</span>
 <span id="L390"><span class="lineNum">     390</span>              : # allocation-free. `view .= view` broadcasts on GPU arrays without scalar indexing.</span>
-<span id="L391"><span class="lineNum">     391</span> <span class="tlaGNC">       10649 : function _run_copies!(store, lay::BlockLayout, copies::Vector{CopyDescriptor{N}}) where {N}</span></span>
-<span id="L392"><span class="lineNum">     392</span> <span class="tlaGNC">       10673 :     for c in copies</span></span>
-<span id="L393"><span class="lineNum">     393</span> <span class="tlaGNC">      663649 :         _leaf_view(store, lay, c.dst, c.dst_ranges) .= _leaf_view(store, lay, c.src, c.src_ranges)</span></span>
-<span id="L394"><span class="lineNum">     394</span> <span class="tlaGNC">      559429 :     end</span></span>
-<span id="L395"><span class="lineNum">     395</span> <span class="tlaGNC">       10649 :     return nothing</span></span>
+<span id="L391"><span class="lineNum">     391</span> <span class="tlaGNC">       10653 : function _run_copies!(store, lay::BlockLayout, copies::Vector{CopyDescriptor{N}}) where {N}</span></span>
+<span id="L392"><span class="lineNum">     392</span> <span class="tlaGNC">       10677 :     for c in copies</span></span>
+<span id="L393"><span class="lineNum">     393</span> <span class="tlaGNC">      663681 :         _leaf_view(store, lay, c.dst, c.dst_ranges) .= _leaf_view(store, lay, c.src, c.src_ranges)</span></span>
+<span id="L394"><span class="lineNum">     394</span> <span class="tlaGNC">      559461 :     end</span></span>
+<span id="L395"><span class="lineNum">     395</span> <span class="tlaGNC">       10653 :     return nothing</span></span>
 <span id="L396"><span class="lineNum">     396</span>              : end</span>
 <span id="L397"><span class="lineNum">     397</span>              : </span>
 <span id="L398"><span class="lineNum">     398</span>              : # The phase row widths as compile-time values. Both are functions of N alone</span>
 <span id="L399"><span class="lineNum">     399</span>              : # (schedule.jl), so `Val(N)` in, `Val(K)` out: dispatching the gather on K</span>
 <span id="L400"><span class="lineNum">     400</span>              : # specializes it over two values per dimension, not over a dynamic loop bound.</span>
-<span id="L401"><span class="lineNum">     401</span> <span class="tlaGNC">       10635 : @inline _interp_width(::Val{N}) where {N} = Val(_ninterp_terms(Val(N)))</span></span>
-<span id="L402"><span class="lineNum">     402</span> <span class="tlaGNC">       10635 : @inline _restrict_width(::Val{N}) where {N} = Val(_nrestrict_terms(Val(N)))</span></span>
+<span id="L401"><span class="lineNum">     401</span> <span class="tlaGNC">       10639 : @inline _interp_width(::Val{N}) where {N} = Val(_ninterp_terms(Val(N)))</span></span>
+<span id="L402"><span class="lineNum">     402</span> <span class="tlaGNC">       10639 : @inline _restrict_width(::Val{N}) where {N} = Val(_nrestrict_terms(Val(N)))</span></span>
 <span id="L403"><span class="lineNum">     403</span>              : </span>
 <span id="L404"><span class="lineNum">     404</span>              : # One fused gather pass per fill: `dst[I] = Σₖ wₖ · srcₖ[I]` over the fill's K term</span>
 <span id="L405"><span class="lineNum">     405</span>              : # windows, which all have the dst slab's shape (`_close_fill` enforces it). The</span>
@@ -489,11 +489,11 @@
 <span id="L427"><span class="lineNum">     427</span>              : # one ulp on the affected cells, and in the device kernel's direction, since</span>
 <span id="L428"><span class="lineNum">     428</span>              : # `_fill_kernel!` accumulates the same promoted way. The fusion removes that</span>
 <span id="L429"><span class="lineNum">     429</span>              : # pre-existing host/device divergence rather than introducing one (#84).</span>
-<span id="L430"><span class="lineNum">     430</span> <span class="tlaGNC">       21282 : function _run_fills!(</span></span>
+<span id="L430"><span class="lineNum">     430</span> <span class="tlaGNC">       21290 : function _run_fills!(</span></span>
 <span id="L431"><span class="lineNum">     431</span>              :     store, lay::BlockLayout, fills::Vector{GhostFill{N}}, terms::Vector{SlabTerm{N,T}},</span>
 <span id="L432"><span class="lineNum">     432</span>              :     ::Val{K},</span>
 <span id="L433"><span class="lineNum">     433</span>              : ) where {N,T,K}</span>
-<span id="L434"><span class="lineNum">     434</span> <span class="tlaGNC">       21330 :     for f in fills</span></span>
+<span id="L434"><span class="lineNum">     434</span> <span class="tlaGNC">       21338 :     for f in fills</span></span>
 <span id="L435"><span class="lineNum">     435</span> <span class="tlaGNC">      336570 :         f.tlast - f.tfirst + 1 == K &amp;&amp; checkbounds(Bool, terms, f.tfirst:f.tlast) ||</span></span>
 <span id="L436"><span class="lineNum">     436</span>              :             _throw_row_width(f, K, length(terms))</span>
 <span id="L437"><span class="lineNum">     437</span> <span class="tlaGNC">      336554 :         dst = _leaf_view(store, lay, f.dst_block, f.dst_ranges)</span></span>
@@ -501,7 +501,7 @@
 <span id="L439"><span class="lineNum">     439</span> <span class="tlaGNC">      336554 :         ws = _term_weights(terms, f.tfirst, Val(K))</span></span>
 <span id="L440"><span class="lineNum">     440</span> <span class="tlaGNC">      661934 :         dst .= _gather_at.(CartesianIndices(dst), _AsScalar(srcs), _AsScalar(ws))</span></span>
 <span id="L441"><span class="lineNum">     441</span> <span class="tlaGNC">      336554 :     end</span></span>
-<span id="L442"><span class="lineNum">     442</span> <span class="tlaGNC">       21274 :     return nothing</span></span>
+<span id="L442"><span class="lineNum">     442</span> <span class="tlaGNC">       21282 :     return nothing</span></span>
 <span id="L443"><span class="lineNum">     443</span>              : end</span>
 <span id="L444"><span class="lineNum">     444</span>              : </span>
 <span id="L445"><span class="lineNum">     445</span>              : # The row width licenses the `@inbounds` walk down `terms`, so it is checked per</span>
@@ -653,17 +653,17 @@
 <span id="L591"><span class="lineNum">     591</span>              : in order `1:N`, so corner ghosts are consistent ghost-of-ghost values. Runs after</span>
 <span id="L592"><span class="lineNum">     592</span>              : [`halo_update!`](@ref) and before the per-leaf stencils.</span>
 <span id="L593"><span class="lineNum">     593</span>              : &quot;&quot;&quot;</span>
-<span id="L594"><span class="lineNum">     594</span> <span class="tlaGNC">       10556 : function apply_bc!(x::AbstractBlockField, g::BlockForest)</span></span>
-<span id="L595"><span class="lineNum">     595</span> <span class="tlaGNC">       10580 :     _require_current(x)</span></span>
-<span id="L596"><span class="lineNum">     596</span> <span class="tlaGNC">       10558 :     _run_bc!(x, g, _exchange_schedule(g))</span></span>
-<span id="L597"><span class="lineNum">     597</span> <span class="tlaGNC">       10556 :     return x</span></span>
+<span id="L594"><span class="lineNum">     594</span> <span class="tlaGNC">       10560 : function apply_bc!(x::AbstractBlockField, g::BlockForest)</span></span>
+<span id="L595"><span class="lineNum">     595</span> <span class="tlaGNC">       10584 :     _require_current(x)</span></span>
+<span id="L596"><span class="lineNum">     596</span> <span class="tlaGNC">       10562 :     _run_bc!(x, g, _exchange_schedule(g))</span></span>
+<span id="L597"><span class="lineNum">     597</span> <span class="tlaGNC">       10560 :     return x</span></span>
 <span id="L598"><span class="lineNum">     598</span>              : end</span>
 <span id="L599"><span class="lineNum">     599</span>              : </span>
 <span id="L600"><span class="lineNum">     600</span>              : # Physical-BC execution seam, mirroring _run_exchange!.</span>
-<span id="L601"><span class="lineNum">     601</span> <span class="tlaGNC">       10222 : _run_bc!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =</span></span>
+<span id="L601"><span class="lineNum">     601</span> <span class="tlaGNC">       10226 : _run_bc!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =</span></span>
 <span id="L602"><span class="lineNum">     602</span>              :     _run_bc_host!(x, g, sched)</span>
 <span id="L603"><span class="lineNum">     603</span>              : </span>
-<span id="L604"><span class="lineNum">     604</span> <span class="tlaGNC">       10572 : _run_bc_host!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =</span></span>
+<span id="L604"><span class="lineNum">     604</span> <span class="tlaGNC">       10576 : _run_bc_host!(x::AbstractBlockField, g::BlockForest, sched::ExchangeSchedule) =</span></span>
 <span id="L605"><span class="lineNum">     605</span>              :     _bc_storage!(_storage(x), _layout(x), g.bc, sched.bcfaces, g.halo, g.blocksize)</span>
 <span id="L606"><span class="lineNum">     606</span>              : </span>
 <span id="L607"><span class="lineNum">     607</span>              : &quot;&quot;&quot;</span>
@@ -675,33 +675,33 @@
 <span id="L613"><span class="lineNum">     613</span>              : pieces (`bcs`, `halo`, `sz`) plus the per-generation face lists.</span>
 <span id="L614"><span class="lineNum">     614</span>              : &quot;&quot;&quot;</span>
 <span id="L615"><span class="lineNum">     615</span> <span class="tlaGNC">          27 : function _bc_storage!(store, lay::BlockLayout, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple)</span></span>
-<span id="L616"><span class="lineNum">     616</span> <span class="tlaGNC">       10586 :     _fill_bcfaces_dims!(store, lay, bcs, faces, halo, sz, Val(1))</span></span>
-<span id="L617"><span class="lineNum">     617</span> <span class="tlaGNC">       10586 :     return nothing</span></span>
+<span id="L616"><span class="lineNum">     616</span> <span class="tlaGNC">       10590 :     _fill_bcfaces_dims!(store, lay, bcs, faces, halo, sz, Val(1))</span></span>
+<span id="L617"><span class="lineNum">     617</span> <span class="tlaGNC">       10590 :     return nothing</span></span>
 <span id="L618"><span class="lineNum">     618</span>              : end</span>
 <span id="L619"><span class="lineNum">     619</span>              : </span>
-<span id="L620"><span class="lineNum">     620</span> <span class="tlaGNC">       21264 : function _fill_bcfaces_dims!(</span></span>
+<span id="L620"><span class="lineNum">     620</span> <span class="tlaGNC">       21272 : function _fill_bcfaces_dims!(</span></span>
 <span id="L621"><span class="lineNum">     621</span>              :     store, lay::BlockLayout, bcs::Tuple, faces::Tuple, halo::Tuple, sz::Tuple, ::Val{D}</span>
 <span id="L622"><span class="lineNum">     622</span>              : ) where {D}</span>
-<span id="L623"><span class="lineNum">     623</span> <span class="tlaGNC">       21312 :     lo, hi = first(bcs)</span></span>
-<span id="L624"><span class="lineNum">     624</span> <span class="tlaGNC">       21264 :     flo, fhi = first(faces)</span></span>
-<span id="L625"><span class="lineNum">     625</span> <span class="tlaGNC">       21264 :     h, n = first(halo), first(sz)</span></span>
-<span id="L626"><span class="lineNum">     626</span> <span class="tlaGNC">       21264 :     for k in 1:h</span></span>
-<span id="L627"><span class="lineNum">     627</span> <span class="tlaGNC">       21264 :         for i in flo</span></span>
-<span id="L628"><span class="lineNum">     628</span> <span class="tlaGNC">       81363 :             _fill_ghost!(</span></span>
+<span id="L623"><span class="lineNum">     623</span> <span class="tlaGNC">       21320 :     lo, hi = first(bcs)</span></span>
+<span id="L624"><span class="lineNum">     624</span> <span class="tlaGNC">       21272 :     flo, fhi = first(faces)</span></span>
+<span id="L625"><span class="lineNum">     625</span> <span class="tlaGNC">       21272 :     h, n = first(halo), first(sz)</span></span>
+<span id="L626"><span class="lineNum">     626</span> <span class="tlaGNC">       21272 :     for k in 1:h</span></span>
+<span id="L627"><span class="lineNum">     627</span> <span class="tlaGNC">       21272 :         for i in flo</span></span>
+<span id="L628"><span class="lineNum">     628</span> <span class="tlaGNC">       81379 :             _fill_ghost!(</span></span>
 <span id="L629"><span class="lineNum">     629</span>              :                 _leaf_array(store, lay, i), Val(D), h + 1 - k, lo, _source_low(lo, h, n, k)</span>
 <span id="L630"><span class="lineNum">     630</span>              :             )</span>
-<span id="L631"><span class="lineNum">     631</span> <span class="tlaGNC">       81363 :         end</span></span>
-<span id="L632"><span class="lineNum">     632</span> <span class="tlaGNC">       21264 :         for i in fhi</span></span>
-<span id="L633"><span class="lineNum">     633</span> <span class="tlaGNC">       67157 :             _fill_ghost!(</span></span>
+<span id="L631"><span class="lineNum">     631</span> <span class="tlaGNC">       81379 :         end</span></span>
+<span id="L632"><span class="lineNum">     632</span> <span class="tlaGNC">       21272 :         for i in fhi</span></span>
+<span id="L633"><span class="lineNum">     633</span> <span class="tlaGNC">       67173 :             _fill_ghost!(</span></span>
 <span id="L634"><span class="lineNum">     634</span>              :                 _leaf_array(store, lay, i), Val(D), h + n + k, hi, _source_high(hi, h, n, k)</span>
 <span id="L635"><span class="lineNum">     635</span>              :             )</span>
-<span id="L636"><span class="lineNum">     636</span> <span class="tlaGNC">       67157 :         end</span></span>
-<span id="L637"><span class="lineNum">     637</span> <span class="tlaGNC">       21264 :     end</span></span>
-<span id="L638"><span class="lineNum">     638</span> <span class="tlaGNC">       21264 :     return _fill_bcfaces_dims!(</span></span>
+<span id="L636"><span class="lineNum">     636</span> <span class="tlaGNC">       67173 :         end</span></span>
+<span id="L637"><span class="lineNum">     637</span> <span class="tlaGNC">       21272 :     end</span></span>
+<span id="L638"><span class="lineNum">     638</span> <span class="tlaGNC">       21272 :     return _fill_bcfaces_dims!(</span></span>
 <span id="L639"><span class="lineNum">     639</span>              :         store, lay, Base.tail(bcs), Base.tail(faces), Base.tail(halo), Base.tail(sz), Val(D + 1)</span>
 <span id="L640"><span class="lineNum">     640</span>              :     )</span>
 <span id="L641"><span class="lineNum">     641</span>              : end</span>
-<span id="L642"><span class="lineNum">     642</span> <span class="tlaGNC">       10586 : _fill_bcfaces_dims!(_, ::BlockLayout, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =</span></span>
+<span id="L642"><span class="lineNum">     642</span> <span class="tlaGNC">       10590 : _fill_bcfaces_dims!(_, ::BlockLayout, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Tuple{}, ::Val) =</span></span>
 <span id="L643"><span class="lineNum">     643</span>              :     nothing</span>
 <span id="L644"><span class="lineNum">     644</span>              : </span>
 <span id="L645"><span class="lineNum">     645</span>              : &quot;&quot;&quot;</span>

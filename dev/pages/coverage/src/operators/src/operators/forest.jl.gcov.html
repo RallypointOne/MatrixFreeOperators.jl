@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-28 22:26:14</td>
+            <td class="headerValue">2026-10-02 17:38:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -83,18 +83,18 @@
 <span id="L21"><span class="lineNum">      21</span>              : function apply!(</span>
 <span id="L22"><span class="lineNum">      22</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L23"><span class="lineNum">      23</span>              : )</span>
-<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC tlaBgGNC">        3416 :     return _forest_exchange_sweep!(y, L, x, g, α, β)</span></span>
+<span id="L24"><span class="lineNum">      24</span> <span class="tlaGNC tlaBgGNC">        3418 :     return _forest_exchange_sweep!(y, L, x, g, α, β)</span></span>
 <span id="L25"><span class="lineNum">      25</span>              : end</span>
 <span id="L26"><span class="lineNum">      26</span>              : </span>
 <span id="L27"><span class="lineNum">      27</span>              : # The forest action itself: fill x's ghosts, then sweep. Shared by the apply! above,</span>
 <span id="L28"><span class="lineNum">      28</span>              : # the prepared hot path (linalg.jl), and the exchange-sharing Added below.</span>
-<span id="L29"><span class="lineNum">      29</span> <span class="tlaGNC">       10537 : function _forest_exchange_sweep!(</span></span>
+<span id="L29"><span class="lineNum">      29</span> <span class="tlaGNC">       10541 : function _forest_exchange_sweep!(</span></span>
 <span id="L30"><span class="lineNum">      30</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L31"><span class="lineNum">      31</span>              : )</span>
-<span id="L32"><span class="lineNum">      32</span> <span class="tlaGNC">       10561 :     _require_current(y)</span></span>
-<span id="L33"><span class="lineNum">      33</span> <span class="tlaGNC">       10537 :     halo_update!(x, g)                  # also checks x's generation</span></span>
-<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">       10537 :     apply_bc!(x, g)                     # physical faces — leaf grids are all-Interface</span></span>
-<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">       10537 :     return _forest_sweep!(y, L, x, g, α, β)</span></span>
+<span id="L32"><span class="lineNum">      32</span> <span class="tlaGNC">       10565 :     _require_current(y)</span></span>
+<span id="L33"><span class="lineNum">      33</span> <span class="tlaGNC">       10541 :     halo_update!(x, g)                  # also checks x's generation</span></span>
+<span id="L34"><span class="lineNum">      34</span> <span class="tlaGNC">       10541 :     apply_bc!(x, g)                     # physical faces — leaf grids are all-Interface</span></span>
+<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">       10541 :     return _forest_sweep!(y, L, x, g, α, β)</span></span>
 <span id="L36"><span class="lineNum">      36</span>              : end</span>
 <span id="L37"><span class="lineNum">      37</span>              : </span>
 <span id="L38"><span class="lineNum">      38</span>              : # The stencil sweep behind the halo/BC fills — the dispatch seam forest-native</span>
@@ -105,24 +105,24 @@
 <span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">           1 : function _forest_sweep!(</span></span>
 <span id="L44"><span class="lineNum">      44</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L45"><span class="lineNum">      45</span>              : )</span>
-<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">       10311 :     return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
+<span id="L46"><span class="lineNum">      46</span> <span class="tlaGNC">       10317 :     return _forest_sweep_leaves!(y, L, x, g, α, β)</span></span>
 <span id="L47"><span class="lineNum">      47</span>              : end</span>
 <span id="L48"><span class="lineNum">      48</span>              : </span>
-<span id="L49"><span class="lineNum">      49</span> <span class="tlaGNC">       12560 : function _forest_sweep_leaves!(</span></span>
+<span id="L49"><span class="lineNum">      49</span> <span class="tlaGNC">       12566 : function _forest_sweep_leaves!(</span></span>
 <span id="L50"><span class="lineNum">      50</span>              :     y::AbstractBlockField, L::AbstractOperator, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L51"><span class="lineNum">      51</span>              : )</span>
-<span id="L52"><span class="lineNum">      52</span> <span class="tlaGNC">       12584 :     for i in 1:nleaves(g)</span></span>
-<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">      204629 :         lg = leaf_grid(g, i)</span></span>
-<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">      402642 :         apply!(block(y, i, lg), _leaf_op(L, i, lg), block(x, i, lg), lg, α, β)</span></span>
-<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">      396696 :     end</span></span>
-<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">       12558 :     return y</span></span>
+<span id="L52"><span class="lineNum">      52</span> <span class="tlaGNC">       12590 :     for i in 1:nleaves(g)</span></span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">      204653 :         lg = leaf_grid(g, i)</span></span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">      402690 :         apply!(block(y, i, lg), _leaf_op(L, i, lg), block(x, i, lg), lg, α, β)</span></span>
+<span id="L55"><span class="lineNum">      55</span> <span class="tlaGNC">      396738 :     end</span></span>
+<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">       12564 :     return y</span></span>
 <span id="L57"><span class="lineNum">      57</span>              : end</span>
 <span id="L58"><span class="lineNum">      58</span>              : </span>
 <span id="L59"><span class="lineNum">      59</span>              : # Per-leaf slicing of coefficient-carrying leaves: the reference sweeps see</span>
 <span id="L60"><span class="lineNum">      60</span>              : # ordinary single-grid operators whose coefficient is the leaf's block view.</span>
 <span id="L61"><span class="lineNum">      61</span>              : # block() re-checks the coefficient field's generation on every slice.</span>
-<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">      241692 : @inline _leaf_op(L::AbstractOperator, i, lg) = L</span></span>
-<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">       25973 : @inline _leaf_op(S::ScalingOp{&lt;:AbstractBlockField}, i, lg) = ScalingOp(block(S.coeff, i, lg))</span></span>
+<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">      241532 : @inline _leaf_op(L::AbstractOperator, i, lg) = L</span></span>
+<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">       25989 : @inline _leaf_op(S::CoeffScaling{&lt;:AbstractBlockField}, i, lg) = CoeffScaling(block(_coeff(S), i, lg))</span></span>
 <span id="L64"><span class="lineNum">      64</span>              : @inline function _leaf_op(A::Advection{&lt;:BlockForest,&lt;:AbstractBlockField}, i, lg)</span>
 <span id="L65"><span class="lineNum">      65</span> <span class="tlaGNC">         485 :     return Advection(lg, block(A.velocity, i, lg))</span></span>
 <span id="L66"><span class="lineNum">      66</span>              : end</span>
@@ -173,7 +173,7 @@
 <span id="L111"><span class="lineNum">     111</span>              : # otherwise each runs its own full forest action, which is what a Composed</span>
 <span id="L112"><span class="lineNum">     112</span>              : # intermediate, a nested AdjointOp, and Diffusion's coarse–fine rewrite need.</span>
 <span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC">          10 : function apply!(y::AbstractBlockField, L::Added, x::AbstractBlockField, g::BlockForest, α, β)</span></span>
-<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">         746 :     shares_exchange(L) &amp;&amp; return _forest_exchange_sweep!(y, L, x, g, α, β)</span></span>
+<span id="L114"><span class="lineNum">     114</span> <span class="tlaGNC">         748 :     shares_exchange(L) &amp;&amp; return _forest_exchange_sweep!(y, L, x, g, α, β)</span></span>
 <span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">          39 :     apply!(y, L.a, x, g, α, β)</span></span>
 <span id="L116"><span class="lineNum">     116</span> <span class="tlaGNC">          39 :     apply!(y, L.b, x, g, α, true)</span></span>
 <span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">          39 :     return y</span></span>
@@ -187,14 +187,14 @@
 <span id="L125"><span class="lineNum">     125</span>              : function _forest_sweep!(</span>
 <span id="L126"><span class="lineNum">     126</span>              :     y::AbstractBlockField, L::Added, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L127"><span class="lineNum">     127</span>              : )</span>
-<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        1958 :     _forest_sweep!(y, L.a, x, g, α, β)</span></span>
-<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">        1958 :     _forest_sweep!(y, L.b, x, g, α, true)</span></span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">        1958 :     return y</span></span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        1960 :     _forest_sweep!(y, L.a, x, g, α, β)</span></span>
+<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">        1960 :     _forest_sweep!(y, L.b, x, g, α, true)</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">        1960 :     return y</span></span>
 <span id="L131"><span class="lineNum">     131</span>              : end</span>
 <span id="L132"><span class="lineNum">     132</span>              : function _forest_sweep!(</span>
 <span id="L133"><span class="lineNum">     133</span>              :     y::AbstractBlockField, L::Scaled, x::AbstractBlockField, g::BlockForest, α, β</span>
 <span id="L134"><span class="lineNum">     134</span>              : )</span>
-<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">        2899 :     return _forest_sweep!(y, L.op, x, g, α * L.α, β)</span></span>
+<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">        2901 :     return _forest_sweep!(y, L.op, x, g, α * L.α, β)</span></span>
 <span id="L136"><span class="lineNum">     136</span>              : end</span>
 <span id="L137"><span class="lineNum">     137</span>              : # The intermediate is a whole BlockField (allocated per call, like the single-grid</span>
 <span id="L138"><span class="lineNum">     138</span>              : # pure path): the outer operand's forest apply! performs its own inter-block</span>

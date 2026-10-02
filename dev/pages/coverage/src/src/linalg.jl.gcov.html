@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-28 22:26:14</td>
+            <td class="headerValue">2026-10-02 17:38:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -95,7 +95,7 @@
 <span id="L33"><span class="lineNum">      33</span>              : compose first, then prepare.</span>
 <span id="L34"><span class="lineNum">      34</span>              : &quot;&quot;&quot;</span>
 <span id="L35"><span class="lineNum">      35</span>              : struct PreparedOperator{O&lt;:AbstractOperator,G&lt;:AbstractGrid,FX&lt;:AbstractField,FY&lt;:AbstractField}</span>
-<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC tlaBgGNC">        1384 :     op::O</span></span>
+<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC tlaBgGNC">        1387 :     op::O</span></span>
 <span id="L37"><span class="lineNum">      37</span>              :     grid::G</span>
 <span id="L38"><span class="lineNum">      38</span>              :     xpad::FX</span>
 <span id="L39"><span class="lineNum">      39</span>              :     ypad::FY</span>
@@ -178,8 +178,8 @@
 <span id="L116"><span class="lineNum">     116</span>              : interior(uf) .+= dt .* interior(du)</span>
 <span id="L117"><span class="lineNum">     117</span>              : ```</span>
 <span id="L118"><span class="lineNum">     118</span>              : &quot;&quot;&quot;</span>
-<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">        1271 : function prepare(L::AbstractOperator, x::AbstractField)</span></span>
-<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">        1386 :     if !islinear(L)</span></span>
+<span id="L119"><span class="lineNum">     119</span> <span class="tlaGNC">        1274 : function prepare(L::AbstractOperator, x::AbstractField)</span></span>
+<span id="L120"><span class="lineNum">     120</span> <span class="tlaGNC">        1389 :     if !islinear(L)</span></span>
 <span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">           2 :         throw(</span></span>
 <span id="L122"><span class="lineNum">     122</span>              :             ArgumentError(</span>
 <span id="L123"><span class="lineNum">     123</span>              :                 &quot;prepare requires a linear operator; for nonlinear operators prepare &quot; *</span>
@@ -187,10 +187,10 @@
 <span id="L125"><span class="lineNum">     125</span>              :             ),</span>
 <span id="L126"><span class="lineNum">     126</span>              :         )</span>
 <span id="L127"><span class="lineNum">     127</span>              :     end</span>
-<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        2584 :     xpad = similar(x)</span></span>
-<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">        1384 :     zero_ghosts!(xpad)</span></span>
-<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">        2129 :     ypad = allocate_output(L, x)</span></span>
-<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">        1384 :     return PreparedOperator(_prepare_tree(L, x), x.grid, xpad, ypad)</span></span>
+<span id="L128"><span class="lineNum">     128</span> <span class="tlaGNC">        2590 :     xpad = similar(x)</span></span>
+<span id="L129"><span class="lineNum">     129</span> <span class="tlaGNC">        1387 :     zero_ghosts!(xpad)</span></span>
+<span id="L130"><span class="lineNum">     130</span> <span class="tlaGNC">        2135 :     ypad = allocate_output(L, x)</span></span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC">        1387 :     return PreparedOperator(_prepare_tree(L, x), x.grid, xpad, ypad)</span></span>
 <span id="L132"><span class="lineNum">     132</span>              : end</span>
 <span id="L133"><span class="lineNum">     133</span> <span class="tlaGNC">         305 : prepare(L::AbstractOperator) = prepare(L, scalar_field(_require_grid(L)))</span></span>
 <span id="L134"><span class="lineNum">     134</span>              : </span>
@@ -289,22 +289,22 @@
 <span id="L227"><span class="lineNum">     227</span>              : # AdjointOp nodes are replaced by buffer-carrying twins so steady-state mul! never</span>
 <span id="L228"><span class="lineNum">     228</span>              : # allocates. AdjointOp nodes are first pushed down to the leaves (_push_adjoints</span>
 <span id="L229"><span class="lineNum">     229</span>              : # below), so a PreparedAdjoint never wraps a combinator.</span>
-<span id="L230"><span class="lineNum">     230</span> <span class="tlaGNC">        2481 : _prepare_tree(L::AbstractOperator, ::AbstractField) = L</span></span>
+<span id="L230"><span class="lineNum">     230</span> <span class="tlaGNC">        2486 : _prepare_tree(L::AbstractOperator, ::AbstractField) = L</span></span>
 <span id="L231"><span class="lineNum">     231</span>              : # Coefficient layout normalization: a BlockField coefficient under a packed</span>
 <span id="L232"><span class="lineNum">     232</span>              : # prototype is packed once here, so the prepared hot path dispatches to the</span>
 <span id="L233"><span class="lineNum">     233</span>              : # forest-native kernel sweep instead of silently staying on the per-leaf</span>
 <span id="L234"><span class="lineNum">     234</span>              : # fallback. Sound because these leaves are isconstant; staleness after a regrid</span>
 <span id="L235"><span class="lineNum">     235</span>              : # is caught by the PreparedForest generation guard. (Packed coefficients under a</span>
 <span id="L236"><span class="lineNum">     236</span>              : # BlockField prototype need no conversion — block views serve the fallback.)</span>
-<span id="L237"><span class="lineNum">     237</span> <span class="tlaGNC">           4 : _prepare_tree(S::ScalingOp{&lt;:BlockField}, ::PackedBlockField) = ScalingOp(pack(S.coeff))</span></span>
+<span id="L237"><span class="lineNum">     237</span> <span class="tlaGNC">           4 : _prepare_tree(S::CoeffScaling{&lt;:BlockField}, ::PackedBlockField) = CoeffScaling(pack(_coeff(S)))</span></span>
 <span id="L238"><span class="lineNum">     238</span> <span class="tlaGNC">           3 : _prepare_tree(L::Advection{&lt;:BlockForest,&lt;:BlockField}, ::PackedBlockField) =</span></span>
 <span id="L239"><span class="lineNum">     239</span>              :     Advection(L.grid, pack(L.velocity))</span>
 <span id="L240"><span class="lineNum">     240</span>              : # `pack` copies padded storage verbatim, so the coefficient ghosts the leaf already carries</span>
 <span id="L241"><span class="lineNum">     241</span>              : # survive — no re-exchange, and none would be legal here anyway (κ is `isconstant`).</span>
 <span id="L242"><span class="lineNum">     242</span> <span class="tlaGNC">           4 : _prepare_tree(D::Diffusion{&lt;:BlockForest,&lt;:BlockField}, ::PackedBlockField) =</span></span>
 <span id="L243"><span class="lineNum">     243</span>              :     Diffusion(D.grid, pack(D.κ), D.avg)</span>
-<span id="L244"><span class="lineNum">     244</span> <span class="tlaGNC">         444 : _prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))</span></span>
-<span id="L245"><span class="lineNum">     245</span> <span class="tlaGNC">         268 : _prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)</span></span>
+<span id="L244"><span class="lineNum">     244</span> <span class="tlaGNC">         446 : _prepare_tree(L::Added, x::AbstractField) = Added(_prepare_tree(L.a, x), _prepare_tree(L.b, x))</span></span>
+<span id="L245"><span class="lineNum">     245</span> <span class="tlaGNC">         270 : _prepare_tree(L::Scaled, x::AbstractField) = Scaled(_prepare_tree(L.op, x), L.α)</span></span>
 <span id="L246"><span class="lineNum">     246</span>              : </span>
 <span id="L247"><span class="lineNum">     247</span> <span class="tlaGNC">          85 : function _prepare_tree(L::Composed, x::AbstractField)</span></span>
 <span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC">         593 :     pb = _prepare_tree(L.b, x)</span></span>
@@ -552,38 +552,38 @@
 <span id="L490"><span class="lineNum">     490</span>              : rhs = flatten(f) .- flatten(b)        # solve  prepare(L) \\ rhs  with Krylov</span>
 <span id="L491"><span class="lineNum">     491</span>              : ```</span>
 <span id="L492"><span class="lineNum">     492</span>              : &quot;&quot;&quot;</span>
-<span id="L493"><span class="lineNum">     493</span> <span class="tlaGNC">          98 : function boundary_rhs(L::AbstractOperator, g::AbstractGrid)</span></span>
-<span id="L494"><span class="lineNum">     494</span> <span class="tlaGNC">          98 :     return boundary_rhs(L, scalar_field(g))</span></span>
+<span id="L493"><span class="lineNum">     493</span> <span class="tlaGNC">         101 : function boundary_rhs(L::AbstractOperator, g::AbstractGrid)</span></span>
+<span id="L494"><span class="lineNum">     494</span> <span class="tlaGNC">         101 :     return boundary_rhs(L, scalar_field(g))</span></span>
 <span id="L495"><span class="lineNum">     495</span>              : end</span>
 <span id="L496"><span class="lineNum">     496</span>              : </span>
-<span id="L497"><span class="lineNum">     497</span> <span class="tlaGNC">         162 : function boundary_rhs(L::AbstractOperator, x_proto::Field)</span></span>
-<span id="L498"><span class="lineNum">     498</span> <span class="tlaGNC">         162 :     if !islinear(L)</span></span>
+<span id="L497"><span class="lineNum">     497</span> <span class="tlaGNC">         166 : function boundary_rhs(L::AbstractOperator, x_proto::Field)</span></span>
+<span id="L498"><span class="lineNum">     498</span> <span class="tlaGNC">         166 :     if !islinear(L)</span></span>
 <span id="L499"><span class="lineNum">     499</span> <span class="tlaGNC">           1 :         throw(</span></span>
 <span id="L500"><span class="lineNum">     500</span>              :             ArgumentError(</span>
 <span id="L501"><span class="lineNum">     501</span>              :                 &quot;boundary_rhs is the affine lift of a linear operator; $(nameof(typeof(L))) is nonlinear&quot;,</span>
 <span id="L502"><span class="lineNum">     502</span>              :             ),</span>
 <span id="L503"><span class="lineNum">     503</span>              :         )</span>
 <span id="L504"><span class="lineNum">     504</span>              :     end</span>
-<span id="L505"><span class="lineNum">     505</span> <span class="tlaGNC">         161 :     g = x_proto.grid</span></span>
-<span id="L506"><span class="lineNum">     506</span> <span class="tlaGNC">         316 :     z = similar(x_proto)</span></span>
-<span id="L507"><span class="lineNum">     507</span> <span class="tlaGNC">       11532 :     fill!(z.data, zero(eltype(z.data)))</span></span>
-<span id="L508"><span class="lineNum">     508</span> <span class="tlaGNC">         161 :     fill_bc_inhomogeneous!(z.data, g)</span></span>
-<span id="L509"><span class="lineNum">     509</span> <span class="tlaGNC">         316 :     b = allocate_output(L, x_proto)</span></span>
-<span id="L510"><span class="lineNum">     510</span> <span class="tlaGNC">         161 :     _apply_raw!(b, L, z, g, true, false)</span></span>
-<span id="L511"><span class="lineNum">     511</span> <span class="tlaGNC">         161 :     return b</span></span>
+<span id="L505"><span class="lineNum">     505</span> <span class="tlaGNC">         165 :     g = x_proto.grid</span></span>
+<span id="L506"><span class="lineNum">     506</span> <span class="tlaGNC">         324 :     z = similar(x_proto)</span></span>
+<span id="L507"><span class="lineNum">     507</span> <span class="tlaGNC">       11700 :     fill!(z.data, zero(eltype(z.data)))</span></span>
+<span id="L508"><span class="lineNum">     508</span> <span class="tlaGNC">         165 :     fill_bc_inhomogeneous!(z.data, g)</span></span>
+<span id="L509"><span class="lineNum">     509</span> <span class="tlaGNC">         324 :     b = allocate_output(L, x_proto)</span></span>
+<span id="L510"><span class="lineNum">     510</span> <span class="tlaGNC">         165 :     _apply_raw!(b, L, z, g, true, false)</span></span>
+<span id="L511"><span class="lineNum">     511</span> <span class="tlaGNC">         165 :     return b</span></span>
 <span id="L512"><span class="lineNum">     512</span>              : end</span>
 <span id="L513"><span class="lineNum">     513</span>              : </span>
-<span id="L514"><span class="lineNum">     514</span> <span class="tlaGNC">          21 : function boundary_rhs(L::Added, x_proto::Field)</span></span>
-<span id="L515"><span class="lineNum">     515</span> <span class="tlaGNC">          21 :     ba = boundary_rhs(L.a, x_proto)</span></span>
-<span id="L516"><span class="lineNum">     516</span> <span class="tlaGNC">          21 :     bb = boundary_rhs(L.b, x_proto)</span></span>
-<span id="L517"><span class="lineNum">     517</span> <span class="tlaGNC">          42 :     ba.data .+= bb.data</span></span>
-<span id="L518"><span class="lineNum">     518</span> <span class="tlaGNC">          21 :     return ba</span></span>
+<span id="L514"><span class="lineNum">     514</span> <span class="tlaGNC">          22 : function boundary_rhs(L::Added, x_proto::Field)</span></span>
+<span id="L515"><span class="lineNum">     515</span> <span class="tlaGNC">          22 :     ba = boundary_rhs(L.a, x_proto)</span></span>
+<span id="L516"><span class="lineNum">     516</span> <span class="tlaGNC">          22 :     bb = boundary_rhs(L.b, x_proto)</span></span>
+<span id="L517"><span class="lineNum">     517</span> <span class="tlaGNC">          44 :     ba.data .+= bb.data</span></span>
+<span id="L518"><span class="lineNum">     518</span> <span class="tlaGNC">          22 :     return ba</span></span>
 <span id="L519"><span class="lineNum">     519</span>              : end</span>
 <span id="L520"><span class="lineNum">     520</span>              : </span>
-<span id="L521"><span class="lineNum">     521</span> <span class="tlaGNC">          16 : function boundary_rhs(L::Scaled, x_proto::Field)</span></span>
-<span id="L522"><span class="lineNum">     522</span> <span class="tlaGNC">          16 :     b = boundary_rhs(L.op, x_proto)</span></span>
-<span id="L523"><span class="lineNum">     523</span> <span class="tlaGNC">          31 :     b.data .*= L.α</span></span>
-<span id="L524"><span class="lineNum">     524</span> <span class="tlaGNC">          16 :     return b</span></span>
+<span id="L521"><span class="lineNum">     521</span> <span class="tlaGNC">          17 : function boundary_rhs(L::Scaled, x_proto::Field)</span></span>
+<span id="L522"><span class="lineNum">     522</span> <span class="tlaGNC">          17 :     b = boundary_rhs(L.op, x_proto)</span></span>
+<span id="L523"><span class="lineNum">     523</span> <span class="tlaGNC">          33 :     b.data .*= L.α</span></span>
+<span id="L524"><span class="lineNum">     524</span> <span class="tlaGNC">          17 :     return b</span></span>
 <span id="L525"><span class="lineNum">     525</span>              : end</span>
 <span id="L526"><span class="lineNum">     526</span>              : </span>
 <span id="L527"><span class="lineNum">     527</span>              : # Affine composition: a(b(x) + c_b) + c_a = (a∘b)(x) + a(c_b) + c_a.</span>
@@ -703,23 +703,23 @@
 <span id="L641"><span class="lineNum">     641</span>              : end</span>
 <span id="L642"><span class="lineNum">     642</span>              : </span>
 <span id="L643"><span class="lineNum">     643</span> <span class="tlaGNC">           8 : function Base.size(P::_AnyPrepared)</span></span>
-<span id="L644"><span class="lineNum">     644</span> <span class="tlaGNC">         472 :     return (flat_length(P.ypad), flat_length(P.xpad))</span></span>
+<span id="L644"><span class="lineNum">     644</span> <span class="tlaGNC">         475 :     return (flat_length(P.ypad), flat_length(P.xpad))</span></span>
 <span id="L645"><span class="lineNum">     645</span>              : end</span>
 <span id="L646"><span class="lineNum">     646</span> <span class="tlaGNC">          12 : Base.size(P::_AnyPrepared, d::Integer) = size(P)[d]</span></span>
-<span id="L647"><span class="lineNum">     647</span> <span class="tlaGNC">        1288 : Base.eltype(P::_AnyPrepared) = _scalar_eltype(eltype(P.xpad))</span></span>
+<span id="L647"><span class="lineNum">     647</span> <span class="tlaGNC">        1297 : Base.eltype(P::_AnyPrepared) = _scalar_eltype(eltype(P.xpad))</span></span>
 <span id="L648"><span class="lineNum">     648</span>              : </span>
-<span id="L649"><span class="lineNum">     649</span> <span class="tlaGNC">        2299 : function LinearAlgebra.mul!(</span></span>
+<span id="L649"><span class="lineNum">     649</span> <span class="tlaGNC">        2339 : function LinearAlgebra.mul!(</span></span>
 <span id="L650"><span class="lineNum">     650</span>              :     y::AbstractVector, P::PreparedOperator, x::AbstractVector, α::Number, β::Number</span>
 <span id="L651"><span class="lineNum">     651</span>              : )</span>
 <span id="L652"><span class="lineNum">     652</span>              :     # Interior-only write, by contract: ghosts staged into P.xpad beforehand must</span>
 <span id="L653"><span class="lineNum">     653</span>              :     # survive the sweep. Do not add zero_ghosts! here.</span>
-<span id="L654"><span class="lineNum">     654</span> <span class="tlaGNC">        9191 :     flat_to_interior!(P.xpad, x)</span></span>
-<span id="L655"><span class="lineNum">     655</span> <span class="tlaGNC">        9191 :     apply!(P.ypad, P.op, P.xpad, P.grid)</span></span>
-<span id="L656"><span class="lineNum">     656</span> <span class="tlaGNC">        9191 :     interior_to_flat!(y, P.ypad, α, β)</span></span>
-<span id="L657"><span class="lineNum">     657</span> <span class="tlaGNC">        9191 :     return y</span></span>
+<span id="L654"><span class="lineNum">     654</span> <span class="tlaGNC">        9251 :     flat_to_interior!(P.xpad, x)</span></span>
+<span id="L655"><span class="lineNum">     655</span> <span class="tlaGNC">        9251 :     apply!(P.ypad, P.op, P.xpad, P.grid)</span></span>
+<span id="L656"><span class="lineNum">     656</span> <span class="tlaGNC">        9251 :     interior_to_flat!(y, P.ypad, α, β)</span></span>
+<span id="L657"><span class="lineNum">     657</span> <span class="tlaGNC">        9251 :     return y</span></span>
 <span id="L658"><span class="lineNum">     658</span>              : end</span>
 <span id="L659"><span class="lineNum">     659</span> <span class="tlaGNC">          28 : function LinearAlgebra.mul!(y::AbstractVector, P::PreparedOperator, x::AbstractVector)</span></span>
-<span id="L660"><span class="lineNum">     660</span> <span class="tlaGNC">        9185 :     return mul!(y, P, x, true, false)</span></span>
+<span id="L660"><span class="lineNum">     660</span> <span class="tlaGNC">        9245 :     return mul!(y, P, x, true, false)</span></span>
 <span id="L661"><span class="lineNum">     661</span>              : end</span>
 <span id="L662"><span class="lineNum">     662</span>              : </span>
 <span id="L663"><span class="lineNum">     663</span> <span class="tlaGNC">        6487 : function LinearAlgebra.mul!(</span></span>

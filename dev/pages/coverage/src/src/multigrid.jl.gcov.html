@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-28 22:26:14</td>
+            <td class="headerValue">2026-10-02 17:38:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -250,9 +250,9 @@
 <span id="L188"><span class="lineNum">     188</span> <span class="tlaUNC">           0 : _rediscretize(::Gradient, gc::CartesianGrid) = Gradient(gc)</span></span>
 <span id="L189"><span class="lineNum">     189</span> <span class="tlaUNC">           0 : _rediscretize(::Divergence, gc::CartesianGrid) = Divergence(gc)</span></span>
 <span id="L190"><span class="lineNum">     190</span> <span class="tlaUNC">           0 : _rediscretize(L::IdentityOp, ::CartesianGrid) = L</span></span>
-<span id="L191"><span class="lineNum">     191</span> <span class="tlaUNC">           0 : _rediscretize(L::ScalingOp{&lt;:Number}, ::CartesianGrid) = L</span></span>
-<span id="L192"><span class="lineNum">     192</span>              : function _rediscretize(L::ScalingOp{&lt;:Field}, gc::CartesianGrid)</span>
-<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC tlaBgGNC">           1 :     return ScalingOp(_average_to_coarse(L.coeff, gc))</span></span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaUNC">           0 : _rediscretize(L::CoeffScaling{&lt;:Number}, ::CartesianGrid) = L</span></span>
+<span id="L192"><span class="lineNum">     192</span>              : function _rediscretize(L::CoeffScaling{&lt;:Field}, gc::CartesianGrid)</span>
+<span id="L193"><span class="lineNum">     193</span> <span class="tlaGNC tlaBgGNC">           1 :     return CoeffScaling(_average_to_coarse(_coeff(L), gc))</span></span>
 <span id="L194"><span class="lineNum">     194</span>              : end</span>
 <span id="L195"><span class="lineNum">     195</span>              : # The coarse coefficient goes through the child mean, not Restriction — see</span>
 <span id="L196"><span class="lineNum">     196</span>              : # _average_to_coarse. check=false: the fine κ was already validated at construction, and</span>

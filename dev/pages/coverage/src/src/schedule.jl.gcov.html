@@ -37,7 +37,7 @@
           </tr>
           <tr>
             <td class="headerItem">Test Date:</td>
-            <td class="headerValue">2026-09-28 22:26:14</td>
+            <td class="headerValue">2026-10-02 17:38:30</td>
             <td></td>
             <td class="headerItem">Functions:</td>
             <td class="headerCovTableEntryHi">-</td>
@@ -71,7 +71,7 @@
 <span id="L9"><span class="lineNum">       9</span>              : the ghost slab is scatter-added into the source slab, then zeroed.</span>
 <span id="L10"><span class="lineNum">      10</span>              : &quot;&quot;&quot;</span>
 <span id="L11"><span class="lineNum">      11</span>              : struct CopyDescriptor{N}</span>
-<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">       51125 :     src::Int</span></span>
+<span id="L12"><span class="lineNum">      12</span> <span class="tlaGNC tlaBgGNC">       51133 :     src::Int</span></span>
 <span id="L13"><span class="lineNum">      13</span>              :     dst::Int</span>
 <span id="L14"><span class="lineNum">      14</span>              :     src_ranges::NTuple{N,UnitRange{Int}}</span>
 <span id="L15"><span class="lineNum">      15</span>              :     dst_ranges::NTuple{N,UnitRange{Int}}</span>
@@ -151,8 +151,8 @@
 <span id="L89"><span class="lineNum">      89</span>              : the same width; the emitters assert it, and the explicit `[tfirst, tlast]` on each</span>
 <span id="L90"><span class="lineNum">      90</span>              : fill keeps the sweeps and the device kernel row-width-agnostic regardless.</span>
 <span id="L91"><span class="lineNum">      91</span>              : &quot;&quot;&quot;</span>
-<span id="L92"><span class="lineNum">      92</span> <span class="tlaGNC">       62205 : _ninterp_terms(::Val{N}) where {N} = 1 + 2 * 3^(N - 1)</span></span>
-<span id="L93"><span class="lineNum">      93</span> <span class="tlaGNC">       14571 : _nrestrict_terms(::Val{N}) where {N} = 1 + 2^N</span></span>
+<span id="L92"><span class="lineNum">      92</span> <span class="tlaGNC">       62209 : _ninterp_terms(::Val{N}) where {N} = 1 + 2 * 3^(N - 1)</span></span>
+<span id="L93"><span class="lineNum">      93</span> <span class="tlaGNC">       14575 : _nrestrict_terms(::Val{N}) where {N} = 1 + 2^N</span></span>
 <span id="L94"><span class="lineNum">      94</span>              : </span>
 <span id="L95"><span class="lineNum">      95</span>              : &quot;&quot;&quot;</span>
 <span id="L96"><span class="lineNum">      96</span>              :     CFFluxDescriptor{N}</span>
@@ -215,7 +215,7 @@
 <span id="L153"><span class="lineNum">     153</span>              : cache keys on the live `forest.generation[]`.</span>
 <span id="L154"><span class="lineNum">     154</span>              : &quot;&quot;&quot;</span>
 <span id="L155"><span class="lineNum">     155</span>              : struct ExchangeSchedule{N,T}</span>
-<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">         518 :     copies::Vector{CopyDescriptor{N}}</span></span>
+<span id="L156"><span class="lineNum">     156</span> <span class="tlaGNC">         520 :     copies::Vector{CopyDescriptor{N}}</span></span>
 <span id="L157"><span class="lineNum">     157</span>              :     interp::Vector{GhostFill{N}}</span>
 <span id="L158"><span class="lineNum">     158</span>              :     interp_terms::Vector{SlabTerm{N,T}}      # CSR rows of `interp`, host fill/term order</span>
 <span id="L159"><span class="lineNum">     159</span>              :     restrict::Vector{GhostFill{N}}</span>
@@ -227,9 +227,9 @@
 <span id="L165"><span class="lineNum">     165</span>              : </span>
 <span id="L166"><span class="lineNum">     166</span>              : # Sentinel: generation -1 never matches a live forest generation (construction</span>
 <span id="L167"><span class="lineNum">     167</span>              : # already bumps it to ≥ 1), so the first _exchange_schedule fetch always builds.</span>
-<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">         277 : _empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(</span></span>
+<span id="L168"><span class="lineNum">     168</span> <span class="tlaGNC">         278 : _empty_schedule(::Val{N}, ::Type{T}) where {N,T} = ExchangeSchedule{N,T}(</span></span>
 <span id="L169"><span class="lineNum">     169</span>              :     CopyDescriptor{N}[], GhostFill{N}[], SlabTerm{N,T}[], GhostFill{N}[], SlabTerm{N,T}[],</span>
-<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">         277 :     CFFluxDescriptor{N}[], ntuple(_ -&gt; (Int[], Int[]), Val(N)), -1,</span></span>
+<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">         278 :     CFFluxDescriptor{N}[], ntuple(_ -&gt; (Int[], Int[]), Val(N)), -1,</span></span>
 <span id="L171"><span class="lineNum">     171</span>              : )</span>
 <span id="L172"><span class="lineNum">     172</span>              : </span>
 <span id="L173"><span class="lineNum">     173</span>              : #--------------------------------------------------------------------------------# Device schedule (flattened descriptor SoA)</span>
@@ -245,7 +245,7 @@
 <span id="L183"><span class="lineNum">     183</span>              : # keyed on generation AND backend; _NoDeviceSchedule is the unbuilt sentinel</span>
 <span id="L184"><span class="lineNum">     184</span>              : # behind the abstract-eltype Ref (only GPU paths ever touch it).</span>
 <span id="L185"><span class="lineNum">     185</span>              : abstract type _AbstractDeviceSchedule end</span>
-<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">         277 : struct _NoDeviceSchedule &lt;: _AbstractDeviceSchedule end</span></span>
+<span id="L186"><span class="lineNum">     186</span> <span class="tlaGNC">         278 : struct _NoDeviceSchedule &lt;: _AbstractDeviceSchedule end</span></span>
 <span id="L187"><span class="lineNum">     187</span>              : </span>
 <span id="L188"><span class="lineNum">     188</span>              : struct _DevCopy{N}</span>
 <span id="L189"><span class="lineNum">     189</span> <span class="tlaGNC">        5872 :     src::Int32</span></span>
