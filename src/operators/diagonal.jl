@@ -155,7 +155,7 @@ function operator_diagonal(D::Diffusion)
 end
 
 # May alias operator state — treat as read-only.
-operator_diagonal(S::ScalingOp) = S.coeff
+operator_diagonal(S::CoeffScaling) = _coeff(S)
 
 operator_diagonal(::IdentityOp) = true
 

@@ -196,18 +196,18 @@ end
 end
 
 function _forest_sweep!(
-    y::PackedBlockField, S::ScalingOp{<:Number}, x::PackedBlockField, g::BlockForest, α, β
+    y::PackedBlockField, S::CoeffScaling{<:Number}, x::PackedBlockField, g::BlockForest, α, β
 )
     backend = KernelAbstractions.get_backend(g)
     backend isa KernelAbstractions.GPU || return _forest_sweep_leaves!(y, S, x, g, α, β)
     kernel! = _scale_forest_kernel!(backend)
-    kernel!(y.data, x.data, S.coeff, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g)))
+    kernel!(y.data, x.data, _coeff(S), g.halo, α, β; ndrange=(g.blocksize..., nleaves(g)))
     return y
 end
 
 function _forest_sweep!(
     y::PackedBlockField,
-    S::ScalingOp{<:PackedBlockField},
+    S::CoeffScaling{<:PackedBlockField},
     x::PackedBlockField,
     g::BlockForest,
     α,
@@ -219,12 +219,12 @@ function _forest_sweep!(
     # error. Extents, not identity: adaptation clones the forest wrapper (the
     # topology and its generation Ref are shared), so === would reject adapted
     # twins of the same forest.
-    size(S.coeff.data) == size(x.data) ||
+    size(_coeff(S).data) == size(x.data) ||
         throw(ArgumentError("scaling coefficient does not match the packed field extents"))
-    _require_current(S.coeff)
+    _require_current(_coeff(S))
     kernel! = _scalefield_forest_kernel!(backend)
     kernel!(
-        y.data, x.data, S.coeff.data, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g))
+        y.data, x.data, _coeff(S).data, g.halo, α, β; ndrange=(g.blocksize..., nleaves(g))
     )
     return y
 end

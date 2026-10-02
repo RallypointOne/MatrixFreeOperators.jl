@@ -471,7 +471,7 @@
         K = divergence(bf) * scaling(κ) * MFO.gradient(bf)
         A = prepare(K, pack(uf))
         # prepare packed the BlockField coefficient (layout normalization)
-        @test A.op.a.b.coeff isa PackedBlockField
+        @test only(A.op.a.b.args) isa PackedBlockField
         out = similar(v)
         ref = similar(v)
         mul!(out, A, v)
