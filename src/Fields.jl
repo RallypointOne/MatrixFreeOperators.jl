@@ -187,7 +187,7 @@ See also: [`op!`](@ref), [`cell_center`](@ref).
 """
 function set!(f::F, ϕ::Field) where {F}
     g = getgrid(ϕ)
-    AK.map!(interior(ϕ), interior(g), AK.get_backend(g)) do idx
+    AK.map!(interior(ϕ), interior(g); backend=AK.get_backend(g)) do idx
         x = cell_center(g, idx)
         f(x)
     end
@@ -226,7 +226,7 @@ function op!(f::F, ϕ::Field, ϕs::Field...; check::Bool=true) where {F}
     idxs = CartesianIndices(g)
     ϕint = interior(ϕ)
     ϕsint = map(interior, ϕs)
-    AK.foreachindex(ϕint, AK.get_backend(g)) do j
+    AK.foreachindex(ϕint; backend=AK.get_backend(g)) do j
         idx = idxs[j]
         x = cell_center(g, idx)
         ϕint[j] = f(x, ϕint[idx], map(φ -> φ[idx], ϕsint)...)

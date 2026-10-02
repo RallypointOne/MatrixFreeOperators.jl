@@ -25,7 +25,7 @@ MatrixFreeOperatorsMDLAExt = ["MultiDeviceLinearAlgebra", "Krylov", "CUDA"]
 MatrixFreeOperatorsReactantExt = "Reactant"
 
 [compat]
-AcceleratedKernels = "0.4.3, 0.5"
+AcceleratedKernels = "0.5"
 Adapt = "4"
 CUDA = "5, 6.2"
 Enzyme = "0.13"
