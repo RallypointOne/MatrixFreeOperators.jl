@@ -223,13 +223,12 @@ See also: [`set!`](@ref), [`compatible`](@ref).
 function op!(f::F, ϕ::Field, ϕs::Field...; check::Bool=true) where {F}
     check && check_compatible(ϕ, ϕs...)
     g = getgrid(ϕ)
-    idxs = CartesianIndices(g)
+    idxs = interior(g)  # padded indices of the interior cells, for `cell_center`
     ϕint = interior(ϕ)
     ϕsint = map(interior, ϕs)
     AK.foreachindex(ϕint; backend=AK.get_backend(g)) do j
-        idx = idxs[j]
-        x = cell_center(g, idx)
-        ϕint[j] = f(x, ϕint[idx], map(φ -> φ[idx], ϕsint)...)
+        x = cell_center(g, idxs[j])
+        ϕint[j] = f(x, ϕint[j], map(φ -> φ[j], ϕsint)...)
     end
     return ϕ
 end
