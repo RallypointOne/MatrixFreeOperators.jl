@@ -28,6 +28,15 @@
         @test eltype(u32) === Float32
     end
 
+    @testset "op! sees the same cell as set!" begin
+        # Non-square 2D grid: a padded/interior index mix-up shifts or scrambles cells.
+        g = CartesianGrid(((0.0, 1.0), (0.0, 2.0)), (3, 5))
+        f(x) = x[1] + 10 * x[2]
+        u = set!(f, scalar_field(g))
+        op!((x, a) -> a - f(x), u)
+        @test maximum(abs, collect(interior(u))) < 1e-12
+    end
+
     @testset "component extraction" begin
         g = CartesianGrid(((0.0, 1.0), (0.0, 1.0)), (3, 3))
         v = set!(x -> SVector(x[1], -x[2]), vector_field(g))
